@@ -13,6 +13,7 @@ from app import __version__, gitsync
 from app import snapshots as snapshot_jobs
 from app.api import (
     admin,
+    attack_api,
     audit_log,
     auth,
     business,
@@ -21,6 +22,7 @@ from app.api import (
     growth,
     lifecycle,
     oidc,
+    output,
     scores,
     snapshots,
     transfer,
@@ -121,6 +123,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         snapshots.router,
         gitsync_api.router,
         growth.router,
+        attack_api.router,
+        output.router,
     ):
         api.include_router(r)
     app.include_router(api)

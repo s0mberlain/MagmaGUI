@@ -421,3 +421,26 @@ class MaturityAssessment(Base):
     assessed_by: Mapped[str] = mapped_column(String(64))
     assessed_at: Mapped[date] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class OutputMetric(Base):
+    """Output metrics of an L3 rule for one month (PLAN 2.13)."""
+
+    __tablename__ = "output_metrics"
+    __table_args__ = (UniqueConstraint("l3_id", "period"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    l3_id: Mapped[int] = mapped_column(
+        ForeignKey("l3_use_cases.id", ondelete="CASCADE"), index=True
+    )
+    period: Mapped[date] = mapped_column(Date, index=True)  # first day of the month
+    alerts: Mapped[int] = mapped_column(Integer, default=0)
+    incidents: Mapped[int] = mapped_column(Integer, default=0)
+    false_positives: Mapped[int] = mapped_column(Integer, default=0)
+    false_negatives: Mapped[int | None] = mapped_column(Integer)  # often unknown
+    note: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(16), default="manual")  # manual | csv | demo
+    updated_by: Mapped[str] = mapped_column(String(64))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )

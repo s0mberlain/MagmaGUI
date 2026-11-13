@@ -50,13 +50,16 @@ export default function Dashboard() {
             {s && ` · ${s.l1.length} L1 · ${s.l2.length} L2 · ${s.l1.reduce((a, x) => a + x.rules, 0)} L3 rules`}
           </div>
         </div>
-        {can("admin", "analyst") && (
-          <div className="row-actions">
+        <div className="row-actions">
+          <a className="btn" href="/api/report.pdf" download>
+            Download PDF report
+          </a>
+          {can("admin", "analyst") && (
             <Link className="btn btn-primary" to="/usecases">
               Edit use cases
             </Link>
-          </div>
-        )}
+          )}
+        </div>
       </header>
 
       <ErrorNote error={scores.error} />

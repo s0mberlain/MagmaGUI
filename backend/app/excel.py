@@ -226,6 +226,8 @@ def export_workbook(db: Session) -> bytes:
             "Last verified by",
             "Verify every (days)",
             "ATT&CK techniques",
+            "Risk level",
+            "Target implementation",
         ],
         extra_from=18,
     )
@@ -256,6 +258,8 @@ def export_workbook(db: Session) -> bytes:
         ws.cell(i, 21, x.last_verified_by)
         ws.cell(i, 22, x.verification_interval_days)
         ws.cell(i, 23, _join(x.attack_techniques))
+        ws.cell(i, 24, x.risk_level)
+        ws.cell(i, 25, x.target_implementation).number_format = "0%"
     _widths(ws, {"F": 12, "G": 40, "H": 40, "N": 26, "O": 22, "P": 22, "Q": 30})
     ws.freeze_panes = "G2"
 
@@ -753,6 +757,7 @@ class _Importer:
         c_status, c_onb = _col(cols, "lifecycle status"), _col(cols, "onboarded")
         c_ver, c_verby = cols.get("last verified"), cols.get("last verified by")
         c_int, c_attack = _col(cols, "verify every", "verification interval"), _col(cols, "att&ck")
+        c_risk, c_target = _col(cols, "risk level"), _col(cols, "target implementation")
         l2s = {x.code: x for x in self.db.scalars(select(L2UseCase))}
         existing = {
             x.code: x
@@ -797,6 +802,17 @@ class _Importer:
                     v = ws.cell(r, c_int).value
                     vals["verification_interval_days"] = (
                         int(float(v)) if v not in (None, "") else None
+                    )
+                if c_risk:  # empty = inherit from the L2 use case
+                    v = ws.cell(r, c_risk).value
+                    risk = int(float(v)) if v not in (None, "") else None
+                    if risk is not None and not 1 <= risk <= 5:
+                        raise ValueError("risk level must be 1 to 5")
+                    vals["risk_level"] = risk
+                if c_target:
+                    v = ws.cell(r, c_target).value
+                    vals["target_implementation"] = (
+                        self.metric(v, sheet, r, f"{code} target") if v not in (None, "") else None
                     )
             except ValueError as e:
                 self.r.error(sheet, r, f"{code}: {e}")

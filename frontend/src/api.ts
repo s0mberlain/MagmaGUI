@@ -8,6 +8,7 @@ export interface User {
   role: Role;
   auth_source: "local" | "sso";
   active: boolean;
+  totp_enabled: boolean;
   last_login_at: string | null;
   created_at: string;
 }
@@ -156,6 +157,14 @@ export interface L3 {
   last_verified_at: string | null;
   last_verified_by: string | null;
   verification_interval_days: number | null;
+  risk_level: number | null;
+  target_implementation: number | null;
+  effective_risk: number | null;
+  risk_source: "rule" | "l2" | null;
+  effective_target: number | null;
+  target_source: "rule" | "l2" | "risk" | null;
+  implementation_gap: number | null;
+  priority: number | null;
   log_sources: string[];
   detection_technologies: string[];
   scopes: string[];
@@ -183,6 +192,12 @@ export type L3Input = Partial<
     | "verification_due"
     | "verification_overdue"
     | "last_verified_by"
+    | "effective_risk"
+    | "risk_source"
+    | "effective_target"
+    | "target_source"
+    | "implementation_gap"
+    | "priority"
   >
 >;
 
@@ -357,6 +372,58 @@ export interface GitStatus {
   commits_unsynced: number;
 }
 
+export interface GapRow {
+  code: string;
+  name: string;
+  l2_code: string;
+  l2_name: string;
+  lifecycle_status: Lifecycle;
+  effectiveness: number | null;
+  implementation: number | null;
+  coverage: number | null;
+  weight: number | null;
+  potential: number | null;
+  risk: number | null;
+  risk_source: string | null;
+  target: number | null;
+  target_source: string | null;
+  gap: number | null;
+  priority: number | null;
+}
+export interface Gaps {
+  summary: {
+    rules: number;
+    with_target: number;
+    below_target: number;
+    no_risk: number;
+    avg_gap: number | null;
+    by_risk: Record<string, { rules: number; below_target: number }>;
+    risk_targets: Record<string, number>;
+  };
+  rows: GapRow[];
+}
+export interface MaturityAssessment {
+  id: number;
+  level: number;
+  target_level: number | null;
+  aspects: Record<string, number>;
+  notes: string;
+  assessed_by: string;
+  assessed_at: string;
+  created_at: string;
+}
+export interface Maturity {
+  levels: { level: number; name: string; description: string }[];
+  aspects: Record<string, string>;
+  current: MaturityAssessment | null;
+  history: MaturityAssessment[];
+}
+export interface TotpSetup {
+  secret: string;
+  uri: string;
+  qr_svg: string;
+}
+
 /** 409 from a config save: someone committed in between. */
 export class ConflictError extends Error {
   constructor(
@@ -416,7 +483,8 @@ function detailMessage(data: unknown): string | null {
 
 export const api = {
   version: () => request<VersionInfo>("GET", "/api/version"),
-  login: (username: string, password: string) => request<User>("POST", "/api/auth/login", { username, password }),
+  login: (username: string, password: string, otp?: string) =>
+    request<User>("POST", "/api/auth/login", { username, password, ...(otp ? { otp } : {}) }),
   logout: () => request<void>("POST", "/api/auth/logout"),
   me: () => request<User>("GET", "/api/auth/me"),
   changePassword: (current_password: string, new_password: string) =>
@@ -523,6 +591,32 @@ export const api = {
   trends: () => request<Trends>("GET", "/api/trends"),
   gitStatus: () => request<GitStatus>("GET", "/api/admin/git"),
   gitSync: () => request<GitStatus>("POST", "/api/admin/git/sync"),
+
+  gaps: (f: { l1?: string; min_risk?: number; below_target?: boolean } = {}) =>
+    request<Gaps>(
+      "GET",
+      `/api/growth/gaps?${new URLSearchParams(
+        Object.entries(f)
+          .filter(([, v]) => v !== undefined && v !== "")
+          .map(([k, v]) => [k, String(v)]),
+      )}`,
+    ),
+  maturity: () => request<Maturity>("GET", "/api/maturity"),
+  assessMaturity: (body: {
+    level: number;
+    target_level: number | null;
+    aspects: Record<string, number>;
+    notes: string;
+    assessed_at?: string;
+  }) => request<MaturityAssessment>("POST", "/api/maturity", body),
+  deleteMaturity: (id: number) => request<void>("DELETE", `/api/maturity/${id}`),
+  totpSetup: (password: string) => request<TotpSetup>("POST", "/api/auth/me/totp/setup", { password }),
+  totpEnable: (code: string) => request<{ recovery_codes: string[] }>("POST", "/api/auth/me/totp/enable", { code }),
+  totpDisable: (password: string, code: string) =>
+    request<void>("POST", "/api/auth/me/totp/disable", { password, code }),
+  totpNewCodes: (password: string, code: string) =>
+    request<{ recovery_codes: string[] }>("POST", "/api/auth/me/totp/recovery-codes", { password, code }),
+  resetTotp: (userId: number) => request<User>("DELETE", `/api/users/${userId}/totp`),
 
   demoData: (seed: number) => request<Record<string, number>>("POST", "/api/admin/demo-data", { seed }),
 };

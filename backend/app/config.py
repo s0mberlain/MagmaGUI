@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # Verification interval used when a rule has no own interval.
     default_verification_days: int = 180
 
+    # Target implementation per risk level when a use case sets no own target (app/growth.py).
+    risk_targets: str = "1=0.4,2=0.5,3=0.6,4=0.75,5=0.9"
+
     # Fill the catalogue with generated demo data on first start (see app/demo.py).
     demo_data: bool = False
     demo_seed: int = 42
@@ -67,6 +70,12 @@ class Settings(BaseSettings):
     @property
     def sso_enabled(self) -> bool:
         return bool(self.oidc_issuer and self.oidc_client_id)
+
+    @property
+    def risk_target_map(self) -> dict[int, float]:
+        from app.growth import parse_risk_targets
+
+        return parse_risk_targets(self.risk_targets)
 
     @property
     def git_enabled(self) -> bool:

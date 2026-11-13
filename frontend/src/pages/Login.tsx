@@ -11,6 +11,8 @@ export default function Login() {
   const from = (location.state as { from?: string } | null)?.from ?? "/";
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [otp, setOtp] = useState("");
+  const [needOtp, setNeedOtp] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [cfg, setCfg] = useState<AuthConfig | null>(null);
@@ -30,9 +32,13 @@ export default function Login() {
     setBusy(true);
     setError(null);
     try {
-      await login(username, password);
+      await login(username, password, needOtp ? otp : undefined);
       navigate(from, { replace: true });
     } catch (err) {
+      if (err instanceof Error && err.message === "totp_required") {
+        setNeedOtp(true);
+        return;
+      }
       setError(err instanceof Error ? err.message : "Sign in failed");
     } finally {
       setBusy(false);
@@ -83,7 +89,10 @@ export default function Login() {
                   type="text"
                   autoComplete="username"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  onChange={(e) => {
+                    setUsername(e.target.value);
+                    setNeedOtp(false);
+                  }}
                   required
                   autoFocus
                 />
@@ -99,6 +108,24 @@ export default function Login() {
                   required
                 />
               </label>
+              {needOtp && (
+                <label className="field">
+                  Authentication code
+                  <input
+                    className="input mono"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    placeholder="123456 or a recovery code"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                  <span className="small muted">
+                    From your authenticator app. Lost your phone? Use a recovery code.
+                  </span>
+                </label>
+              )}
               {error && (
                 <p className="form-error" role="alert">
                   {error}

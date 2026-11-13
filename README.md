@@ -2,7 +2,7 @@
 
 Web application for the FI-ISAC **MaGMa Use Case Framework**: manage SIEM / SOC use cases across the business, threat (L1/L2) and implementation (L3) layers, score them, track verification and keep versioned YAML configs per use case.
 
-Status: **M4**: MVP (catalogue, scoring, verification, YAML configs with history, Excel import/export, local login and SSO) plus lifecycle change log, history and trends, and optional git sync. See [docs/PLAN.md](docs/PLAN.md) for the full plan and milestones, and [docs/design/](docs/design/) for the approved desktop design draft.
+Status: **M5**: MVP (catalogue, scoring, verification, YAML configs with history, Excel import/export, local login and SSO) plus lifecycle change log, history and trends, optional git sync, risk-based priorities, maturity assessment and two-factor login. See [docs/PLAN.md](docs/PLAN.md) for the full plan and milestones, and [docs/design/](docs/design/) for the approved desktop design draft.
 
 ## Run with Docker
 
@@ -77,6 +77,18 @@ metrics over time from snapshots (taken manually or by `SNAPSHOT_SCHEDULE`, mont
 compares any two snapshots, and lists all status changes. Demo data includes twelve monthly
 snapshots and a matching change log.
 
+## Priorities and maturity
+
+Every L2 use case has a risk level (1–5) and an optional target implementation; a rule follows
+its L2 unless it sets its own. Without an explicit target the risk level gives one
+(`RISK_TARGETS`, default 40 % for risk 1 up to 90 % for risk 5). *Priorities* lists the active
+rules with the gap between implementation and target, sorted by priority = potential × risk ÷ 5,
+so the work with the most detection gain on the riskiest use cases comes first.
+
+*Maturity* records self-assessments on the CMMI scale (1 Initial … 5 Optimizing) with an
+optional target level, a level per aspect (people, process, technology) and notes. The level is
+kept in every snapshot, so it shows up on *History & trends*.
+
 ## Excel import / export
 
 *Import / Export* writes the classic MaGMa UCF Tool layout (L1 UC, L2 UC, L3 UC, Drivers,
@@ -96,6 +108,14 @@ group are refused (or get `OIDC_DEFAULT_ROLE`). Local login keeps working unless
 To try it locally: `docker compose --profile keycloak up -d` starts a Keycloak on port 8081 with
 the users alice / bob / carol (admin / analyst / auditor, password `<name>-password`); use the
 Keycloak values from `.env.example`.
+
+## Two-factor login
+
+Local accounts can turn on a TOTP second factor under *Account* (click your name in the
+sidebar): scan the QR code with any authenticator app, confirm a code, and save the eight
+one-time recovery codes. The secret is stored encrypted with `SECRET_KEY` (changing that key
+turns existing second factors unusable; an admin can then reset them under *Users*). SSO
+accounts use the second factor of the identity provider.
 
 ## Roles
 

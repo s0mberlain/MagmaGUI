@@ -24,6 +24,8 @@ class ORM(BaseModel):
 class LoginIn(BaseModel):
     username: str
     password: str
+    # authenticator code or a recovery code, for accounts with two-factor login
+    otp: str | None = None
 
 
 class UserOut(ORM):
@@ -34,6 +36,7 @@ class UserOut(ORM):
     role: Role
     auth_source: AuthSource
     active: bool
+    totp_enabled: bool = False
     last_login_at: datetime | None
     created_at: datetime
 
@@ -213,6 +216,8 @@ class L3Create(TrackingFields):
     comments: str = ""
     attack_techniques: list[AttackId] = []
     verification_interval_days: Annotated[int, Field(ge=1, le=3650)] | None = None
+    risk_level: Annotated[int, Field(ge=1, le=5)] | None = None
+    target_implementation: Metric | None = None
     log_sources: list[str] = []
     detection_technologies: list[str] = []
     scopes: list[str] = []
@@ -227,6 +232,8 @@ class L3Update(TrackingFields):
     comments: str | None = None
     attack_techniques: list[AttackId] | None = None
     verification_interval_days: Annotated[int, Field(ge=1, le=3650)] | None = None
+    risk_level: Annotated[int, Field(ge=1, le=5)] | None = None
+    target_implementation: Metric | None = None
     log_sources: list[str] | None = None
     detection_technologies: list[str] | None = None
     scopes: list[str] | None = None
@@ -249,10 +256,19 @@ class L3Out(BaseModel):
     last_verified_at: date | None
     last_verified_by: str | None
     verification_interval_days: int | None
+    risk_level: int | None
+    target_implementation: float | None
     log_sources: list[str]
     detection_technologies: list[str]
     scopes: list[str]
     updated_at: datetime
+    # risk and target in effect (own value, else the L2's, else derived from the risk level)
+    effective_risk: int | None = None
+    risk_source: str | None = None
+    effective_target: float | None = None
+    target_source: str | None = None
+    implementation_gap: float | None = None
+    priority: float | None = None
     # calculated (app/scoring.py)
     weight: float | None = None
     potential: float | None = None

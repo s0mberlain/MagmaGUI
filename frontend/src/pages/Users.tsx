@@ -113,7 +113,10 @@ export default function Users() {
                     ))}
                   </select>
                 </td>
-                <td>{u.auth_source === "sso" ? "SSO" : "Local"}</td>
+                <td>
+                  {u.auth_source === "sso" ? "SSO" : "Local"}
+                  {u.totp_enabled && <span className="chip chip-info chip-2fa">2FA</span>}
+                </td>
                 <td>{fmt(u.last_login_at)}</td>
                 <td>
                   <span className={"pill " + (u.active ? "pill-ok" : "pill-warn")}>
@@ -125,6 +128,18 @@ export default function Users() {
                     {u.auth_source === "local" && (
                       <button type="button" className="btn btn-sm" onClick={() => resetPassword(u)}>
                         Reset password
+                      </button>
+                    )}
+                    {u.totp_enabled && u.id !== me?.id && (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() => {
+                          if (!window.confirm(`Turn off two-factor login for ${u.username}?`)) return;
+                          void run(() => api.resetTotp(u.id), `Two-factor login of ${u.username} turned off`);
+                        }}
+                      >
+                        Reset 2FA
                       </button>
                     )}
                     {u.id !== me?.id && (

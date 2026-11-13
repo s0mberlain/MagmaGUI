@@ -91,6 +91,12 @@ class User(Base):
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # TOTP second factor for local accounts (app/totp.py). The secret is encrypted with SECRET_KEY.
+    totp_secret: Mapped[str | None] = mapped_column(String(255))
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    totp_last_step: Mapped[int | None] = mapped_column(Integer)
+    # sha256 hashes of unused one-time recovery codes
+    recovery_codes: Mapped[list[str]] = mapped_column(JSON, default=list)
 
 
 class UserSession(Base):
@@ -271,6 +277,9 @@ class L3UseCase(Base):
     last_verified_at: Mapped[date | None] = mapped_column(Date)
     last_verified_by: Mapped[str | None] = mapped_column(String(64))
     verification_interval_days: Mapped[int | None] = mapped_column(Integer)
+    # Risk-based prioritisation (PLAN 2.11); NULL = inherit from the L2 use case.
+    risk_level: Mapped[int | None] = mapped_column(Integer)
+    target_implementation: Mapped[float | None] = mapped_column(Float)
     dod: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -396,3 +405,19 @@ class GitSyncState(Base):
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(Text)
     head_sha: Mapped[str | None] = mapped_column(String(64))
+
+
+class MaturityAssessment(Base):
+    """SOC maturity self-assessment on the CMMI scale 1..5 (PLAN 2.12)."""
+
+    __tablename__ = "maturity_assessments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    level: Mapped[int] = mapped_column(Integer)
+    target_level: Mapped[int | None] = mapped_column(Integer)
+    # optional level per aspect, e.g. {"people": 2, "process": 3, "technology": 3}
+    aspects: Mapped[dict] = mapped_column(JSON, default=dict)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    assessed_by: Mapped[str] = mapped_column(String(64))
+    assessed_at: Mapped[date] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

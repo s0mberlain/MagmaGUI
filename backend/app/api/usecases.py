@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app import audit, lifecycle
+from app import audit, growth, lifecycle
 from app.api.deps import DB, SettingsDep
 from app.models import (
     BusinessDriver,
@@ -150,7 +150,9 @@ def l2_out(l2: L2UseCase, l3_count: int | None = None) -> L2Out:
     )
 
 
-def l3_out(l3: L3UseCase, default_interval: int = 180) -> L3Out:
+def l3_out(
+    l3: L3UseCase, default_interval: int = 180, targets: dict[int, float] | None = None
+) -> L3Out:
     score = score_rule(
         RuleInput(
             l3.code,
@@ -165,6 +167,7 @@ def l3_out(l3: L3UseCase, default_interval: int = 180) -> L3Out:
         date.today(),
         default_interval,
     )
+    eff = growth.effective(l3, targets or growth.DEFAULT_RISK_TARGETS, score.potential)
     by_kind: dict[RefKind, list[str]] = {k: [] for k in RefKind}
     for r in l3.references:
         by_kind[r.kind].append(r.name)
@@ -185,6 +188,14 @@ def l3_out(l3: L3UseCase, default_interval: int = 180) -> L3Out:
         last_verified_at=l3.last_verified_at,
         last_verified_by=l3.last_verified_by,
         verification_interval_days=l3.verification_interval_days,
+        risk_level=l3.risk_level,
+        target_implementation=l3.target_implementation,
+        effective_risk=eff.risk,
+        risk_source=eff.risk_source,
+        effective_target=eff.target,
+        target_source=eff.target_source,
+        implementation_gap=eff.gap,
+        priority=eff.priority,
         log_sources=sorted(by_kind[RefKind.log_source]),
         detection_technologies=sorted(by_kind[RefKind.detection_technology]),
         scopes=sorted(by_kind[RefKind.scope]),
@@ -404,12 +415,14 @@ def list_l3(
         q = q.where(L3UseCase.code.startswith(l1 + "-"))
     if status_:
         q = q.where(L3UseCase.lifecycle_status == status_)
-    return [l3_out(x, settings.default_verification_days) for x in db.scalars(q)]
+    targets = settings.risk_target_map
+    return [l3_out(x, settings.default_verification_days, targets) for x in db.scalars(q)]
 
 
 @router.get("/l3/{code}", response_model=L3Out)
 def get_l3(code: str, _: Reader, db: DB, settings: SettingsDep) -> L3Out:
-    return l3_out(_by_code(db, L3UseCase, code, "L3 rule"), settings.default_verification_days)
+    l3 = _by_code(db, L3UseCase, code, "L3 rule")
+    return l3_out(l3, settings.default_verification_days, settings.risk_target_map)
 
 
 @router.post("/l3", response_model=L3Out, status_code=201)
@@ -427,7 +440,7 @@ def create_l3(body: L3Create, user: Editor, db: DB, settings: SettingsDep) -> L3
     _status_change(db, l3, None, user)
     audit.record(db, user, "create", "l3", l3.code, body.model_dump())
     db.commit()
-    return l3_out(l3, settings.default_verification_days)
+    return l3_out(l3, settings.default_verification_days, settings.risk_target_map)
 
 
 @router.patch("/l3/{code}", response_model=L3Out)
@@ -439,7 +452,7 @@ def update_l3(code: str, body: L3Update, user: Editor, db: DB, settings: Setting
     _status_change(db, l3, old, user)
     audit.record(db, user, "update", "l3", code, changes)
     db.commit()
-    return l3_out(l3, settings.default_verification_days)
+    return l3_out(l3, settings.default_verification_days, settings.risk_target_map)
 
 
 @router.delete("/l3/{code}", status_code=204)

@@ -5,7 +5,7 @@ import { useAuth } from "../auth";
 import ConfigPanel from "../components/ConfigPanel";
 import LifecyclePanel from "../components/LifecyclePanel";
 import { ErrorNote, MultiSelect, StatusPill, useLoad } from "../components/ui";
-import { fmtDate, num } from "../lib/format";
+import { fmtDate, num, pct } from "../lib/format";
 import { VerifiedCell, VerifyDialog } from "./UseCases";
 
 type Metric = "effectiveness" | "implementation" | "coverage";
@@ -27,6 +27,8 @@ interface Form {
   attack: string;
   onboarded_at: string;
   interval: string;
+  risk: string;
+  target: string;
   comments: string;
 }
 
@@ -43,6 +45,8 @@ function toForm(r: L3): Form {
     attack: r.attack_techniques.join(", "),
     onboarded_at: r.onboarded_at ?? "",
     interval: r.verification_interval_days?.toString() ?? "",
+    risk: r.risk_level?.toString() ?? "",
+    target: r.target_implementation === null ? "" : String(Math.round(r.target_implementation * 100)),
     comments: r.comments,
   };
 }
@@ -111,6 +115,8 @@ export default function RuleDetail() {
           .filter(Boolean),
         onboarded_at: form.onboarded_at || null,
         verification_interval_days: form.interval ? Number(form.interval) : null,
+        risk_level: form.risk ? Number(form.risk) : null,
+        target_implementation: form.target === "" ? null : Number(form.target) / 100,
         comments: form.comments,
       });
       rule.setData(updated);
@@ -250,6 +256,17 @@ export default function RuleDetail() {
                   <span className="big data1">{num(potential)}</span>
                 </div>
               </div>
+              {r.effective_target !== null && (
+                <p className="small target-line">
+                  Target implementation {pct(r.effective_target)}
+                  {r.implementation_gap ? (
+                    <span className="text-err"> · {pct(r.implementation_gap)} to go</span>
+                  ) : (
+                    <span className="text-ok"> · reached</span>
+                  )}
+                  {r.priority !== null && <span className="muted"> · priority {num(r.priority)}</span>}
+                </p>
+              )}
               {!assessed && <p className="small muted">Set all three metrics to score the rule.</p>}
               {assessed && !["operational", "maintenance"].includes(r.lifecycle_status) && (
                 <p className="small muted">Only operational and maintenance rules count towards the scores.</p>
@@ -313,6 +330,41 @@ export default function RuleDetail() {
                     disabled={!editor}
                     value={form.interval}
                     onChange={(ev) => set({ interval: ev.target.value })}
+                  />
+                </label>
+                <label className="field">
+                  Risk level
+                  <select
+                    className="input"
+                    disabled={!editor}
+                    value={form.risk}
+                    onChange={(ev) => set({ risk: ev.target.value })}
+                  >
+                    <option value="">
+                      {r.risk_source === "l2" ? `Same as L2 (${r.effective_risk})` : "Same as L2 (not set)"}
+                    </option>
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  Target implementation (%)
+                  <input
+                    className="input"
+                    type="number"
+                    min={0}
+                    max={100}
+                    disabled={!editor}
+                    placeholder={
+                      r.target_source && r.target_source !== "rule"
+                        ? `${Math.round((r.effective_target ?? 0) * 100)} (${r.target_source === "l2" ? "from L2" : "from risk"})`
+                        : "From L2 or risk level"
+                    }
+                    value={form.target}
+                    onChange={(ev) => set({ target: ev.target.value })}
                   />
                 </label>
                 <label className="field">

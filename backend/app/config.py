@@ -16,6 +16,23 @@ class Settings(BaseSettings):
     # Directory with the built frontend (index.html + assets). Empty or missing = API only.
     static_dir: Path = Path(__file__).resolve().parent.parent / "static"
 
+    # Run migrations and seed the catalogue on startup.
+    auto_migrate: bool = True
+
+    # First admin account, created when the user table is empty.
+    admin_user: str = "admin"
+    admin_password: str | None = None
+
+    local_login_enabled: bool = True
+    session_hours: int = 12
+    max_failed_logins: int = 5
+    lockout_minutes: int = 15
+    min_password_length: int = 12
+
+    @property
+    def cookie_secure(self) -> bool:
+        return self.base_url.startswith("https://")
+
 
 @lru_cache
 def get_settings() -> Settings:

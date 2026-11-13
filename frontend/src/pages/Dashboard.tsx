@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type VersionInfo } from "../api";
-
-type Status = { state: "loading" } | { state: "ok"; info: VersionInfo } | { state: "error"; message: string };
+import { api, type CatalogueSummary } from "../api";
 
 // KPI tiles from the design. Values are filled by the scoring engine in M2/M3.
 const KPIS = [
@@ -13,15 +11,34 @@ const KPIS = [
   { label: "Verification health", sub: "Rules verified in time" },
 ];
 
+const REF_LABELS: Record<string, string> = {
+  threat_actor: "Threat actors",
+  detection_technology: "Detection technologies",
+  log_source: "Log sources",
+  scope: "Scopes",
+};
+
 export default function Dashboard() {
-  const [status, setStatus] = useState<Status>({ state: "loading" });
+  const [summary, setSummary] = useState<CatalogueSummary | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api
-      .version()
-      .then((info) => setStatus({ state: "ok", info }))
-      .catch((e: Error) => setStatus({ state: "error", message: e.message }));
+      .summary()
+      .then(setSummary)
+      .catch((e: Error) => setError(e.message));
   }, []);
+
+  const counts = summary
+    ? [
+        { label: "L1 use cases", value: summary.l1 },
+        { label: "L2 use cases", value: summary.l2 },
+        { label: "L3 rules", value: summary.l3 },
+        { label: "Business drivers", value: summary.business_drivers },
+        { label: "Compliance drivers", value: summary.compliance_drivers },
+        ...Object.entries(summary.references).map(([k, v]) => ({ label: REF_LABELS[k] ?? k, value: v })),
+      ]
+    : [];
 
   return (
     <>
@@ -30,11 +47,6 @@ export default function Dashboard() {
           <h1>Dashboard</h1>
           <div className="subtitle">Workspace: Default SOC</div>
         </div>
-        <span className={"pill " + (status.state === "error" ? "pill-warn" : "pill-ok")} role="status">
-          {status.state === "loading" && "Connecting to API…"}
-          {status.state === "ok" && `API online · v${status.info.version}`}
-          {status.state === "error" && `API unreachable (${status.message})`}
-        </span>
       </header>
 
       <section className="kpi-grid" aria-label="Key figures">
@@ -50,14 +62,23 @@ export default function Dashboard() {
         ))}
       </section>
 
-      <div className="empty">
-        <span className="pill pill-warn">Skeleton (M0)</span>
-        <h3>No use case data yet</h3>
-        <p>
-          The MaGMa catalogue (12 L1, 62 L2, 169 L3), the scoring engine and the charts are added in
-          milestones M1 to M3. See docs/PLAN.md.
+      <section className="card" aria-labelledby="cat-h">
+        <h2 id="cat-h" style={{ marginBottom: 14 }}>
+          Catalogue
+        </h2>
+        {error && <p className="form-error">{error}</p>}
+        <dl className="stat-grid">
+          {counts.map((c) => (
+            <div key={c.label}>
+              <dt>{c.label}</dt>
+              <dd>{c.value}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="muted" style={{ margin: "14px 0 0", fontSize: 13 }}>
+          Scores and charts are added with the scoring engine in M2 and M3.
         </p>
-      </div>
+      </section>
     </>
   );
 }

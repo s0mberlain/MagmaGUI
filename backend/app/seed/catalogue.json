@@ -1,0 +1,1990 @@
+{
+ "l1": [
+  {
+   "code": "RE",
+   "name": "Reconnaissance",
+   "threat_category": "Cyber killchain",
+   "purpose": "",
+   "stakeholders": "",
+   "description": "Initial reconnaissance is the method of determining targets, (people, assets, services)",
+   "applicable": true
+  },
+  {
+   "code": "WE",
+   "name": "Weaponization",
+   "threat_category": "Cyber killchain",
+   "purpose": "",
+   "stakeholders": "",
+   "description": "Not Applicable, this action is performed at the attacker side and is invisible to the target organization",
+   "applicable": false
+  },
+  {
+   "code": "DE",
+   "name": "Delivery",
+   "threat_category": "Cyber killchain",
+   "purpose": "",
+   "stakeholders": "",
+   "description": "Delivery of malicious software to the target organization.",
+   "applicable": true
+  },
+  {
+   "code": "EX",
+   "name": "Exploitation",
+   "threat_category": "Cyber killchain",
+   "purpose": "",
+   "stakeholders": "",
+   "description": "Initial Exploitation is the first foothold by attackers to an organization, (first stage or second stage exploit).",
+   "applicable": true
+  },
+  {
+   "code": "IN",
+   "name": "Installation",
+   "threat_category": "Cyber killchain",
+   "purpose": "",
+   "stakeholders": "",
+   "description": "The steps an attacker takes after compromising a target, including elevation of privileges, and installation of backdoors. It enables attackers to remain persistent and use the host as a stepping stone for further actions.",
+   "applicable": true
+  },
+  {
+   "code": "CC",
+   "name": "Command & Control",
+   "threat_category": "Cyber killchain",
+   "purpose": "",
+   "stakeholders": "",
+   "description": "A communications channel is being set up with the attack to allow remote control over de compromised system",
+   "applicable": true
+  },
+  {
+   "code": "AO",
+   "name": "Actions on Objectives",
+   "threat_category": "Cyber killchain",
+   "purpose": "",
+   "stakeholders": "",
+   "description": "Any actions taken by the attackers after initial compromise",
+   "applicable": true
+  },
+  {
+   "code": "FE",
+   "name": "Fraud / Extortion",
+   "threat_category": "Other threats",
+   "purpose": "",
+   "stakeholders": "",
+   "description": "Any tampering of critical business systems which causes or further enables theft of virtual or physical assets via existing or current channels.",
+   "applicable": true
+  },
+  {
+   "code": "DD",
+   "name": "(D)DoS",
+   "threat_category": "Other threats",
+   "purpose": "",
+   "stakeholders": "",
+   "description": "Any Denial of Service attack, optionally distributed with the goal of causing outages.",
+   "applicable": true
+  },
+  {
+   "code": "PH",
+   "name": "Physical Access Compromise",
+   "threat_category": "Other threats",
+   "purpose": "",
+   "stakeholders": "",
+   "description": "Any compromise to physical systems information carriers (including documents) and buildings.",
+   "applicable": true
+  },
+  {
+   "code": "BL",
+   "name": "Blacklisting",
+   "threat_category": "Other threats",
+   "purpose": "",
+   "stakeholders": "",
+   "description": "Any occurrence of external IP addresses on blacklisting sites. Can include blacklists for bots, proxies, mail abuse, etc.",
+   "applicable": true
+  },
+  {
+   "code": "SD",
+   "name": "Sabotage / Destruction",
+   "threat_category": "Other threats",
+   "purpose": "",
+   "stakeholders": "",
+   "description": "Any action to destroy/damage organizational and personal asset, information or reputation with the goal of causing financial damage or service outages e.g.: social media data posting, doxing, etc.",
+   "applicable": true
+  },
+  {
+   "code": "PV",
+   "name": "Policy Violations",
+   "threat_category": "Other threats",
+   "purpose": "",
+   "stakeholders": "",
+   "description": "Illegal sites, service account usage, presence of vulnerabilities, Unauthorized process launched, etc..",
+   "applicable": true
+  }
+ ],
+ "l2": [
+  {
+   "code": "RE-POS",
+   "name": "Port Scanning",
+   "description": "Any scanning of ports to determine potential entry points into the organization"
+  },
+  {
+   "code": "RE-MAP",
+   "name": "Mail probing",
+   "description": "Any probing attempt via mail to determine valid user accounts"
+  },
+  {
+   "code": "RE-FIP",
+   "name": "Fingerprinting",
+   "description": "Any attempt to fingerprint devices, systems and applications"
+  },
+  {
+   "code": "RE-PAS",
+   "name": "Passive reconnaissance",
+   "description": "Reconnaissance activities that are carried out without actively scanning the organization. Mostly through harvesting publically available information"
+  },
+  {
+   "code": "RE-BRU",
+   "name": "Brute force",
+   "description": "Any attempt to brute force accounts on perimeter"
+  },
+  {
+   "code": "RE-SEN",
+   "name": "Social Engineering",
+   "description": "Any suspicious emails or calls attempted at eliciting employees to share organizational information"
+  },
+  {
+   "code": "RE-SMH",
+   "name": "Social media harvesting",
+   "description": "Any attempt to harvest and validate information regarding the organization using social media accounts"
+  },
+  {
+   "code": "DE-WEB",
+   "name": "Web based malware delivery",
+   "description": "Delivery of malware via malicious web pages, including exploit kits"
+  },
+  {
+   "code": "DE-EMA",
+   "name": "Email based malware delivery",
+   "description": "Delivery of malware via email "
+  },
+  {
+   "code": "DE-PHY",
+   "name": "Physical malware delivery",
+   "description": "Delivery of malware via physical means, such as a USB drive"
+  },
+  {
+   "code": "DE-WMO",
+   "name": "Widespread malware outbreak",
+   "description": "This is a use case that may cover other L2 malware related use cases. Reserved for use in case of multiple outbreaks within a short period, possibly across organizational domains or geographic locations"
+  },
+  {
+   "code": "DE-WRM",
+   "name": "Worm propagation",
+   "description": "Delivery of malware through automated propagation mechanisms. Such mechanisms are usually vulnerable protocols allowed within the organization"
+  },
+  {
+   "code": "DE-PHI",
+   "name": "Delivery of phishing mail",
+   "description": "(Attempted) delivery of phishing mails to recipients within the organization, including CEO fraud emails"
+  },
+  {
+   "code": "DE-RAT",
+   "name": "Delivery of Remote Access Tool",
+   "description": "(Attempted) delivery of a remote access tool to a user within the organization"
+  },
+  {
+   "code": "EX-AWE",
+   "name": "Application whitelist evasion attempt",
+   "description": "Any attempts to circumvent application whitelisting controls on end-points"
+  },
+  {
+   "code": "EX-NET",
+   "name": "Network-based attack",
+   "description": "Network-based attacks aimed at manipulating the information transmitted by the user across the network. This includes session hijacking and MITM attacks"
+  },
+  {
+   "code": "EX-BRU",
+   "name": "Brute force exploitation attempt",
+   "description": "Attempts to break into accounts and systems by performing a password guessing attack"
+  },
+  {
+   "code": "EX-IDS",
+   "name": "Network intrusion attempt",
+   "description": "Any direct intrusion attempt into the network, for example by using exploits against systems in the network. Intrusion attempts can be directed at mail servers, web servers or any other internet-facing servers"
+  },
+  {
+   "code": "EX-APP",
+   "name": "Application intrusion attempt",
+   "description": "Attempt to exploit a service, possibly resulting in application or service crashes"
+  },
+  {
+   "code": "IN-RAT",
+   "name": "Installation of Remote Access Tool or similar backdoor",
+   "description": "Any attempt (both successful and failed) to install a Remote Access Tool (RAT) onto an end-point"
+  },
+  {
+   "code": "IN-MAL",
+   "name": "Installation of malware",
+   "description": "Attempted installation of malware onto an end-point"
+  },
+  {
+   "code": "CC-SNC",
+   "name": "Suspicious outbound network communication",
+   "description": "Any suspicious network communication to an external destination. This includes C&C traffic, blacklisted resources, unauthenticated proxy requests, wrong DNS servers, malicious payload, new domains, suspicious TLDs, etc."
+  },
+  {
+   "code": "CC-CCH",
+   "name": "Covert channel",
+   "description": "Special type of suspicious network communication aimed at circumventing existent security measures. Can include privacy services such as TOR or true covert channels, for example in DNS traffic"
+  },
+  {
+   "code": "AO-COL",
+   "name": "Data collection",
+   "description": "Collection of information from within the network in preparation of data exfiltration. Collection always involves transfer of information to a central location"
+  },
+  {
+   "code": "AO-EXF",
+   "name": "Data exfiltration",
+   "description": "Exfiltration of information to outside the perimeter by attackers. This could be customer information or sensitive corporate information. Exfiltration can be done via the network or via USB drives"
+  },
+  {
+   "code": "AO-CRE",
+   "name": "Credential theft",
+   "description": "Stealing account credential from password databases, plain-text files or network sources. May include passive network sniffing of credentials due to usage of insecure communication protocols"
+  },
+  {
+   "code": "AO-REC",
+   "name": "Internal reconnaissance",
+   "description": "Internal reconnaissance is carried out by attackers after initial compromise to find systems and information that can be used to perform lateral movement"
+  },
+  {
+   "code": "AO-LAT",
+   "name": "Lateral movement",
+   "description": "Lateral movement is the movement of attackers from the initial compromise to another system. Attackers will try to move to always-on systems that have more network access than the system that was initially compromised"
+  },
+  {
+   "code": "AO-BRU",
+   "name": "Internal Brute force",
+   "description": "This use case is reserved for brute force attacks after initial compromise. This kind of activity supports the attackers in lateral movement"
+  },
+  {
+   "code": "AO-PRI",
+   "name": "Privilege escalation",
+   "description": "Any attempts to obtain higher privileges on the system by the attacker, for example through modification of the account or group"
+  },
+  {
+   "code": "AO-FIL",
+   "name": "File corruption, encryption and unauthorized access",
+   "description": "This activity could be due to a ransomware attack or due to a an attacker in the network either looking for sensitive information or seeking to destroy documents"
+  },
+  {
+   "code": "AO-ACC",
+   "name": "Account breached",
+   "description": "Any indications that an account on a system or application was compromised. This includes pass-the-hash attacks"
+  },
+  {
+   "code": "AO-PER",
+   "name": "Installation of persistence mechanism",
+   "description": "Persistence mechanisms are used to by the attackers so that they can return to the compromised system at any time. Persistence mechanisms include registry keys and applications run at startup"
+  },
+  {
+   "code": "AO-DBC",
+   "name": "Database compromise attempt",
+   "description": "Any attempts to compromise a database or database account"
+  },
+  {
+   "code": "AO-EVA",
+   "name": "Detection evasion techniques",
+   "description": "Any attempts to remove indications of malicious activity by the attacker himself. This can include sabotage of the target system or removal of audit logs. This also includes other detection evasion techniques"
+  },
+  {
+   "code": "AO-CSC",
+   "name": "Cloud Service or Account compromise",
+   "description": "Any indications that a cloud service (SaaS) or account was compromised and is actively being used to either obtain sensitive information or to move laterally into the company internal perimeter"
+  },
+  {
+   "code": "AO-RAT",
+   "name": "Usage of remote access tool",
+   "description": "Usage of remote access tool on host. These tools are used to remotely access and use the compromised system"
+  },
+  {
+   "code": "AO-RND",
+   "name": "Rogue network device or service",
+   "description": "A new network device or network service could be introduced into the network for purposes of information gathering and lateral movement. New devices could be virtual machines, while new services include DNS, Proxy and DHCP services"
+  },
+  {
+   "code": "AO-ALL",
+   "name": "Multiple AO categories",
+   "description": "This category is reserved for situations in which a single host . Usually, this category is used by generic anomaly detection tools or security monitoring overlays (e.g. multiple alerts from a single device)"
+  },
+  {
+   "code": "FE-EXT",
+   "name": "Extortion attempts",
+   "description": "Any attempts by attackers to gain financial compensation from the organization by not taking action. Such action may include DDoS attacks or sensitive information disclosure"
+  },
+  {
+   "code": "FE-CEO",
+   "name": "CEO Fraud",
+   "description": "Attempts by criminals to impersonate the organization's CEO or other board-level executive and to have the victim transfer large amounts of money. Usually carried out by sending spoofed email or by business email compromise"
+  },
+  {
+   "code": "DD-VOL",
+   "name": "Volume DDoS",
+   "description": "DDoS attack conducted by directing high volumes of (spoofed) traffic to out organization’s network"
+  },
+  {
+   "code": "DD-PRO",
+   "name": "Protocol (D)Dos",
+   "description": "DDoS attack using protocol anomalies. Some network equipment or firewalls cannot effectively deal with some types of protocol attacks. Most commonly, this results in resource exhaustion"
+  },
+  {
+   "code": "DD-APP",
+   "name": "Application (D)DoS",
+   "description": "(D)Dos attack conducted by mimicking high volumes of legitimate traffic to our web application servers"
+  },
+  {
+   "code": "PH-DCE",
+   "name": "Illegal entry into datacenter",
+   "description": "Physical access compromise by an attacker into the data center"
+  },
+  {
+   "code": "PH-OFE",
+   "name": "Illegal entry into office space",
+   "description": "Physical access compromise by an attacker into the office space"
+  },
+  {
+   "code": "PH-MOB",
+   "name": "Mobile device lost or stolen",
+   "description": "Mobile device, such as a tablet or a phone lost or stolen"
+  },
+  {
+   "code": "PH-AAT",
+   "name": "Anomalous access token usage",
+   "description": "Any anomalous usage of access tokens, such as entry badges"
+  },
+  {
+   "code": "PH-NAC",
+   "name": "Physical network access compromise",
+   "description": "This is usually placement of a physical rogue device in the network. Such a device could be a wireless access point (WAP) or any other device, including Raspberry pi"
+  },
+  {
+   "code": "BL-IPB",
+   "name": "IP blacklisting",
+   "description": "Note that backlisting may occur from resource abuse, but requires a different response as the entry must be removed from the blacklist as soon as possible to avoid further reputational damage"
+  },
+  {
+   "code": "BL-MAB",
+   "name": "Mail server blacklisting",
+   "description": "Any occasion where an organizational email server was blacklisted, possibly due to sending spam or malicious email"
+  },
+  {
+   "code": "SD-CYS",
+   "name": "Cyber sabotage",
+   "description": "Sabotage or destruction of a system through means of computer. This can be done as part of a cover-up strategy or simply to disrupt business. "
+  },
+  {
+   "code": "SD-PHS",
+   "name": "Physical sabotage",
+   "description": "Physical sabotage of an asset. This is physical damage directly from the attacker, or physical damage as a result of industrial sabotage. In case of ICS, sabotage can lead to physical destruction and thus have safety impact as well."
+  },
+  {
+   "code": "SD-WEB",
+   "name": "Defacement",
+   "description": "Defacement of (most likely) organizational websites. Usually conducted by hacktivist actors"
+  },
+  {
+   "code": "PV-ICS",
+   "name": "Illegal content streaming or usage of disallowed web service",
+   "description": "This could be copyrighted material, but also includes other illegal categories"
+  },
+  {
+   "code": "PV-COM",
+   "name": "Insecure communication protocol",
+   "description": "Usage of protocols that are outdated and unsecure. Examples of such protocols are FTP and telnet"
+  },
+  {
+   "code": "PV-VUL",
+   "name": "Vulnerable system or service",
+   "description": "Any vulnerable systems or applications / services that leave the system vulnerable for compromise"
+  },
+  {
+   "code": "PV-PRC",
+   "name": "Unauthorized process launched",
+   "description": "Launch of an unauthorized process. Examples of such processes are psexec, powershell and the command prompt. Also covers unauthorized processes running as a service"
+  },
+  {
+   "code": "PV-APP",
+   "name": "Illegal or aberrant application found on host",
+   "description": "Any application present on hosts that are not allowed by policy or are quite simply illegal. Examples of such applications are hacking tools and pirated software"
+  },
+  {
+   "code": "PV-RES",
+   "name": "Resource abuse",
+   "description": "This use case is reserved for situations where systems are being abused, for example for bitcoin mining"
+  },
+  {
+   "code": "PV-ACC",
+   "name": "Unauthorized use of high-privileged account",
+   "description": "Any unauthorized use of accounts with high privileges, such as root accounts on Linux / UNIX and administrator accounts on Windows"
+  },
+  {
+   "code": "PV-POL",
+   "name": "Unauthorized modification of technical policy",
+   "description": "Unauthorized modification of configuration settings. This can be a compliance issue, where the configuration may result in a hardening baseline deviation. It can also be part of malicious activity"
+  }
+ ],
+ "l3": [
+  {
+   "code": "AO-ACC-01",
+   "name": "Detect Unauthorized Usage of Valid Accounts",
+   "description": "",
+   "attack_techniques": [
+    "T1078"
+   ]
+  },
+  {
+   "code": "AO-ACC-02",
+   "name": "Detect Account Manipulation",
+   "description": "",
+   "attack_techniques": [
+    "T1098"
+   ]
+  },
+  {
+   "code": "AO-ACC-03",
+   "name": "Detect Unauthorized Account Creation",
+   "description": "",
+   "attack_techniques": [
+    "T1136"
+   ]
+  },
+  {
+   "code": "AO-BRU-01",
+   "name": "Detect Brute Force Attack",
+   "description": "",
+   "attack_techniques": [
+    "T1110"
+   ]
+  },
+  {
+   "code": "AO-COL-01",
+   "name": "Detect Audio Capture",
+   "description": "",
+   "attack_techniques": [
+    "T1123"
+   ]
+  },
+  {
+   "code": "AO-COL-02",
+   "name": "Detect Automated Collection",
+   "description": "",
+   "attack_techniques": [
+    "T1119"
+   ]
+  },
+  {
+   "code": "AO-COL-03",
+   "name": "Detect Anomalous Clipboard Data",
+   "description": "",
+   "attack_techniques": [
+    "T1115"
+   ]
+  },
+  {
+   "code": "AO-COL-04",
+   "name": "Detect Staged Data",
+   "description": "",
+   "attack_techniques": [
+    "T1074"
+   ]
+  },
+  {
+   "code": "AO-COL-05",
+   "name": "Detect Data Collection from Local System",
+   "description": "",
+   "attack_techniques": [
+    "T1005"
+   ]
+  },
+  {
+   "code": "AO-COL-06",
+   "name": "Detect Data Collection from Network Shared Drive",
+   "description": "",
+   "attack_techniques": [
+    "T1039"
+   ]
+  },
+  {
+   "code": "AO-COL-07",
+   "name": "Detect Data Collection from Removable Media",
+   "description": "",
+   "attack_techniques": [
+    "T1025"
+   ]
+  },
+  {
+   "code": "AO-COL-08",
+   "name": "Detect Email Collection",
+   "description": "",
+   "attack_techniques": [
+    "T1114"
+   ]
+  },
+  {
+   "code": "AO-COL-09",
+   "name": "Detect Screen Capture",
+   "description": "",
+   "attack_techniques": [
+    "T1113"
+   ]
+  },
+  {
+   "code": "AO-COL-10",
+   "name": "Detect Video Capture",
+   "description": "",
+   "attack_techniques": [
+    "T1125"
+   ]
+  },
+  {
+   "code": "AO-CRE-01",
+   "name": "Detect Credential Dumping Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1003"
+   ]
+  },
+  {
+   "code": "AO-CRE-02",
+   "name": "Detect Credential Storage in Files",
+   "description": "",
+   "attack_techniques": [
+    "T1081"
+   ]
+  },
+  {
+   "code": "AO-CRE-03",
+   "name": "Detect Input Capturing",
+   "description": "",
+   "attack_techniques": [
+    "T1056"
+   ]
+  },
+  {
+   "code": "AO-CRE-04",
+   "name": "Detect Input Prompt",
+   "description": "",
+   "attack_techniques": [
+    "T1141"
+   ]
+  },
+  {
+   "code": "AO-CRE-05",
+   "name": "Detect Compromise of User Keychain",
+   "description": "",
+   "attack_techniques": [
+    "T1142"
+   ]
+  },
+  {
+   "code": "AO-CRE-06",
+   "name": "Detect Network Sniffing",
+   "description": "",
+   "attack_techniques": [
+    "T1040"
+   ]
+  },
+  {
+   "code": "AO-CRE-07",
+   "name": "Detect Theft or Abuse of Private Keys",
+   "description": "",
+   "attack_techniques": [
+    "T1145"
+   ]
+  },
+  {
+   "code": "AO-CRE-08",
+   "name": "Detect Securityd Memory Access Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1167"
+   ]
+  },
+  {
+   "code": "AO-CRE-09",
+   "name": "Detect Two-Factor Authentication Interception Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1111"
+   ]
+  },
+  {
+   "code": "AO-EVA-01",
+   "name": "Detect Presence of Binary Padding to Files",
+   "description": "",
+   "attack_techniques": [
+    "T1009"
+   ]
+  },
+  {
+   "code": "AO-EVA-02",
+   "name": "Detect Clear Command History Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1146"
+   ]
+  },
+  {
+   "code": "AO-EVA-03",
+   "name": "Detect Presence of Malicious Signed Binary",
+   "description": "",
+   "attack_techniques": [
+    "T1116"
+   ]
+  },
+  {
+   "code": "AO-EVA-04",
+   "name": "Detect DLL Injection Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1055"
+   ]
+  },
+  {
+   "code": "AO-EVA-05",
+   "name": "Detect DLL Side-Loading Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1073"
+   ]
+  },
+  {
+   "code": "AO-EVA-06",
+   "name": "Detect File System Logical Offset Access",
+   "description": "",
+   "attack_techniques": [
+    "T1006"
+   ]
+  },
+  {
+   "code": "AO-EVA-07",
+   "name": "Detect Gatekeeper Bypass Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1144"
+   ]
+  },
+  {
+   "code": "AO-EVA-08",
+   "name": "Unauthorized Modification of HISTCONTROL Variable",
+   "description": "",
+   "attack_techniques": [
+    "T1148"
+   ]
+  },
+  {
+   "code": "AO-EVA-09",
+   "name": "Detect Usage of Hidden Files and Directories",
+   "description": "",
+   "attack_techniques": [
+    "T1158"
+   ]
+  },
+  {
+   "code": "AO-EVA-10",
+   "name": "Detect Hidden Users",
+   "description": "",
+   "attack_techniques": [
+    "T1147"
+   ]
+  },
+  {
+   "code": "AO-EVA-11",
+   "name": "Detect Existence of Hidden Window",
+   "description": "",
+   "attack_techniques": [
+    "T1143"
+   ]
+  },
+  {
+   "code": "AO-EVA-12",
+   "name": "Detect Indicator Transport Blocking Attempts",
+   "description": "",
+   "attack_techniques": [
+    "T1054"
+   ]
+  },
+  {
+   "code": "AO-EVA-13",
+   "name": "Detect Indicator Removal from Tools",
+   "description": "",
+   "attack_techniques": [
+    "T1066"
+   ]
+  },
+  {
+   "code": "AO-EVA-14",
+   "name": "Detect Indicator Removal on Host",
+   "description": "",
+   "attack_techniques": [
+    "T1070"
+   ]
+  },
+  {
+   "code": "AO-EVA-15",
+   "name": "Detect Malicious Software with NTFS Extended Attribute Functionality",
+   "description": "",
+   "attack_techniques": [
+    "T1096"
+   ]
+  },
+  {
+   "code": "AO-EVA-16",
+   "name": "Detect Anomalous Removal of Network Share Connection",
+   "description": "",
+   "attack_techniques": [
+    "T1126"
+   ]
+  },
+  {
+   "code": "AO-EVA-17",
+   "name": "Detect Rootkit Presence",
+   "description": "",
+   "attack_techniques": [
+    "T1014"
+   ]
+  },
+  {
+   "code": "AO-EVA-18",
+   "name": "Detect Presence of Unauthorized Software Packing",
+   "description": "",
+   "attack_techniques": [
+    "T1045"
+   ]
+  },
+  {
+   "code": "AO-EVA-19",
+   "name": "Detect Malicious Software with Timestomp Functionality",
+   "description": "",
+   "attack_techniques": [
+    "T1099"
+   ]
+  },
+  {
+   "code": "AO-EVA-20",
+   "name": "Detect Unauthorized Read of Bash History File",
+   "description": "",
+   "attack_techniques": [
+    "T1139"
+   ]
+  },
+  {
+   "code": "AO-EXF-01",
+   "name": "Detect Automated Exfiltration Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1020"
+   ]
+  },
+  {
+   "code": "AO-EXF-02",
+   "name": "Detect Anomalous Compressed Data in Transit",
+   "description": "",
+   "attack_techniques": [
+    "T1002"
+   ]
+  },
+  {
+   "code": "AO-EXF-03",
+   "name": "Detect Anomalous Encrypted Data in Transit",
+   "description": "",
+   "attack_techniques": [
+    "T1022"
+   ]
+  },
+  {
+   "code": "AO-EXF-04",
+   "name": "Detect Data Transfer Size Limit Evasion Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1030"
+   ]
+  },
+  {
+   "code": "AO-EXF-05",
+   "name": "Detect Exfiltration Over Alternative Protocol",
+   "description": "",
+   "attack_techniques": [
+    "T1048"
+   ]
+  },
+  {
+   "code": "AO-EXF-06",
+   "name": "Detect Exfiltration Over Command and Control Channel",
+   "description": "",
+   "attack_techniques": [
+    "T1041"
+   ]
+  },
+  {
+   "code": "AO-EXF-07",
+   "name": "Detect Exfiltration Over Other Network Medium",
+   "description": "",
+   "attack_techniques": [
+    "T1011"
+   ]
+  },
+  {
+   "code": "AO-EXF-08",
+   "name": "Detect Exfiltration Over Physical Medium",
+   "description": "",
+   "attack_techniques": [
+    "T1052"
+   ]
+  },
+  {
+   "code": "AO-EXF-09",
+   "name": "Detect Scheduled Data Transfer",
+   "description": "",
+   "attack_techniques": [
+    "T1029"
+   ]
+  },
+  {
+   "code": "AO-FIL-01",
+   "name": "Detect Malicious Software With Deobfuscate/Decode Functionality for Files or Information",
+   "description": "",
+   "attack_techniques": [
+    "T1140"
+   ]
+  },
+  {
+   "code": "AO-FIL-02",
+   "name": "Detect Anomalous File Deletion Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1107"
+   ]
+  },
+  {
+   "code": "AO-FIL-03",
+   "name": "Detect Presence of Obfuscated Files or Information",
+   "description": "",
+   "attack_techniques": [
+    "T1027"
+   ]
+  },
+  {
+   "code": "AO-LAT-01",
+   "name": "Detect Pass the Hash Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1075"
+   ]
+  },
+  {
+   "code": "AO-LAT-02",
+   "name": "Detect Pass the Ticket Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1097"
+   ]
+  },
+  {
+   "code": "AO-LAT-03",
+   "name": "Detect Anomalous Remote Desktop Protocol Connection",
+   "description": "",
+   "attack_techniques": [
+    "T1076"
+   ]
+  },
+  {
+   "code": "AO-LAT-04",
+   "name": "Detect Remote File Copy Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1105"
+   ]
+  },
+  {
+   "code": "AO-LAT-05",
+   "name": "Detect Presence of Unauthorized Remote Services",
+   "description": "",
+   "attack_techniques": [
+    "T1021"
+   ]
+  },
+  {
+   "code": "AO-LAT-06",
+   "name": "Detect Replication Attempt Through Removable Media",
+   "description": "",
+   "attack_techniques": [
+    "T1091"
+   ]
+  },
+  {
+   "code": "AO-LAT-07",
+   "name": "Detect Unauthorized Modifications to Shared Webroot",
+   "description": "",
+   "attack_techniques": [
+    "T1051"
+   ]
+  },
+  {
+   "code": "AO-LAT-08",
+   "name": "Detect Presence Taint Content in Shares",
+   "description": "",
+   "attack_techniques": [
+    "T1080"
+   ]
+  },
+  {
+   "code": "AO-LAT-09",
+   "name": "Detect Presence of Unauthorized or Modified Third-party Software",
+   "description": "",
+   "attack_techniques": [
+    "T1072"
+   ]
+  },
+  {
+   "code": "AO-LAT-10",
+   "name": "Detect Anomalous Usage of Windows Admin Shares",
+   "description": "",
+   "attack_techniques": [
+    "T1077"
+   ]
+  },
+  {
+   "code": "AO-LAT-11",
+   "name": "Detect Unauthorized Windows Remote Management Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1028"
+   ]
+  },
+  {
+   "code": "AO-LAT-12",
+   "name": "Detect Unauthorized Usage of Command-Line Interface",
+   "description": "",
+   "attack_techniques": [
+    "T1059"
+   ]
+  },
+  {
+   "code": "AO-PER-01",
+   "name": "Detect Unauthorized Modifications of .bash_profile and .bashrc",
+   "description": "",
+   "attack_techniques": [
+    "T1156"
+   ]
+  },
+  {
+   "code": "AO-PER-02",
+   "name": "Detect Modifications of Accessibility Feature Binaries",
+   "description": "",
+   "attack_techniques": [
+    "T1015"
+   ]
+  },
+  {
+   "code": "AO-PER-03",
+   "name": "Detect Anomalous AppInit DLL Loading",
+   "description": "",
+   "attack_techniques": [
+    "T1103"
+   ]
+  },
+  {
+   "code": "AO-PER-04",
+   "name": "Detect Modifications of Authentication Package Registry Keys",
+   "description": "",
+   "attack_techniques": [
+    "T1131"
+   ]
+  },
+  {
+   "code": "AO-PER-05",
+   "name": "Detect Bootkit Presence",
+   "description": "",
+   "attack_techniques": [
+    "T1067"
+   ]
+  },
+  {
+   "code": "AO-PER-06",
+   "name": "Detect Anomalous Modifications of Default File Association",
+   "description": "",
+   "attack_techniques": [
+    "T1042"
+   ]
+  },
+  {
+   "code": "AO-PER-07",
+   "name": "Detect Component Firmware Installation Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1109"
+   ]
+  },
+  {
+   "code": "AO-PER-08",
+   "name": "Detect Component Object Model Hijacking",
+   "description": "",
+   "attack_techniques": [
+    "T1122"
+   ]
+  },
+  {
+   "code": "AO-PER-09",
+   "name": "Detect Presence of Unauthorized Cron Job",
+   "description": "",
+   "attack_techniques": [
+    "T1168"
+   ]
+  },
+  {
+   "code": "AO-PER-10",
+   "name": "Detect Installation of External Remote Services",
+   "description": "",
+   "attack_techniques": [
+    "T1133"
+   ]
+  },
+  {
+   "code": "AO-PER-11",
+   "name": "Detect Unauthorized type-1 Hypervisor Presence",
+   "description": "",
+   "attack_techniques": [
+    "T1062"
+   ]
+  },
+  {
+   "code": "AO-PER-12",
+   "name": "Detect Unauthorized LC_LOAD_DYLIB Addition Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1161"
+   ]
+  },
+  {
+   "code": "AO-PER-13",
+   "name": "Detect Unauthorized Launch Agent Creation",
+   "description": "",
+   "attack_techniques": [
+    "T1159"
+   ]
+  },
+  {
+   "code": "AO-PER-14",
+   "name": "Detect Unauthorized Local Port Monitoring Installation",
+   "description": "",
+   "attack_techniques": [
+    "T1013"
+   ]
+  },
+  {
+   "code": "AO-PER-15",
+   "name": "Detect Unauthorized Login Item Creation",
+   "description": "",
+   "attack_techniques": [
+    "T1162"
+   ]
+  },
+  {
+   "code": "AO-PER-16",
+   "name": "Detect Modification of Existing Service",
+   "description": "",
+   "attack_techniques": [
+    "T1031"
+   ]
+  },
+  {
+   "code": "AO-PER-17",
+   "name": "Detect Netsh Helper DLL Loading Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1128"
+   ]
+  },
+  {
+   "code": "AO-PER-18",
+   "name": "Detect Installation of New Service",
+   "description": "",
+   "attack_techniques": [
+    "T1050"
+   ]
+  },
+  {
+   "code": "AO-PER-19",
+   "name": "Detect Anomalous Office Application Startup File",
+   "description": "",
+   "attack_techniques": [
+    "T1137"
+   ]
+  },
+  {
+   "code": "AO-PER-20",
+   "name": "Detect Unauthorized Modification of Rc.common File",
+   "description": "",
+   "attack_techniques": [
+    "T1163"
+   ]
+  },
+  {
+   "code": "AO-PER-21",
+   "name": "Detect Unauthorized Modification to Re-opened Application List",
+   "description": "",
+   "attack_techniques": [
+    "T1164"
+   ]
+  },
+  {
+   "code": "AO-PER-22",
+   "name": "Detect Presence of Redundant Access Tool",
+   "description": "",
+   "attack_techniques": [
+    "T1108"
+   ]
+  },
+  {
+   "code": "AO-PER-23",
+   "name": "Detect Unauthorized Modification of Registry Run Keys / Start Folder",
+   "description": "",
+   "attack_techniques": [
+    "T1060"
+   ]
+  },
+  {
+   "code": "AO-PER-24",
+   "name": "Detect Unauthorized Modification of Security Support Provider Registry Keys",
+   "description": "",
+   "attack_techniques": [
+    "T1101"
+   ]
+  },
+  {
+   "code": "AO-PER-25",
+   "name": "Detect Abuse of Service Registry Permissions Weakness",
+   "description": "",
+   "attack_techniques": [
+    "T1058"
+   ]
+  },
+  {
+   "code": "AO-PER-26",
+   "name": "Detect Anomalous Shortcut Modification",
+   "description": "",
+   "attack_techniques": [
+    "T1023"
+   ]
+  },
+  {
+   "code": "AO-PER-27",
+   "name": "Detect Modifications of Startup Items",
+   "description": "",
+   "attack_techniques": [
+    "T1165"
+   ]
+  },
+  {
+   "code": "AO-PER-28",
+   "name": "Detect System Firmware Manipulation",
+   "description": "",
+   "attack_techniques": [
+    "T1019"
+   ]
+  },
+  {
+   "code": "AO-PER-29",
+   "name": "Detect Presence of Web Shell",
+   "description": "",
+   "attack_techniques": [
+    "T1100"
+   ]
+  },
+  {
+   "code": "AO-PER-30",
+   "name": "Detect Modifications to Windows Management Instrumentation Event Subscription",
+   "description": "",
+   "attack_techniques": [
+    "T1084"
+   ]
+  },
+  {
+   "code": "AO-PER-31",
+   "name": "Detect Modifications of Winlogon Helper DLL Registry Keys",
+   "description": "",
+   "attack_techniques": [
+    "T1004"
+   ]
+  },
+  {
+   "code": "AO-PRI-01",
+   "name": "Detect Access Token Manipulation Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1134"
+   ]
+  },
+  {
+   "code": "AO-PRI-02",
+   "name": "Detect Application Shimming",
+   "description": "",
+   "attack_techniques": [
+    "T1138"
+   ]
+  },
+  {
+   "code": "AO-PRI-03",
+   "name": "Detect User Account Control Bypass Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1088"
+   ]
+  },
+  {
+   "code": "AO-PRI-04",
+   "name": "Detect DLL Search Order Hijacking Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1038"
+   ]
+  },
+  {
+   "code": "AO-PRI-05",
+   "name": "Detect Dylib Hijacking Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1157"
+   ]
+  },
+  {
+   "code": "AO-PRI-06",
+   "name": "Detect Abuse of File System Permissions Weakness",
+   "description": "",
+   "attack_techniques": [
+    "T1044"
+   ]
+  },
+  {
+   "code": "AO-PRI-07",
+   "name": "Detect Unauthorized Launch Daemon Creation",
+   "description": "",
+   "attack_techniques": [
+    "T1160"
+   ]
+  },
+  {
+   "code": "AO-PRI-08",
+   "name": "Detect Path Interception Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1034"
+   ]
+  },
+  {
+   "code": "AO-PRI-09",
+   "name": "Detect Unauthorized Plist Modification",
+   "description": "",
+   "attack_techniques": [
+    "T1150"
+   ]
+  },
+  {
+   "code": "AO-PRI-10",
+   "name": "Detect Presence of Unauthorized Scheduled Task",
+   "description": "",
+   "attack_techniques": [
+    "T1053"
+   ]
+  },
+  {
+   "code": "AO-PRI-11",
+   "name": "Detect Abuse of Setuid and Setgid Files",
+   "description": "",
+   "attack_techniques": [
+    "T1166"
+   ]
+  },
+  {
+   "code": "AO-REC-01",
+   "name": "Detect Account Discovery Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1087"
+   ]
+  },
+  {
+   "code": "AO-REC-02",
+   "name": "Detect Application Window Discovery Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1010"
+   ]
+  },
+  {
+   "code": "AO-REC-03",
+   "name": "Detect File and Directory Discovery Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1083"
+   ]
+  },
+  {
+   "code": "AO-REC-04",
+   "name": "Detect Network Service Scanning Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1046"
+   ]
+  },
+  {
+   "code": "AO-REC-05",
+   "name": "Detect Network Share Discovery Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1135"
+   ]
+  },
+  {
+   "code": "AO-REC-06",
+   "name": "Detect Peripheral Device Discovery Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1120"
+   ]
+  },
+  {
+   "code": "AO-REC-07",
+   "name": "Detect Permission Groups Discovery Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1069"
+   ]
+  },
+  {
+   "code": "AO-REC-08",
+   "name": "Detect Process Discovery Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1057"
+   ]
+  },
+  {
+   "code": "AO-REC-09",
+   "name": "Detect Anomalous Registry Query",
+   "description": "",
+   "attack_techniques": [
+    "T1012"
+   ]
+  },
+  {
+   "code": "AO-REC-10",
+   "name": "Detect Remote System Discovery Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1018"
+   ]
+  },
+  {
+   "code": "AO-REC-11",
+   "name": "Detect Security Software Discovery Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1063"
+   ]
+  },
+  {
+   "code": "AO-REC-12",
+   "name": "Detect System Information Discovery Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1082"
+   ]
+  },
+  {
+   "code": "AO-REC-13",
+   "name": "Detect System Network Configuration Discovery Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1016"
+   ]
+  },
+  {
+   "code": "AO-REC-14",
+   "name": "Detect System Network Connections Discovery Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1049"
+   ]
+  },
+  {
+   "code": "AO-REC-15",
+   "name": "Detect System Owner/User Discovery Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1033"
+   ]
+  },
+  {
+   "code": "AO-REC-16",
+   "name": "Detect System Service Discovery Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1007"
+   ]
+  },
+  {
+   "code": "AO-REC-17",
+   "name": "Detect System Time Discovery Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1124"
+   ]
+  },
+  {
+   "code": "CC-SNC-01",
+   "name": "Detect Anomalous Usage of Commonly Used Port",
+   "description": "",
+   "attack_techniques": [
+    "T1043"
+   ]
+  },
+  {
+   "code": "CC-SNC-02",
+   "name": "Detect Communication Attempt Through Removable Media",
+   "description": "",
+   "attack_techniques": [
+    "T1092"
+   ]
+  },
+  {
+   "code": "CC-SNC-03",
+   "name": "Detect Anomalous Connection Proxy",
+   "description": "",
+   "attack_techniques": [
+    "T1090"
+   ]
+  },
+  {
+   "code": "CC-SNC-04",
+   "name": "Detect Custom Command and Control Protocol",
+   "description": "",
+   "attack_techniques": [
+    "T1094"
+   ]
+  },
+  {
+   "code": "CC-SNC-05",
+   "name": "Detect Custom Cryptographic Protocol",
+   "description": "",
+   "attack_techniques": [
+    "T1024"
+   ]
+  },
+  {
+   "code": "CC-SNC-06",
+   "name": "Detect Data Encoding",
+   "description": "",
+   "attack_techniques": [
+    "T1132"
+   ]
+  },
+  {
+   "code": "CC-SNC-07",
+   "name": "Detect Data Obfuscation",
+   "description": "",
+   "attack_techniques": [
+    "T1001"
+   ]
+  },
+  {
+   "code": "CC-SNC-08",
+   "name": "Detect Existence of Fallback Channels",
+   "description": "",
+   "attack_techniques": [
+    "T1008"
+   ]
+  },
+  {
+   "code": "CC-SNC-09",
+   "name": "Detect Existence of Multi-Stage Channels",
+   "description": "",
+   "attack_techniques": [
+    "T1104"
+   ]
+  },
+  {
+   "code": "CC-SNC-10",
+   "name": "Detect Existence of Multiband Communication",
+   "description": "",
+   "attack_techniques": [
+    "T1026"
+   ]
+  },
+  {
+   "code": "CC-SNC-11",
+   "name": "Detect Usage of Multilayer Encryption",
+   "description": "",
+   "attack_techniques": [
+    "T1079"
+   ]
+  },
+  {
+   "code": "CC-SNC-12",
+   "name": "Detect Anomalous Usage of Standard Application Layer Protocol",
+   "description": "",
+   "attack_techniques": [
+    "T1071"
+   ]
+  },
+  {
+   "code": "CC-SNC-13",
+   "name": "Detect Anomalous Usage of Standard Cryptographic Protocol",
+   "description": "",
+   "attack_techniques": [
+    "T1032"
+   ]
+  },
+  {
+   "code": "CC-SNC-14",
+   "name": "Detect Anomalous Usage of Standard Non-Application Layer Protocol",
+   "description": "",
+   "attack_techniques": [
+    "T1095"
+   ]
+  },
+  {
+   "code": "CC-SNC-15",
+   "name": "Detect Usage of Uncommonly Used Port",
+   "description": "",
+   "attack_techniques": [
+    "T1065"
+   ]
+  },
+  {
+   "code": "CC-SNC-16",
+   "name": "Detect Unauthorized Usage of Web Service",
+   "description": "",
+   "attack_techniques": [
+    "T1102"
+   ]
+  },
+  {
+   "code": "EX-AWE-01",
+   "name": "Detect Usage of InstallUtil",
+   "description": "",
+   "attack_techniques": [
+    "T1118"
+   ]
+  },
+  {
+   "code": "EX-AWE-02",
+   "name": "Detect LC_MAIN Hijacking Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1149"
+   ]
+  },
+  {
+   "code": "EX-AWE-03",
+   "name": "Detect Unauthorized Launchctl Creation",
+   "description": "",
+   "attack_techniques": [
+    "T1152"
+   ]
+  },
+  {
+   "code": "EX-AWE-04",
+   "name": "Detect Masquerading Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1036"
+   ]
+  },
+  {
+   "code": "EX-AWE-05",
+   "name": "Detect Unauthorized Execution of AppleScript",
+   "description": "",
+   "attack_techniques": [
+    "T1155"
+   ]
+  },
+  {
+   "code": "EX-AWE-06",
+   "name": "Detect Unauthorized Usage of Application Deployment Software",
+   "description": "",
+   "attack_techniques": [
+    "T1017"
+   ]
+  },
+  {
+   "code": "EX-AWE-08",
+   "name": "Detect Modification of Logon Scripts",
+   "description": "",
+   "attack_techniques": [
+    "T1037"
+   ]
+  },
+  {
+   "code": "EX-AWE-09",
+   "name": "Detect Process Execution Attempt through API",
+   "description": "",
+   "attack_techniques": [
+    "T1106"
+   ]
+  },
+  {
+   "code": "EX-AWE-10",
+   "name": "Detect Process Execution Attempt through Module Load",
+   "description": "",
+   "attack_techniques": [
+    "T1129"
+   ]
+  },
+  {
+   "code": "EX-AWE-11",
+   "name": "Detect Unauthorized Use of Graphical User Interface for Remote Access",
+   "description": "",
+   "attack_techniques": [
+    "T1061"
+   ]
+  },
+  {
+   "code": "EX-AWE-12",
+   "name": "Detect Process Hollowing Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1093"
+   ]
+  },
+  {
+   "code": "EX-AWE-13",
+   "name": "Detect Anomalous Usage of Regsvcs/Regasm",
+   "description": "",
+   "attack_techniques": [
+    "T1121"
+   ]
+  },
+  {
+   "code": "EX-AWE-14",
+   "name": "Detect Anomalous Usage of Trusted Developer Utilities",
+   "description": "",
+   "attack_techniques": [
+    "T1127"
+   ]
+  },
+  {
+   "code": "EX-AWE-15",
+   "name": "Detect Anomalous Execution of Regsvr32",
+   "description": "",
+   "attack_techniques": [
+    "T1117"
+   ]
+  },
+  {
+   "code": "EX-AWE-16",
+   "name": "Detect Anomalous Execution of Rundll32",
+   "description": "",
+   "attack_techniques": [
+    "T1085"
+   ]
+  },
+  {
+   "code": "EX-NET-01",
+   "name": "Detect Installation of Root Certificate",
+   "description": "",
+   "attack_techniques": [
+    "T1130"
+   ]
+  },
+  {
+   "code": "PV-ACC-01",
+   "name": "Detect Unauthorized Usage of Sudo",
+   "description": "",
+   "attack_techniques": [
+    "T1169"
+   ]
+  },
+  {
+   "code": "PV-POL-01",
+   "name": "Detect Disabling of Security Tools",
+   "description": "",
+   "attack_techniques": [
+    "T1089"
+   ]
+  },
+  {
+   "code": "PV-POL-02",
+   "name": "Detect Unauthorized Registry Modification Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1112"
+   ]
+  },
+  {
+   "code": "PV-PRC-01",
+   "name": "Detect Unauthorized Execution of PowerShell",
+   "description": "",
+   "attack_techniques": [
+    "T1086"
+   ]
+  },
+  {
+   "code": "PV-PRC-02",
+   "name": "Detect Unauthorized Execution of Scripts",
+   "description": "",
+   "attack_techniques": [
+    "T1064"
+   ]
+  },
+  {
+   "code": "PV-PRC-03",
+   "name": "Detect Unauthorized Service Execution",
+   "description": "",
+   "attack_techniques": [
+    "T1035"
+   ]
+  },
+  {
+   "code": "PV-PRC-04",
+   "name": "Detect Shell Execution of Source",
+   "description": "",
+   "attack_techniques": [
+    "T1153"
+   ]
+  },
+  {
+   "code": "PV-PRC-05",
+   "name": "Detect Files with Space after Filename",
+   "description": "",
+   "attack_techniques": [
+    "T1151"
+   ]
+  },
+  {
+   "code": "PV-PRC-06",
+   "name": "Detect Anomalous Trap Usage",
+   "description": "",
+   "attack_techniques": [
+    "T1154"
+   ]
+  },
+  {
+   "code": "PV-PRC-07",
+   "name": "Detect Unauthorized Usage of Windows Management Instrumentation",
+   "description": "",
+   "attack_techniques": [
+    "T1047"
+   ]
+  },
+  {
+   "code": "PV-VUL-01",
+   "name": "Detect Vulnerability Exploitation Attempt",
+   "description": "",
+   "attack_techniques": [
+    "T1068"
+   ]
+  }
+ ],
+ "business_drivers": [
+  {
+   "code": "BD-01",
+   "name": "Direct Financial Loss",
+   "description": "Prevent Loss due to Financial theft\nPrevent Loss due to Theft of IP\nPrevent Loss due to Fraud\nPrevent Loss due to Sabotage"
+  },
+  {
+   "code": "BD-02",
+   "name": "Reputational Damage",
+   "description": "Prevent Reputational damage due to loss of information (customer information, etc.)\nPrevent Reputational damage due to (Perceived) lack of information security"
+  },
+  {
+   "code": "BD-03",
+   "name": "Legal and Regulatory Obligations",
+   "description": "Avoid missed business opportunities due to regulator limitations \nPrevent penalties due to missed regulator requirements"
+  },
+  {
+   "code": "BD-04",
+   "name": "Enable Business",
+   "description": "Assist and enable business to use new channels and methods in order to be competative\nReduce risk by implementing Security Monitoring and Response"
+  },
+  {
+   "code": "BD-05",
+   "name": "Business Continuity",
+   "description": "Early detection of threats to provide business continuity\nPrevent business against data loss (deletion)\nPrevent outages of critical business services"
+  },
+  {
+   "code": "BD-06",
+   "name": "Strategic and Commercial interests",
+   "description": "Damage to strategic and commercial interests, e.g. misleading management information, inefficient operation, disadavantage in negotiations etc. "
+  }
+ ],
+ "compliance_sources": [
+  "Internal Security Policy",
+  "External Regulator #1",
+  "External Regulator #2"
+ ],
+ "references": {
+  "threat_actor": [
+   {
+    "name": "Professional Criminals",
+    "description": "Actors that perform malicious activity to make money. These criminals have revenue models, ranging from selling malware to DDoS extortion threat and stealing money using banking malware."
+   },
+   {
+    "name": "State Actors",
+    "description": "Actors that perform malicious activity on behalf of their country. Such activities are usually espionage, but may also include disruption of critical infrastructure of another country. These actors have a lot of capabilities and the resources and perseverance to carry out long and covert operations."
+   },
+   {
+    "name": "Terrorists",
+    "description": "Actors that perform malicious activity to support terrorist organizations in their cause. Their activities will usually focus on disruption through DDoS attacks and defacement. Generally speaking, these actors do not have a lot of capabilities."
+   },
+   {
+    "name": "Hacktivists, Cyber vandals and Script Kiddies",
+    "description": "Hacktivist actors have similar activities as terrorist actors, but a different motive.  Capabilities depend on the hacktivist group and composition. Cyber vandals and script kiddies usually carry out the activities for personal recognition. Their capabilities vary, but resources are limited."
+   },
+   {
+    "name": "Internal Actors",
+    "description": "Actors that perform their activities from within the organization. This may include unintentional behavior, but can also originate from a grudge against the employer."
+   },
+   {
+    "name": "Private Organizations",
+    "description": "Actors from other organizations. The CSAN differentiates 3 motives: attacking confidentiality for financial gain, improve their competitive position or to use (personal) data collected without consent."
+   },
+   {
+    "name": "Multiple Actors",
+    "description": "Multiple primary actors may carry out this malicious activity"
+   }
+  ],
+  "detection_technology": [
+   {
+    "name": "SIEM",
+    "description": "Security Information and Event Management system. Such systems are usually key to SOC detection capabilities"
+   },
+   {
+    "name": "Big data analytics",
+    "description": "A big data platform to gather information from the network that can be used for anomaly detection and hunting capabilities"
+   },
+   {
+    "name": "NIDS/NIPS",
+    "description": "Network Intrusion Detection (or Prevention) System. Network-based protection or detection mechanism that identifies attacks on the network."
+   },
+   {
+    "name": "HIPS",
+    "description": "Host Intrusion Detection (or Prevention) System. Host-based protection or detection mechanism that identifies attacks against the host."
+   },
+   {
+    "name": "Anti-malware",
+    "description": "Host-based protection mechanism that protects against malware threats."
+   },
+   {
+    "name": "Network anomaly detection",
+    "description": "Detection technology that uses network information (for example: flows) to detect aberrant behavior"
+   },
+   {
+    "name": "Email protection",
+    "description": "Systems protecting from email-based threats, mostly malicious attachments"
+   }
+  ],
+  "log_source": [
+   {
+    "name": "Firewall",
+    "description": "Logging from firewall devices. Usually, these are network firewalls. Host-based firewalls may also provide logging. Such logging contains connections made by possible attackers and can be used to identify network-based attacks, such as session attacks and scanning"
+   },
+   {
+    "name": "Network traffic",
+    "description": "Actual network traffic. This can be netflow data, or actual traffic. Can be analyzed for network based anomalies"
+   },
+   {
+    "name": "OS logging",
+    "description": "Logging from Operating Systems. This can include both server and client OS logging. Should include at least system and security events that may carry indicators of attacks against these systems."
+   },
+   {
+    "name": "Application log",
+    "description": "Logging from applications. Such logging is usually very specific and diverse. May be used in big data systems for analytics purposes and anomaly detection."
+   },
+   {
+    "name": "Web application logging",
+    "description": "Logging from web applications. Since many attacks against websites are conducted at the application level, this logging may carry evidence of such attacks."
+   },
+   {
+    "name": "Database log",
+    "description": "Logging from databases. May include both security logging as well as database change logging"
+   },
+   {
+    "name": "Proxy log",
+    "description": "Logging from network proxy systems, that are used to connect users to the internet"
+   }
+  ],
+  "scope": [
+   {
+    "name": "All users",
+    "description": "All users within the enterprise"
+   },
+   {
+    "name": "VIPs",
+    "description": "A selection of important users in the enterprise. Such users may include C-level executives, but also key personnel with access to sensitive systems and crown jewels"
+   },
+   {
+    "name": "Administrators",
+    "description": "Only administrative users with high privileges"
+   },
+   {
+    "name": "All assets",
+    "description": "All assets within the enterprise"
+   },
+   {
+    "name": "Business critical assets",
+    "description": "A selection of systems which are deemed critical to the enterprise"
+   },
+   {
+    "name": "All applications",
+    "description": "All applications within the enterprise"
+   },
+   {
+    "name": "Business critical applications",
+    "description": "A selection of applications which are deemed critical to the enterprise (i.e. a high confidentiality, integrity and availability classification). These applications should reside on business critical assets"
+   },
+   {
+    "name": "All databases",
+    "description": "All databases within the enterprise"
+   },
+   {
+    "name": "Business critical databases",
+    "description": "A selection of databases which are deemed critical to the enterprise. These databases should reside on business critical assets"
+   },
+   {
+    "name": "All networks",
+    "description": "All networks within the enterprise"
+   },
+   {
+    "name": "Public network",
+    "description": "Networks within the enterprise that can be accessed and used publically"
+   },
+   {
+    "name": "Restricted networks",
+    "description": "A selection of networks within the enterprise that are restricted due to the sensitive nature of assets residing in that network"
+   },
+   {
+    "name": "Datacenter networks",
+    "description": "The network within the datacenter. Usually, this network"
+   },
+   {
+    "name": "Wireless networks",
+    "description": "Any wireless networks within the network, with the exception of public networks"
+   },
+   {
+    "name": "Office networks",
+    "description": "All networks that are used for office purposes, including printer networks"
+   },
+   {
+    "name": "Office location",
+    "description": "All physical office locations, with the exception of the main office"
+   },
+   {
+    "name": "Datacenter location",
+    "description": "The physical location of a datacenter"
+   },
+   {
+    "name": "Main office location",
+    "description": "The physical location of the main office"
+   }
+  ]
+ }
+}

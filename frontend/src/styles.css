@@ -196,3 +196,26 @@ h2 { font-size: 18px; }
 .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--c-border); }
 @media (max-width: 640px) { .login-hero { padding: 32px 16px; } .login-hero h1 { font-size: 32px; } }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* M1 additions: forms, tables, user box */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.form-error { margin: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--c-accent-soft); color: var(--c-accent-hover); font-size: 13px; }
+.form-notice { margin: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--c-info-soft); color: var(--c-info-ink); font-size: 13px; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+.btn-sm { height: 36px; padding: 0 12px; font-size: 13px; }
+.input-sm { height: 36px; }
+select.input { background: var(--c-surface); }
+.row-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.table-card { padding: 0; overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 720px; }
+.table th { text-align: left; font-size: 12px; font-weight: 600; color: var(--c-muted); background: #fafafb; padding: 12px 14px; }
+.table td { padding: 12px 14px; border-top: 1px solid var(--c-track); vertical-align: middle; }
+.table td.changes { color: var(--c-ink-2); max-width: 520px; word-break: break-word; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin: 0; }
+.stat-grid dt { font-size: 12px; color: var(--c-muted); }
+.stat-grid dd { margin: 2px 0 0; font-family: var(--font-head); font-size: 24px; font-weight: 600; }
+.user-box { display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; }
+.user-meta { min-width: 0; }
+.user-meta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.signout { grid-column: 1 / -1; justify-self: start; background: transparent; border: 1px solid var(--c-nav-active); color: var(--c-nav-text); border-radius: var(--radius); height: 32px; padding: 0 10px; font: inherit; font-size: 12px; cursor: pointer; }
+.signout:hover { color: #fff; border-color: #4b5160; }

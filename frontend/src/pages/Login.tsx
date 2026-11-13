@@ -1,8 +1,44 @@
-import { Link } from "react-router-dom";
+import { useEffect, useState, type FormEvent } from "react";
+import { api, type AuthConfig } from "../api";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "../auth";
 import Logo from "../components/Logo";
 
-// Visual shell only; authentication (local + OIDC SSO) is implemented in M1/M3.
 export default function Login() {
+  const { user, loading, login } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const from = (location.state as { from?: string } | null)?.from ?? "/";
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [cfg, setCfg] = useState<AuthConfig | null>(null);
+  const ssoError = new URLSearchParams(location.search).get("sso_error");
+
+  useEffect(() => {
+    api
+      .authConfig()
+      .then(setCfg)
+      .catch(() => setCfg(null));
+  }, []);
+
+  if (!loading && user) return <Navigate to={from} replace />;
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await login(username, password);
+      navigate(from, { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign in failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="login">
       <div className="login-hero">
@@ -15,34 +51,66 @@ export default function Login() {
         <div>
           <h1>Manage your SOC use cases with the MaGMa framework.</h1>
           <p>
-            Business drivers, threats and detection rules in one place, with scores, verification
-            dates and versioned rule configs.
+            Business drivers, threats and detection rules in one place, with scores, verification dates and versioned
+            rule configs.
           </p>
         </div>
-        <span style={{ fontSize: 13, color: "var(--c-nav-muted)" }}>
-          Based on the FI-ISAC MaGMa Use Case Framework
-        </span>
+        <span style={{ fontSize: 13, color: "var(--c-nav-muted)" }}>Based on the FI-ISAC MaGMa Use Case Framework</span>
       </div>
       <div className="login-panel">
-        <form className="login-form" onSubmit={(e) => e.preventDefault()}>
+        <form className="login-form" onSubmit={submit}>
           <h2 style={{ fontSize: 24 }}>Sign in</h2>
-          <button type="button" className="btn btn-dark" disabled title="Available in M3">
-            Sign in with SSO
-          </button>
-          <div className="divider">or with a local account</div>
-          <label className="field">
-            Username
-            <input className="input" type="text" autoComplete="username" />
-          </label>
-          <label className="field">
-            Password
-            <input className="input" type="password" autoComplete="current-password" />
-          </label>
-          <button type="submit" className="btn btn-primary" disabled title="Available in M1">
-            Sign in
-          </button>
+          {ssoError && (
+            <p className="form-error" role="alert">
+              {ssoError}
+            </p>
+          )}
+          {cfg?.sso_enabled && (
+            <a className="btn btn-dark" href={`/api/auth/oidc/login?next=${encodeURIComponent(from)}`}>
+              {cfg.sso_label}
+            </a>
+          )}
+          {cfg?.sso_enabled && cfg.local_login_enabled && <div className="divider">or with a local account</div>}
+          {cfg && !cfg.local_login_enabled && !cfg.sso_enabled && (
+            <p className="form-error">No sign-in method is enabled. Ask your administrator.</p>
+          )}
+          {cfg?.local_login_enabled !== false && (
+            <>
+              <label className="field">
+                Username
+                <input
+                  className="input"
+                  type="text"
+                  autoComplete="username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  autoFocus
+                />
+              </label>
+              <label className="field">
+                Password
+                <input
+                  className="input"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </label>
+              {error && (
+                <p className="form-error" role="alert">
+                  {error}
+                </p>
+              )}
+              <button type="submit" className="btn btn-primary" disabled={busy}>
+                {busy ? "Signing in…" : "Sign in"}
+              </button>
+            </>
+          )}
           <p className="muted" style={{ margin: 0, fontSize: 12, lineHeight: 1.5 }}>
-            Login is not active yet. <Link to="/">Continue to the dashboard</Link>
+            Your role (admin, analyst or auditor) is set by your administrator.
           </p>
         </form>
       </div>

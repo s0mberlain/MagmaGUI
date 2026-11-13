@@ -11,7 +11,15 @@ def make_client(tmp_path, with_frontend: bool) -> TestClient:
         (static / "index.html").write_text("<html>magma</html>")
         (static / "assets" / "app.js").write_text("console.log(1)")
         (static / "favicon.svg").write_text("<svg></svg>")
-    return TestClient(create_app(Settings(static_dir=static)))
+    return TestClient(
+        create_app(
+            Settings(
+                static_dir=static,
+                database_url=f"sqlite:///{tmp_path}/t.db",
+                admin_password="x" * 12,
+            )
+        )
+    )
 
 
 def test_health(tmp_path):

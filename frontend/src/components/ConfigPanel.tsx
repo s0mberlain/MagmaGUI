@@ -1,0 +1,497 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  api,
+  ConflictError,
+  type ConfigCommit,
+  type ConfigDiff,
+  type DiffLine,
+  type Level,
+  type YamlCheck,
+} from "../api";
+import { fmtDate } from "../lib/format";
+import { ErrorNote, useLoad } from "./ui";
+
+type Tab = "editor" | "history" | "diff";
+
+function when(iso: string) {
+  const d = new Date(iso);
+  return `${fmtDate(iso)} ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+}
+
+export function DiffView({ lines, empty = "No differences." }: { lines: DiffLine[]; empty?: string }) {
+  if (!lines.length) return <p className="muted small">{empty}</p>;
+  return (
+    <div className="diff" role="table" aria-label="Changes">
+      {lines.map((l, i) =>
+        l.kind === "hunk" ? (
+          <div key={i} className="diff-hunk" role="row">
+            {l.text}
+          </div>
+        ) : (
+          <div key={i} className={`diff-line diff-${l.kind}`} role="row">
+            <span className="diff-no">{l.old ?? ""}</span>
+            <span className="diff-no">{l.new ?? ""}</span>
+            <span
+              className="diff-mark"
+              aria-label={l.kind === "add" ? "added" : l.kind === "del" ? "removed" : undefined}
+            >
+              {l.kind === "add" ? "+" : l.kind === "del" ? "−" : " "}
+            </span>
+            <span className="diff-text">{l.text || " "}</span>
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
+
+function CodeEditor({
+  value,
+  onChange,
+  readOnly,
+  errorLine,
+  label,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  readOnly: boolean;
+  errorLine: number | null;
+  label: string;
+}) {
+  const gutter = useRef<HTMLDivElement>(null);
+  const count = Math.max(1, value.split("\n").length);
+  return (
+    <div className="code">
+      <div className="code-gutter" ref={gutter} aria-hidden="true">
+        {Array.from({ length: count }, (_, i) => (
+          <div key={i} className={errorLine === i + 1 ? "code-err" : ""}>
+            {i + 1}
+          </div>
+        ))}
+      </div>
+      <textarea
+        className="code-text"
+        aria-label={label}
+        spellCheck={false}
+        autoCapitalize="off"
+        autoCorrect="off"
+        wrap="off"
+        readOnly={readOnly}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onScroll={(e) => {
+          if (gutter.current) gutter.current.scrollTop = e.currentTarget.scrollTop;
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Tab" && !readOnly) {
+            e.preventDefault();
+            const t = e.currentTarget;
+            const { selectionStart: a, selectionEnd: b } = t;
+            const next = value.slice(0, a) + "  " + value.slice(b);
+            onChange(next);
+            requestAnimationFrame(() => t.setSelectionRange(a + 2, a + 2));
+          }
+        }}
+      />
+    </div>
+  );
+}
+
+const TEMPLATE = `# Free-form YAML: store whatever describes this detection,
+# e.g. the query, thresholds, schedule, owner or response playbook.
+owner: soc
+severity: medium
+detection:
+  query: ""
+  threshold: 1
+`;
+
+export default function ConfigPanel({ level, code, editor }: { level: Level; code: string; editor: boolean }) {
+  const state = useLoad(() => api.config(level, code), [level, code]);
+  const hist = useLoad(() => api.configHistory(level, code), [level, code]);
+  const [tab, setTab] = useState<Tab>("editor");
+  const [text, setText] = useState("");
+  const [base, setBase] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
+  const [check, setCheck] = useState<YamlCheck | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<ConflictError | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [diffSel, setDiffSel] = useState<{ from: string; to: string } | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const head = state.data?.head ?? null;
+  const original = state.data?.content ?? "";
+  const dirty = text !== original;
+
+  useEffect(() => {
+    if (!state.data) return;
+    setText(state.data.content || (editor ? TEMPLATE : ""));
+    setBase(state.data.head?.sha ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.data]);
+
+  // debounced YAML check while typing
+  useEffect(() => {
+    if (!editor) return;
+    const t = setTimeout(() => {
+      api
+        .validateYaml(text)
+        .then(setCheck)
+        .catch(() => setCheck(null));
+    }, 350);
+    return () => clearTimeout(t);
+  }, [text, editor]);
+
+  const reload = () => {
+    void state.reload();
+    void hist.reload();
+  };
+
+  async function commit() {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const c = await api.saveConfig(level, code, {
+        content: text,
+        message: message.trim() || (head ? "Update configuration" : "Initial configuration"),
+        base_sha: base,
+      });
+      setMessage("");
+      setConflict(null);
+      setNotice(`Committed r${c.rev} (${c.short}).`);
+      reload();
+    } catch (e) {
+      if (e instanceof ConflictError) setConflict(e);
+      else setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function restore(c: ConfigCommit) {
+    if (!window.confirm(`Restore r${c.rev}? This adds a new commit with the content of r${c.rev}.`)) return;
+    setError(null);
+    try {
+      const n = await api.restoreConfig(level, code, c.sha);
+      setNotice(`Restored r${c.rev} as r${n.rev}.`);
+      setTab("editor");
+      reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function tag(c: ConfigCommit) {
+    const name = window.prompt(`Tag for r${c.rev} (e.g. prod or reviewed-2026-11)`);
+    if (!name) return;
+    try {
+      await api.tagConfig(level, code, name.trim(), c.sha);
+      void hist.reload();
+      void state.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  function upload(file: File) {
+    file.text().then((t) => {
+      setText(t);
+      setMessage(`Upload ${file.name}`);
+      setTab("editor");
+    });
+  }
+
+  const tagsLine = useMemo(() => {
+    const tags = (hist.data ?? []).flatMap((c) => c.tags.map((t) => `${t.name} on r${c.rev}`));
+    return tags.slice(0, 2).join(" · ");
+  }, [hist.data]);
+
+  return (
+    <section className="card config" aria-labelledby={`cfg-${code}`}>
+      <div className="config-head">
+        <div className="stack-xs">
+          <h2 id={`cfg-${code}`}>Configuration (YAML)</h2>
+          <span className="small muted">
+            {head
+              ? `HEAD r${head.rev} · ${head.short} · ${head.author}, ${when(head.created_at)}${tagsLine ? ` · tag ${tagsLine}` : ""}`
+              : "No configuration committed yet"}
+          </span>
+        </div>
+        <div className="row-actions">
+          {head && (
+            <a className="btn btn-sm" href={api.configDownloadUrl(level, code)} download>
+              Download .yaml
+            </a>
+          )}
+          {editor && (
+            <>
+              <button type="button" className="btn btn-sm" onClick={() => fileInput.current?.click()}>
+                Upload
+              </button>
+              <input
+                ref={fileInput}
+                type="file"
+                accept=".yaml,.yml,text/yaml,text/plain"
+                hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) upload(f);
+                  e.target.value = "";
+                }}
+              />
+            </>
+          )}
+        </div>
+      </div>
+
+      <div role="tablist" aria-label="Configuration views" className="tabs config-tabs">
+        {(["editor", "history", "diff"] as Tab[]).map((t) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            aria-selected={tab === t}
+            className={"tab" + (tab === t ? " active" : "")}
+            onClick={() => {
+              setTab(t);
+              setNotice(null);
+            }}
+          >
+            {t === "editor"
+              ? editor
+                ? "Editor"
+                : "Current"
+              : t === "history"
+                ? `History (${hist.data?.length ?? 0})`
+                : "Diff"}
+          </button>
+        ))}
+      </div>
+
+      <div className="config-body">
+        <ErrorNote error={error ?? state.error ?? hist.error} />
+        {notice && (
+          <p className="form-notice" role="status">
+            {notice}
+          </p>
+        )}
+
+        {tab === "editor" && (
+          <>
+            {conflict && (
+              <div className="conflict" role="alert">
+                <p className="form-error">{conflict.message}</p>
+                <span className="small muted">Changes between the latest version (−) and your text (+):</span>
+                <DiffView lines={conflict.diff.lines} />
+                <div className="row-actions start">
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => {
+                      setConflict(null);
+                      void state.reload();
+                    }}
+                  >
+                    Load latest (discard mine)
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    onClick={() => {
+                      setBase(conflict.head?.sha ?? null);
+                      setConflict(null);
+                      void hist.reload();
+                    }}
+                  >
+                    I merged by hand, commit mine on top
+                  </button>
+                </div>
+              </div>
+            )}
+            {!editor && !head ? (
+              <p className="muted">No configuration has been committed for this use case.</p>
+            ) : (
+              <CodeEditor
+                value={text}
+                onChange={setText}
+                readOnly={!editor}
+                errorLine={check && !check.valid ? check.line : null}
+                label={`YAML configuration of ${code}`}
+              />
+            )}
+            {editor && (
+              <div className="commit-row">
+                <span className={"small " + (check && !check.valid ? "text-err" : "text-ok")}>
+                  {check === null
+                    ? "Checking…"
+                    : check.valid
+                      ? `✓ Valid YAML${head ? ` · based on r${head.rev} (${head.short})` : ""}`
+                      : `✗ ${check.line ? `Line ${check.line}: ` : ""}${check.error}`}
+                </span>
+                <label className="sr-only" htmlFor={`msg-${code}`}>
+                  Commit message
+                </label>
+                <input
+                  id={`msg-${code}`}
+                  className="input input-sm grow"
+                  placeholder={head ? "Commit message, e.g. Lower threshold" : "Initial configuration"}
+                  value={message}
+                  maxLength={500}
+                  onChange={(e) => setMessage(e.target.value)}
+                />
+                {dirty && head && (
+                  <button type="button" className="btn btn-sm" onClick={() => setText(original)}>
+                    Discard
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  disabled={busy || !check?.valid || (!!head && !dirty)}
+                  onClick={commit}
+                >
+                  Commit r{(head?.rev ?? 0) + 1}
+                </button>
+              </div>
+            )}
+          </>
+        )}
+
+        {tab === "history" && (
+          <ul className="commits">
+            {hist.data?.map((c) => (
+              <li key={c.sha}>
+                <span className="mono small accent">r{c.rev}</span>
+                <span className="mono small muted">{c.short}</span>
+                <span className="stack-xs grow">
+                  <span className="strong-500">{c.message}</span>
+                  <span className="small muted">
+                    {c.author} · {when(c.created_at)}
+                    {c.restored_from && ` · restored from ${c.restored_from.slice(0, 7)}`}
+                  </span>
+                </span>
+                <span className="chips">
+                  {c.tags.map((t) => (
+                    <span key={t.name} className="chip chip-tag" title={`by ${t.created_by}`}>
+                      {t.name}
+                    </span>
+                  ))}
+                </span>
+                <span className="row-actions">
+                  {c.rev > 1 && (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => {
+                        setDiffSel({ from: `r${c.rev - 1}`, to: `r${c.rev}` });
+                        setTab("diff");
+                      }}
+                    >
+                      Diff
+                    </button>
+                  )}
+                  <a className="btn btn-sm" href={api.configDownloadUrl(level, code, c.sha)} download>
+                    .yaml
+                  </a>
+                  {editor && (
+                    <>
+                      <button type="button" className="btn btn-sm" onClick={() => tag(c)}>
+                        Tag
+                      </button>
+                      {c.sha !== head?.sha && (
+                        <button type="button" className="btn btn-sm" onClick={() => restore(c)}>
+                          Restore
+                        </button>
+                      )}
+                    </>
+                  )}
+                </span>
+              </li>
+            ))}
+            {hist.data && !hist.data.length && <li className="muted">No commits yet.</li>}
+          </ul>
+        )}
+
+        {tab === "diff" && (
+          <DiffTab level={level} code={code} commits={hist.data ?? []} sel={diffSel} onSel={setDiffSel} />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function DiffTab({
+  level,
+  code,
+  commits,
+  sel,
+  onSel,
+}: {
+  level: Level;
+  code: string;
+  commits: ConfigCommit[];
+  sel: { from: string; to: string } | null;
+  onSel: (s: { from: string; to: string }) => void;
+}) {
+  const latest = commits[0];
+  const current = sel ?? (latest ? { from: latest.rev > 1 ? `r${latest.rev - 1}` : "", to: `r${latest.rev}` } : null);
+  const [diff, setDiff] = useState<ConfigDiff | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!current) return;
+    api
+      .configDiff(level, code, current.to, current.from || undefined)
+      .then((d) => {
+        setDiff(d);
+        setError(null);
+      })
+      .catch((e: Error) => setError(e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [level, code, current?.from, current?.to]);
+
+  if (!current) return <p className="muted">Nothing to compare yet.</p>;
+  const opt = (c: ConfigCommit) => (
+    <option key={c.sha} value={`r${c.rev}`}>
+      r{c.rev} · {c.short} · {c.message.slice(0, 40)}
+    </option>
+  );
+  return (
+    <div className="stack">
+      <div className="diff-pick">
+        <label className="field">
+          From
+          <select
+            className="input input-sm"
+            value={current.from}
+            onChange={(e) => onSel({ ...current, from: e.target.value })}
+          >
+            <option value="">(empty)</option>
+            {commits.map(opt)}
+          </select>
+        </label>
+        <span aria-hidden="true">→</span>
+        <label className="field">
+          To
+          <select
+            className="input input-sm"
+            value={current.to}
+            onChange={(e) => onSel({ ...current, to: e.target.value })}
+          >
+            {commits.map(opt)}
+          </select>
+        </label>
+        {diff && (
+          <span className="small">
+            <span className="text-ok">+{diff.added}</span> <span className="text-err">−{diff.removed}</span>
+          </span>
+        )}
+      </div>
+      <ErrorNote error={error} />
+      {diff && <DiffView lines={diff.lines} />}
+    </div>
+  );
+}

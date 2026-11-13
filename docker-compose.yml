@@ -12,5 +12,23 @@ services:
     volumes:
       - magma-data:/data
 
+  # Local SSO testing only: `docker compose --profile keycloak up -d`
+  # Users alice / bob / carol (admin / analyst / auditor), password "<name>-password";
+  # dave has no group and is refused. Settings for the app: see .env.example.
+  keycloak:
+    profiles: ["keycloak"]
+    image: quay.io/keycloak/keycloak:26.0.7
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # The browser uses localhost:8081, the app container talks to keycloak:8080.
+      KC_HOSTNAME: http://localhost:8081
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./deploy/keycloak:/opt/keycloak/data/import:ro
+
 volumes:
   magma-data:

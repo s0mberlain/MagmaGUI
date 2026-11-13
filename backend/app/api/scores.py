@@ -92,7 +92,9 @@ class VerificationOut(BaseModel):
     config_tag: str | None = None
 
 
-def compute_scores(db: Session, default_interval: int) -> tuple[Result, list, list, list]:
+def compute_scores(
+    db: Session, default_interval: int, today: date | None = None
+) -> tuple[Result, list, list, list]:
     l1s = list(db.scalars(select(L1UseCase).order_by(L1UseCase.sort_order)))
     l2s = list(db.scalars(select(L2UseCase).order_by(L2UseCase.code)))
     l3s = list(db.scalars(select(L3UseCase).order_by(L3UseCase.code)))
@@ -114,7 +116,7 @@ def compute_scores(db: Session, default_interval: int) -> tuple[Result, list, li
             )
             for x in l3s
         ],
-        date.today(),
+        today or date.today(),
         default_interval,
     )
     return res, l1s, l2s, l3s

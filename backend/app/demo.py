@@ -16,7 +16,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app import configs
+from app import configs, lifecycle, snapshots
 from app.models import (
     BusinessDriver,
     ComplianceDriver,
@@ -25,8 +25,10 @@ from app.models import (
     L2UseCase,
     L3UseCase,
     Lifecycle,
+    LifecycleEvent,
     ReferenceItem,
     RefKind,
+    Snapshot,
     Verification,
     VerificationResult,
 )
@@ -180,7 +182,107 @@ def _demo_configs(db: Session, rnd: random.Random, rules, users, today: date) ->
     return n
 
 
-def apply_demo_data(db: Session, seed: int = 42, today: date | None = None) -> dict[str, int]:
+def _at(d: date, rnd: random.Random) -> datetime:
+    return datetime.combine(d, time(rnd.randint(8, 17), rnd.randint(0, 59)), UTC)
+
+
+def _driver(rnd: random.Random, kinds: list[str]) -> tuple[str, str]:
+    t = rnd.choice(kinds)
+    return t, rnd.choice(lifecycle.DRIVERS[t])[0]
+
+
+def _demo_lifecycle(db: Session, rnd: random.Random, l2s, rules, users, today: date) -> int:
+    """Change log that fits the current state: created -> onboarding -> operational -> ..."""
+    n = 0
+    done_all = {k: None for k in lifecycle.DOD_KEYS}
+
+    def add(obj, old, new, when: date, kinds=("environmental", "operational"), note=""):
+        nonlocal n
+        t, d = _driver(rnd, list(kinds))
+        lifecycle.record_change(
+            db, obj, old, new, rnd.choice(users), t, d, note, at=_at(min(when, today), rnd)
+        )
+        n += 1
+
+    for obj in [*l2s, *rules]:
+        start = obj.onboarded_at or today - timedelta(days=rnd.randint(10, 300))
+        created = start - timedelta(days=rnd.randint(14, 90))
+        add(obj, None, Lifecycle.onboarding, created, note="New use case")
+        status = obj.lifecycle_status
+        if status == Lifecycle.onboarding:
+            obj.dod = {
+                k: {"by": rnd.choice(users), "at": created.isoformat()}
+                for k in lifecycle.DOD_KEYS
+                if rnd.random() < 0.5
+            }
+            continue
+        obj.dod = {
+            k: {
+                "by": rnd.choice(users),
+                "at": (start - timedelta(days=rnd.randint(0, 10))).isoformat(),
+            }
+            for k in done_all
+        }
+        add(obj, Lifecycle.onboarding, Lifecycle.operational, start, note="Definition of done met")
+        if status in (Lifecycle.maintenance, Lifecycle.offloading):
+            when = start + timedelta(days=rnd.randint(30, max(31, (today - start).days)))
+            note = "Tuning after false positives" if status == Lifecycle.maintenance else ""
+            add(obj, Lifecycle.operational, status, when, ("operational", "environmental"), note)
+    return n
+
+
+def _status_at(db: Session, rule: L3UseCase, when: datetime) -> Lifecycle | None:
+    ev = db.scalar(
+        select(LifecycleEvent)
+        .where(LifecycleEvent.l3_id == rule.id, LifecycleEvent.at <= when)
+        .order_by(LifecycleEvent.at.desc())
+        .limit(1)
+    )
+    return ev.to_status if ev else None
+
+
+def _demo_snapshots(db: Session, rules, today: date, default_interval: int) -> int:
+    """Twelve monthly snapshots that replay the history: rules appear and go live on their
+    dates, verifications count from their date, and implementation and coverage grow."""
+    n = 0
+    first = today.replace(day=1)
+    months = []
+    for k in range(12, 0, -1):
+        y, m = divmod(first.year * 12 + first.month - 1 - k, 12)
+        months.append(date(y, m + 1, 1))
+    for i, d in enumerate(months):
+        when = datetime.combine(d, time(2, 0), UTC)
+        ramp = 0.72 + 0.28 * (i + 1) / (len(months) + 1)
+        sp = db.begin_nested()
+        for rule in rules:
+            status = _status_at(db, rule, when)
+            if status is None:
+                db.delete(rule)
+                continue
+            rule.lifecycle_status = status
+            for f in ("implementation", "coverage"):
+                v = getattr(rule, f)
+                if v is not None:
+                    setattr(rule, f, round(v * ramp, 2))
+            past = db.scalar(
+                select(Verification.verified_at)
+                .where(Verification.l3_id == rule.id, Verification.verified_at <= d)
+                .order_by(Verification.verified_at.desc())
+                .limit(1)
+            )
+            rule.last_verified_at = past
+        db.flush()
+        data = snapshots.capture(db, default_interval, today=d)
+        sp.rollback()
+        db.add(Snapshot(label=f"Monthly {d:%Y-%m}", kind="demo", taken_at=when, data=data))
+        n += 1
+    db.expire_all()
+    return n
+
+
+def apply_demo_data(
+    db: Session, seed: int = 42, today: date | None = None, default_interval: int = 180
+) -> dict[str, int]:
     rnd = random.Random(seed)
     today = today or date.today()
 
@@ -200,6 +302,8 @@ def apply_demo_data(db: Session, seed: int = 42, today: date | None = None) -> d
 
     db.execute(delete(Verification))
     db.execute(delete(ConfigCommit))
+    db.execute(delete(LifecycleEvent))
+    db.execute(delete(Snapshot).where(Snapshot.kind == "demo"))
 
     # Earlier demo rules are replaced, so re-running with the same seed gives the same result.
     db.execute(delete(L3UseCase).where(L3UseCase.description == DEMO_MARK))
@@ -309,6 +413,9 @@ def apply_demo_data(db: Session, seed: int = 42, today: date | None = None) -> d
             l2.last_verified_by = "demo"
 
     counts["config_commits"] = _demo_configs(db, rnd, rules, users, today)
+    counts["lifecycle_events"] = _demo_lifecycle(db, rnd, l2s, rules, users, today)
+    db.flush()
+    counts["snapshots"] = _demo_snapshots(db, rules, today, default_interval)
 
     db.commit()
     log.info("Applied demo data (seed %d): %s", seed, counts)

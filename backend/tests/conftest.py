@@ -14,6 +14,7 @@ def settings(tmp_path) -> Settings:
         static_dir=tmp_path / "static",
         admin_user="admin",
         admin_password=ADMIN_PW,
+        snapshot_schedule="off",
     )
 
 

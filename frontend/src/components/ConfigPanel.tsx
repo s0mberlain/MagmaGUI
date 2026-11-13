@@ -370,6 +370,7 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
                   <span className="strong-500">{c.message}</span>
                   <span className="small muted">
                     {c.author} · {when(c.created_at)}
+                    {c.git_sha && <span title={`git ${c.git_sha}`}> · in git {c.git_sha.slice(0, 7)}</span>}
                     {c.restored_from && ` · restored from ${c.restored_from.slice(0, 7)}`}
                   </span>
                 </span>

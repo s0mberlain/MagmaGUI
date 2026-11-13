@@ -43,4 +43,6 @@ def initialize(engine: Engine, session_factory, settings: Settings) -> None:
         if fresh and settings.demo_data:
             from app.demo import apply_demo_data
 
-            apply_demo_data(db, settings.demo_seed)
+            apply_demo_data(
+                db, settings.demo_seed, default_interval=settings.default_verification_days
+            )

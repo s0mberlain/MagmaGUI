@@ -18,6 +18,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     STATIC_DIR=/app/static \
     DATABASE_URL=sqlite:////data/magma.db
 
+# git + ssh for the optional git repository sync of the YAML configs
+RUN apt-get update && apt-get install -y --no-install-recommends git openssh-client \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --system magma && useradd --system --gid magma --home /app magma \
     && mkdir -p /data && chown magma:magma /data
 

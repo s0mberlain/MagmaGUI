@@ -2,7 +2,7 @@
 
 Web application for the FI-ISAC **MaGMa Use Case Framework**: manage SIEM / SOC use cases across the business, threat (L1/L2) and implementation (L3) layers, score them, track verification and keep versioned YAML configs per use case.
 
-Status: **M3 – MVP**: catalogue, scoring, verification, YAML configs with history, Excel import/export, local login and SSO. See [docs/PLAN.md](docs/PLAN.md) for the full plan and milestones, and [docs/design/](docs/design/) for the approved desktop design draft.
+Status: **M4**: MVP (catalogue, scoring, verification, YAML configs with history, Excel import/export, local login and SSO) plus lifecycle change log, history and trends, and optional git sync. See [docs/PLAN.md](docs/PLAN.md) for the full plan and milestones, and [docs/design/](docs/design/) for the approved desktop design draft.
 
 ## Run with Docker
 
@@ -53,6 +53,29 @@ It works like git without needing git: each save is an immutable commit (sha, au
 with history, diff between any two versions, restore (a new commit with the old content) and tags.
 "Verify now" tags the current version as `verified-<date>`. If someone else saved in between,
 your save is refused with a diff and you merge by hand. The only check is that the text is valid YAML.
+
+### Git repository (optional)
+
+Set `GIT_REMOTE_URL` plus `GIT_TOKEN` (HTTPS) or `GIT_SSH_KEY_FILE` (SSH) and the app pushes every
+configuration commit to that repository as a real git commit with the same author, date and
+message, on `usecases/<L1>/<L2>/<L3>.yaml` (an L2 config is `usecases/<L1>/<L2>/<L2>.yaml`). Tags
+become `<code>/<tag>`, e.g. `AO-CRE-01/verified-2026-11-13`. Sync runs in the background after each
+commit (`GIT_AUTO_SYNC`) and at startup; admins see the state and can sync by hand under
+*Import / Export*. The app stays the source of truth: changes made in the repository are not read
+back. To try it locally: `docker compose --profile gitea up -d` starts Gitea on port 3000 with user
+magma / magma-password and an empty repository `magma/usecases`; use the Gitea values from
+`.env.example`.
+
+## Lifecycle, history and trends
+
+Status changes go through *Change status* on the rule or L2 page and are logged with a change
+driver (environmental: threat landscape, business, regulation, IT infrastructure; operational:
+red teaming, incident lessons, threat hunting, tuning) and a note. A use case can only become
+*Operational* when its definition-of-done checklist is complete (log sources, scope, incident
+response, roles, rules); an admin can skip it, which is logged. *History & trends* shows control
+metrics over time from snapshots (taken manually or by `SNAPSHOT_SCHEDULE`, monthly by default),
+compares any two snapshots, and lists all status changes. Demo data includes twelve monthly
+snapshots and a matching change log.
 
 ## Excel import / export
 

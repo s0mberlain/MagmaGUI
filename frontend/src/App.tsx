@@ -4,6 +4,7 @@ import Layout from "./components/Layout";
 import AuditLog from "./pages/AuditLog";
 import Dashboard from "./pages/Dashboard";
 import Drivers from "./pages/Drivers";
+import History from "./pages/History";
 import ImportExport from "./pages/ImportExport";
 import Login from "./pages/Login";
 import Placeholder from "./pages/Placeholder";
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="drivers" element={<Drivers />} />
           <Route path="references" element={<References />} />
           <Route path="import-export" element={<ImportExport />} />
+          <Route path="history" element={<History />} />
           <Route
             path="audit"
             element={

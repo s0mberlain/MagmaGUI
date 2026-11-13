@@ -1,0 +1,16 @@
+services:
+  magma:
+    build: .
+    image: ghcr.io/s0mberlain/magmagui:latest
+    container_name: magma
+    restart: unless-stopped
+    ports:
+      - "${MAGMA_PORT:-8080}:8080"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - magma-data:/data
+
+volumes:
+  magma-data:

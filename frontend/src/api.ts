@@ -104,6 +104,7 @@ export interface Verification {
   username: string;
   result: "ok" | "issues";
   note: string;
+  config_tag?: string | null;
 }
 
 export interface L1 {
@@ -169,7 +170,20 @@ export interface L3 {
 
 export type L2Input = Partial<Omit<L2, "id" | "l1_code" | "l3_count" | "last_verified_by">>;
 export type L3Input = Partial<
-  Omit<L3, "id" | "l1_code" | "l2_code" | "updated_at" | "weight" | "potential" | "assessed" | "scored" | "verification_due" | "verification_overdue" | "last_verified_by">
+  Omit<
+    L3,
+    | "id"
+    | "l1_code"
+    | "l2_code"
+    | "updated_at"
+    | "weight"
+    | "potential"
+    | "assessed"
+    | "scored"
+    | "verification_due"
+    | "verification_overdue"
+    | "last_verified_by"
+  >
 >;
 
 export interface RefItem {
@@ -195,6 +209,78 @@ export interface ComplianceSource {
   id: number;
   name: string;
   drivers: ComplianceDriver[];
+}
+
+export interface AuthConfig {
+  local_login_enabled: boolean;
+  sso_enabled: boolean;
+  sso_label: string;
+}
+
+export interface ConfigTag {
+  name: string;
+  created_by: string;
+  created_at: string;
+}
+export interface ConfigCommit {
+  rev: number;
+  sha: string;
+  short: string;
+  parent_sha: string | null;
+  message: string;
+  author: string;
+  created_at: string;
+  restored_from: string | null;
+  tags: ConfigTag[];
+}
+export interface ConfigState {
+  head: ConfigCommit | null;
+  content: string;
+  commits: number;
+}
+export interface DiffLine {
+  kind: "hunk" | "ctx" | "add" | "del";
+  text: string;
+  old?: number | null;
+  new?: number | null;
+}
+export interface ConfigDiff {
+  from: ConfigCommit | null;
+  to: ConfigCommit;
+  lines: DiffLine[];
+  unified: string;
+  added: number;
+  removed: number;
+}
+export interface RecentCommit extends ConfigCommit {
+  level: "l2" | "l3";
+  code: string;
+  name: string;
+}
+export interface YamlCheck {
+  valid: boolean;
+  error: string | null;
+  line: number | null;
+  column: number | null;
+}
+export interface ImportReport {
+  mode: "merge" | "replace";
+  dry_run: boolean;
+  sheets: string[];
+  counts: Record<string, { created: number; updated: number; unchanged: number; deleted: number }>;
+  warnings: { sheet: string; row: number | null; message: string }[];
+  errors: { sheet: string; row: number | null; message: string }[];
+}
+
+/** 409 from a config save: someone committed in between. */
+export class ConflictError extends Error {
+  constructor(
+    message: string,
+    public head: ConfigCommit | null,
+    public diff: { lines: DiffLine[]; added: number; removed: number },
+  ) {
+    super(message);
+  }
 }
 
 export class ApiError extends Error {
@@ -225,6 +311,10 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => null);
   if (!res.ok) {
+    if (res.status === 409 && data && typeof data === "object" && "diff" in data) {
+      const d = data as { detail: string; head: ConfigCommit | null; diff: ConflictError["diff"] };
+      throw new ConflictError(d.detail, d.head, d.diff);
+    }
     if (res.status === 401 && !path.startsWith("/api/auth/")) onUnauthorized();
     throw new ApiError(res.status, detailMessage(data) ?? `${res.status} ${res.statusText}`);
   }
@@ -241,8 +331,7 @@ function detailMessage(data: unknown): string | null {
 
 export const api = {
   version: () => request<VersionInfo>("GET", "/api/version"),
-  login: (username: string, password: string) =>
-    request<User>("POST", "/api/auth/login", { username, password }),
+  login: (username: string, password: string) => request<User>("POST", "/api/auth/login", { username, password }),
   logout: () => request<void>("POST", "/api/auth/logout"),
   me: () => request<User>("GET", "/api/auth/me"),
   changePassword: (current_password: string, new_password: string) =>
@@ -298,7 +387,41 @@ export const api = {
     request<ComplianceDriver>("PATCH", `/api/compliance/drivers/${id}`, body),
   deleteComplianceDriver: (id: number) => request<void>("DELETE", `/api/compliance/drivers/${id}`),
 
+  authConfig: () => request<AuthConfig>("GET", "/api/auth/config"),
+
+  config: (level: Level, code: string) => request<ConfigState>("GET", cfgUrl(level, code)),
+  saveConfig: (level: Level, code: string, body: { content: string; message: string; base_sha: string | null }) =>
+    request<ConfigCommit>("PUT", cfgUrl(level, code), body),
+  configHistory: (level: Level, code: string) => request<ConfigCommit[]>("GET", `${cfgUrl(level, code)}/history`),
+  configCommit: (level: Level, code: string, ref: string) =>
+    request<ConfigCommit & { content: string }>("GET", `${cfgUrl(level, code)}/commits/${enc(ref)}`),
+  configDiff: (level: Level, code: string, to: string, from?: string) =>
+    request<ConfigDiff>("GET", `${cfgUrl(level, code)}/diff?${new URLSearchParams({ to, ...(from ? { from } : {}) })}`),
+  restoreConfig: (level: Level, code: string, ref: string, message = "") =>
+    request<ConfigCommit>("POST", `${cfgUrl(level, code)}/restore/${enc(ref)}`, { message }),
+  tagConfig: (level: Level, code: string, name: string, ref?: string) =>
+    request<ConfigCommit>("POST", `${cfgUrl(level, code)}/tags`, { name, ref }),
+  configDownloadUrl: (level: Level, code: string, ref?: string) =>
+    `${cfgUrl(level, code)}/download${ref ? `?ref=${enc(ref)}` : ""}`,
+  validateYaml: (content: string) => request<YamlCheck>("POST", "/api/config/validate", { content }),
+  recentCommits: (limit = 6) => request<RecentCommit[]>("GET", `/api/config/recent?limit=${limit}`),
+  configHeads: (level: Level, prefix = "") =>
+    request<Record<string, ConfigCommit>>("GET", `/api/config/heads/${level}?prefix=${enc(prefix)}`),
+
+  importExcel: async (file: File, mode: "merge" | "replace", dryRun: boolean): Promise<ImportReport> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("mode", mode);
+    fd.append("dry_run", String(dryRun));
+    const res = await fetch("/api/import/excel", { method: "POST", body: fd, credentials: "same-origin" });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new ApiError(res.status, detailMessage(data) ?? `${res.status} ${res.statusText}`);
+    return data as ImportReport;
+  },
+
   demoData: (seed: number) => request<Record<string, number>>("POST", "/api/admin/demo-data", { seed }),
 };
 
 const enc = encodeURIComponent;
+export type Level = "l2" | "l3";
+const cfgUrl = (level: Level, code: string) => `/api/${level}/${enc(code)}/config`;

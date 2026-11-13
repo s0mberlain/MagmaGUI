@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { api, type DueRule, type Kpis, type Scores } from "../api";
+import { api, type DueRule, type Kpis, type RecentCommit, type Scores } from "../api";
 import { useAuth } from "../auth";
 import { ErrorNote, GapBadge, MetricBars, MetricLegend, useLoad } from "../components/ui";
 import { fmtDate, num, pct } from "../lib/format";
@@ -37,6 +37,7 @@ export default function Dashboard() {
   const { can } = useAuth();
   const scores = useLoad<Scores>(() => api.scores());
   const due = useLoad<DueRule[]>(() => api.due(30));
+  const commits = useLoad<RecentCommit[]>(() => api.recentCommits(5));
   const s = scores.data;
 
   return (
@@ -121,37 +122,61 @@ export default function Dashboard() {
             </table>
           </div>
           <p className="muted small">
-            L2 column: use cases with scored rules / all. Only operational and maintenance rules with all three
-            metrics count.
+            L2 column: use cases with scored rules / all. Only operational and maintenance rules with all three metrics
+            count.
           </p>
         </section>
 
-        <section className="card split-side" aria-labelledby="vh">
-          <div className="section-head">
-            <h2 id="vh">Verification due</h2>
-            <Link to="/verification" className="small">
-              All {due.data?.length ?? ""}
-            </Link>
-          </div>
-          <ErrorNote error={due.error} />
-          {due.data && !due.data.length && <p className="muted">Nothing is due in the next 30 days.</p>}
-          <ul className="link-list">
-            {due.data?.slice(0, 7).map((d) => (
-              <li key={d.code}>
-                <Link to={`/usecases/l3/${d.code}`}>
-                  <span className="stack">
-                    <span className="mono small muted">{d.code}</span>
-                    <span className="strong-500">{d.name}</span>
-                    {d.last_verified_at && (
-                      <span className="small muted">Last verified {fmtDate(d.last_verified_at)}</span>
-                    )}
-                  </span>
-                  <DueBadge d={d} />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <div className="split-side stack-lg">
+          <section className="card stack-sm" aria-labelledby="vh">
+            <div className="section-head">
+              <h2 id="vh">Verification due</h2>
+              <Link to="/verification" className="small">
+                All {due.data?.length ?? ""}
+              </Link>
+            </div>
+            <ErrorNote error={due.error} />
+            {due.data && !due.data.length && <p className="muted">Nothing is due in the next 30 days.</p>}
+            <ul className="link-list">
+              {due.data?.slice(0, 7).map((d) => (
+                <li key={d.code}>
+                  <Link to={`/usecases/l3/${d.code}`}>
+                    <span className="stack">
+                      <span className="mono small muted">{d.code}</span>
+                      <span className="strong-500">{d.name}</span>
+                      {d.last_verified_at && (
+                        <span className="small muted">Last verified {fmtDate(d.last_verified_at)}</span>
+                      )}
+                    </span>
+                    <DueBadge d={d} />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="card stack-sm" aria-labelledby="ch">
+            <h2 id="ch">Recent config commits</h2>
+            {commits.data && !commits.data.length && <p className="muted small">No configurations yet.</p>}
+            <ul className="link-list">
+              {commits.data?.map((c) => (
+                <li key={c.sha}>
+                  <Link to={c.level === "l3" ? `/usecases/l3/${c.code}` : `/usecases?l2=${c.code}`}>
+                    <span className="mono small accent" style={{ paddingTop: 1 }}>
+                      {c.short}
+                    </span>
+                    <span className="stack grow">
+                      <span className="strong-500">{c.message}</span>
+                      <span className="small muted">
+                        {c.code} r{c.rev} · {c.author} · {fmtDate(c.created_at)}
+                      </span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
       </div>
     </>
   );

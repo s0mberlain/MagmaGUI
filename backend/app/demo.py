@@ -11,15 +11,17 @@ Only use case fields are overwritten; the catalogue itself (IDs, names) is kept.
 import argparse
 import logging
 import random
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app import configs
 from app.models import (
     BusinessDriver,
     ComplianceDriver,
     ComplianceSource,
+    ConfigCommit,
     L2UseCase,
     L3UseCase,
     Lifecycle,
@@ -86,6 +88,98 @@ def _pick(rnd: random.Random, items: list, lo: int, hi: int) -> list:
     return rnd.sample(items, min(len(items), rnd.randint(lo, hi))) if items else []
 
 
+SEVERITIES = ["low", "medium", "high", "critical"]
+QUERY_FIELDS = ["process.name", "event.code", "user.name", "destination.port", "file.path"]
+CONFIG_CHANGES = [
+    ("threshold", "Lower threshold after purple team test"),
+    ("severity", "Raise severity"),
+    ("window", "Widen correlation window"),
+    ("exclusions", "Exclude known admin hosts"),
+    ("owner", "Hand over to detection engineering"),
+]
+
+
+def _config_yaml(rule, cfg: dict) -> str:
+    lines = [
+        f"# Detection configuration for {rule.code}",
+        f"rule: {rule.code}",
+        f"title: {rule.name}",
+        f"owner: {cfg['owner']}",
+        f"severity: {cfg['severity']}",
+        "schedule:",
+        f"  interval: {cfg['interval']}",
+        f"  window: {cfg['window']}",
+        "detection:",
+        f'  query: {cfg["field"]} == "{cfg["value"]}"',
+        f"  threshold: {cfg['threshold']}",
+    ]
+    if rule.attack_techniques:
+        lines.append("attack:")
+        lines += [f"  - {t}" for t in rule.attack_techniques]
+    if cfg["exclusions"]:
+        lines.append("exclusions:")
+        lines += [f"  - host: {h}" for h in cfg["exclusions"]]
+    lines += ["response:", f"  playbook: PB-{cfg['playbook']:03d}", "  notify: soc-l1"]
+    return "\n".join(lines) + "\n"
+
+
+def _demo_configs(db: Session, rnd: random.Random, rules, users, today: date) -> int:
+    """A YAML config with 1-4 commits for about 40 % of the operational rules."""
+    n = 0
+    for rule in rules:
+        if rule.lifecycle_status not in (Lifecycle.operational, Lifecycle.maintenance):
+            continue
+        if rnd.random() > 0.4:
+            continue
+        cfg = {
+            "owner": rnd.choice(["soc-l2", "detection-engineering", "threat-hunting"]),
+            "severity": rnd.choice(SEVERITIES[:3]),
+            "interval": rnd.choice(["5m", "15m", "1h"]),
+            "window": rnd.choice(["10m", "30m", "1h"]),
+            "field": rnd.choice(QUERY_FIELDS),
+            "value": rnd.choice(["lsass.exe", "4625", "svc_backup", "445", "/tmp/*"]),
+            "threshold": rnd.randint(3, 20),
+            "exclusions": [],
+            "playbook": rnd.randint(1, 40),
+        }
+        start = rule.onboarded_at or today - timedelta(days=300)
+        span = max(1, (today - start).days)
+        days = sorted(rnd.sample(range(span), min(span, rnd.randint(1, 4))))
+        made = []
+        for i, d in enumerate(days):
+            if i == 0:
+                msg = "Initial configuration"
+            else:
+                key, msg = rnd.choice(CONFIG_CHANGES)
+                if key == "threshold":
+                    cfg["threshold"] = max(1, cfg["threshold"] - rnd.randint(1, 3))
+                elif key == "severity":
+                    idx = SEVERITIES.index(cfg["severity"])
+                    cfg["severity"] = SEVERITIES[min(3, idx + 1)]
+                elif key == "window":
+                    cfg["window"] = "2h"
+                elif key == "exclusions":
+                    cfg["exclusions"] = cfg["exclusions"] + [f"adm-{rnd.randint(1, 99):02d}"]
+                else:
+                    cfg["owner"] = "detection-engineering"
+            at = datetime.combine(
+                start + timedelta(days=d), time(rnd.randint(8, 17), rnd.randint(0, 59)), UTC
+            )
+            made.append(
+                configs.make_commit(
+                    db, rule, _config_yaml(rule, cfg), msg, rnd.choice(users), at=at
+                )
+            )
+            n += 1
+        # tag the version that was live when the rule was last verified
+        if rule.last_verified_at:
+            live = [c for c in made if c.created_at.date() <= rule.last_verified_at]
+            if live:
+                name = f"verified-{rule.last_verified_at.isoformat()}"
+                configs.add_tag(db, rule, live[-1], name, rule.last_verified_by or "demo")
+    return n
+
+
 def apply_demo_data(db: Session, seed: int = 42, today: date | None = None) -> dict[str, int]:
     rnd = random.Random(seed)
     today = today or date.today()
@@ -105,6 +199,7 @@ def apply_demo_data(db: Session, seed: int = 42, today: date | None = None) -> d
     db.flush()
 
     db.execute(delete(Verification))
+    db.execute(delete(ConfigCommit))
 
     # Earlier demo rules are replaced, so re-running with the same seed gives the same result.
     db.execute(delete(L3UseCase).where(L3UseCase.description == DEMO_MARK))
@@ -212,6 +307,8 @@ def apply_demo_data(db: Session, seed: int = 42, today: date | None = None) -> d
         if dates:
             l2.last_verified_at = min(dates)
             l2.last_verified_by = "demo"
+
+    counts["config_commits"] = _demo_configs(db, rnd, rules, users, today)
 
     db.commit()
     log.info("Applied demo data (seed %d): %s", seed, counts)

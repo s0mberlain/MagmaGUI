@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import audit
+from app import audit, configs
 from app.api.deps import DB, SettingsDep
 from app.models import L1UseCase, L2UseCase, L3UseCase, Verification, VerificationResult
 from app.scoring import SCORED_STATES, L1Input, L2Input, Result, RuleInput, compute
@@ -89,6 +89,7 @@ class VerificationOut(BaseModel):
     username: str
     result: VerificationResult
     note: str
+    config_tag: str | None = None
 
 
 def compute_scores(db: Session, default_interval: int) -> tuple[Result, list, list, list]:
@@ -218,15 +219,19 @@ for _level in ("l2", "l3"):
             if obj.last_verified_at is None or when >= obj.last_verified_at:
                 obj.last_verified_at = when
                 obj.last_verified_by = user.username
+            # Tag the configuration version that was verified (PLAN 4a)
+            tag = configs.tag_verified(db, obj, when, user.username)
             audit.record(
                 db,
                 user,
                 "verify",
                 level,
                 code,
-                {"result": body.result.value, "verified_at": when, "note": body.note},
+                {"result": body.result.value, "verified_at": when, "note": body.note}
+                | ({"config_tag": tag} if tag else {}),
             )
             db.commit()
+            v.config_tag = tag
             return v
 
         @router.get(f"/{level}/{{code}}/verifications", response_model=list[VerificationOut])

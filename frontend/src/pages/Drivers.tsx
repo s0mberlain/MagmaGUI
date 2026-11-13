@@ -50,7 +50,9 @@ export default function Drivers() {
       <header className="page-header">
         <div>
           <h1>Business drivers</h1>
-          <div className="subtitle">Why the SOC monitors a threat: business and compliance drivers linked to L2 use cases.</div>
+          <div className="subtitle">
+            Why the SOC monitors a threat: business and compliance drivers linked to L2 use cases.
+          </div>
         </div>
         {editor && (
           <div className="row-actions">
@@ -91,7 +93,9 @@ export default function Drivers() {
                       <button
                         type="button"
                         className="btn btn-sm"
-                        onClick={() => setBd({ id: d.id, form: { code: d.code, name: d.name, description: d.description } })}
+                        onClick={() =>
+                          setBd({ id: d.id, form: { code: d.code, name: d.name, description: d.description } })
+                        }
                       >
                         Edit
                       </button>
@@ -190,7 +194,11 @@ export default function Drivers() {
                           type="button"
                           className="btn btn-sm"
                           onClick={() =>
-                            setCd({ id: c.id, sourceId: src.id, form: { ref: c.ref, name: c.name, description: c.description } })
+                            setCd({
+                              id: c.id,
+                              sourceId: src.id,
+                              form: { ref: c.ref, name: c.name, description: c.description },
+                            })
                           }
                         >
                           Edit

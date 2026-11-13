@@ -26,7 +26,11 @@ _DUMMY_HASH = hash_password("timing-equaliser-not-a-password")
 
 @router.get("/config", response_model=AuthConfigOut)
 def auth_config(settings: SettingsDep) -> AuthConfigOut:
-    return AuthConfigOut(local_login_enabled=settings.local_login_enabled, sso_enabled=False)
+    return AuthConfigOut(
+        local_login_enabled=settings.local_login_enabled,
+        sso_enabled=settings.sso_enabled,
+        sso_label=settings.oidc_button_label,
+    )
 
 
 @router.post("/login", response_model=UserOut)

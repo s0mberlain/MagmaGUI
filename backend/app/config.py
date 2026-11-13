@@ -36,6 +36,24 @@ class Settings(BaseSettings):
     demo_data: bool = False
     demo_seed: int = 42
 
+    # SSO via OpenID Connect (see app/oidc.py). Enabled when issuer and client id are set.
+    oidc_issuer: str | None = None
+    oidc_client_id: str | None = None
+    oidc_client_secret: str | None = None
+    oidc_scopes: str = "openid profile email"
+    # Claim with the user's groups or roles, e.g. "groups" or "roles".
+    oidc_role_claim: str = "groups"
+    # IdP group -> app role, e.g. "SOC-Admins=admin,SOC-Analysts=analyst,Audit=auditor".
+    oidc_role_map: str = ""
+    # Role for users without a matching group; empty = no access.
+    oidc_default_role: str | None = None
+    oidc_username_claim: str = "preferred_username"
+    oidc_button_label: str = "Sign in with SSO"
+
+    @property
+    def sso_enabled(self) -> bool:
+        return bool(self.oidc_issuer and self.oidc_client_id)
+
     @property
     def cookie_secure(self) -> bool:
         return self.base_url.startswith("https://")

@@ -297,3 +297,50 @@ class Verification(Base):
     )
     note: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ConfigCommit(Base):
+    """One immutable version of the free-form YAML configuration of an L2 use case or L3 rule.
+
+    Commits are never changed or deleted (docs/PLAN.md section 4a). `sha` is a SHA-256 over the
+    parent, author, time, message and content, like a git commit id.
+    """
+
+    __tablename__ = "config_commits"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    l2_id: Mapped[int | None] = mapped_column(
+        ForeignKey("l2_use_cases.id", ondelete="CASCADE"), index=True
+    )
+    l3_id: Mapped[int | None] = mapped_column(
+        ForeignKey("l3_use_cases.id", ondelete="CASCADE"), index=True
+    )
+    rev: Mapped[int] = mapped_column(Integer)
+    sha: Mapped[str] = mapped_column(String(64), unique=True)
+    parent_sha: Mapped[str | None] = mapped_column(String(64))
+    content: Mapped[str] = mapped_column(Text)
+    message: Mapped[str] = mapped_column(String(500))
+    author: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    restored_from: Mapped[str | None] = mapped_column(String(64))
+
+    tags: Mapped[list["ConfigTag"]] = relationship(
+        back_populates="commit", cascade="all, delete-orphan", order_by="ConfigTag.id"
+    )
+
+
+class ConfigTag(Base):
+    """A named marker on a commit, e.g. `prod` or `verified-2026-11-13`."""
+
+    __tablename__ = "config_tags"
+    __table_args__ = (UniqueConstraint("commit_id", "name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    commit_id: Mapped[int] = mapped_column(
+        ForeignKey("config_commits.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(100))
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    commit: Mapped[ConfigCommit] = relationship(back_populates="tags")

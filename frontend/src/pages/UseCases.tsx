@@ -1,7 +1,8 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { api, LIFECYCLES, type L1, type L2, type L3, type Lifecycle, type Scores } from "../api";
+import { api, LIFECYCLES, type ConfigCommit, type L1, type L2, type L3, type Lifecycle, type Scores } from "../api";
 import { useAuth } from "../auth";
+import ConfigPanel from "../components/ConfigPanel";
 import { Chips, ErrorNote, GapBadge, Modal, MultiSelect, StatusPill, useLoad } from "../components/ui";
 import { fmtDate, num, pct, STATUS_LABEL } from "../lib/format";
 
@@ -38,6 +39,10 @@ export default function UseCases() {
   const selected = cat.data?.l2s.find((x) => x.code === selectedCode) ?? null;
   const rules = useLoad<L3[]>(
     () => (selectedCode ? api.l3s({ l2: selectedCode }) : Promise.resolve([])),
+    [selectedCode],
+  );
+  const heads = useLoad(
+    () => (selectedCode ? api.configHeads("l3", selectedCode + "-") : Promise.resolve({})),
     [selectedCode],
   );
 
@@ -148,14 +153,14 @@ export default function UseCases() {
             />
           )}
           <ErrorNote error={rules.error} />
-          {selected && rules.data && rules.data.length > 0 && <RuleTable rules={rules.data} />}
+          {selected && rules.data && rules.data.length > 0 && <RuleTable rules={rules.data} heads={heads.data ?? {}} />}
           {selected && rules.data && rules.data.length === 0 && (
             <div className="empty">
               <GapBadge />
               <h3>No L3 rules yet</h3>
               <p>
-                This L2 use case is not scored and counts against framework completeness until at least one
-                operational rule with all three metrics exists.
+                This L2 use case is not scored and counts against framework completeness until at least one operational
+                rule with all three metrics exists.
               </p>
               {editor && (
                 <button type="button" className="btn btn-primary" onClick={() => setDialog("newL3")}>
@@ -164,6 +169,7 @@ export default function UseCases() {
               )}
             </div>
           )}
+          {selected && <ConfigPanel key={selected.code} level="l2" code={selected.code} editor={editor} />}
         </section>
       </div>
 
@@ -266,7 +272,7 @@ function L2Header({
   );
 }
 
-function RuleTable({ rules }: { rules: L3[] }) {
+function RuleTable({ rules, heads }: { rules: L3[]; heads: Record<string, ConfigCommit> }) {
   return (
     <div className="card table-card">
       <table className="table">
@@ -280,6 +286,7 @@ function RuleTable({ rules }: { rules: L3[] }) {
             <th className="num">Weight</th>
             <th>Data sources</th>
             <th>Last verified</th>
+            <th>Config</th>
           </tr>
         </thead>
         <tbody>
@@ -306,6 +313,18 @@ function RuleTable({ rules }: { rules: L3[] }) {
               </td>
               <td>
                 <VerifiedCell rule={r} />
+              </td>
+              <td className="mono small">
+                {heads[r.code] ? (
+                  <span title={heads[r.code].message}>
+                    r{heads[r.code].rev}
+                    {heads[r.code].tags.length > 0 && (
+                      <span className="muted"> · {heads[r.code].tags[heads[r.code].tags.length - 1].name}</span>
+                    )}
+                  </span>
+                ) : (
+                  <span className="muted">–</span>
+                )}
               </td>
             </tr>
           ))}
@@ -618,15 +637,7 @@ function NewL2Dialog({
   );
 }
 
-function NewL3Dialog({
-  l2,
-  onClose,
-  onCreated,
-}: {
-  l2: L2;
-  onClose: () => void;
-  onCreated: (code: string) => void;
-}) {
+function NewL3Dialog({ l2, onClose, onCreated }: { l2: L2; onClose: () => void; onCreated: (code: string) => void }) {
   const next = useLoad(() => api.nextL3Code(l2.code), [l2.code]);
   const [code, setCode] = useState<string | null>(null);
   const [name, setName] = useState("");

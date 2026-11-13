@@ -62,6 +62,7 @@ class PasswordChange(BaseModel):
 class AuthConfigOut(BaseModel):
     local_login_enabled: bool
     sso_enabled: bool
+    sso_label: str = "Sign in with SSO"
 
 
 # ---------------------------------------------------------------- business layer & references

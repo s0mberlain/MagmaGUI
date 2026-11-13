@@ -9,7 +9,18 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import sessionmaker
 
 from app import __version__
-from app.api import admin, audit_log, auth, business, scores, usecases, users
+from app.api import (
+    admin,
+    audit_log,
+    auth,
+    business,
+    configs,
+    oidc,
+    scores,
+    transfer,
+    usecases,
+    users,
+)
 from app.config import Settings, get_settings
 from app.db import make_engine
 from app.startup import initialize
@@ -78,12 +89,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     for r in (
         system,
         auth.router,
+        oidc.router,
         users.router,
         usecases.router,
         business.router,
         audit_log.router,
         scores.router,
         admin.router,
+        configs.router,
+        transfer.router,
     ):
         api.include_router(r)
     app.include_router(api)

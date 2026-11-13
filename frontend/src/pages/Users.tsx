@@ -17,7 +17,10 @@ export default function Users() {
   const [form, setForm] = useState({ username: "", display_name: "", role: "analyst" as Role, password: "" });
 
   const reload = useCallback(() => {
-    api.users().then(setUsers).catch((e: Error) => setError(e.message));
+    api
+      .users()
+      .then(setUsers)
+      .catch((e: Error) => setError(e.message));
   }, []);
   useEffect(reload, [reload]);
 
@@ -49,7 +52,10 @@ export default function Users() {
       <header className="page-header">
         <div>
           <h1>Users</h1>
-          <div className="subtitle">Local accounts and roles. SSO users appear here after their first login (M3).</div>
+          <div className="subtitle">
+            Local accounts and roles. SSO users appear after their first login; their role comes from the IdP groups and
+            is updated at every sign-in.
+          </div>
         </div>
       </header>
 

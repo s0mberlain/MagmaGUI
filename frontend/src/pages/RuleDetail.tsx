@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, LIFECYCLES, type L3, type Lifecycle, type RefItem } from "../api";
 import { useAuth } from "../auth";
+import ConfigPanel from "../components/ConfigPanel";
 import { ErrorNote, MultiSelect, StatusPill, useLoad } from "../components/ui";
 import { fmtDate, num, STATUS_LABEL } from "../lib/format";
 import { VerifiedCell, VerifyDialog } from "./UseCases";
@@ -137,267 +138,261 @@ export default function RuleDetail() {
 
   return (
     <>
-    <form onSubmit={save} className="stack-lg">
-      <nav aria-label="Breadcrumb" className="crumbs">
-        <Link to="/usecases">Use cases</Link>
-        <span aria-hidden="true">/</span>
-        <Link to={`/usecases?l1=${r.l1_code}`}>{r.l1_code}</Link>
-        <span aria-hidden="true">/</span>
-        <Link to={`/usecases?l2=${r.l2_code}`}>{r.l2_code}</Link>
-        <span aria-hidden="true">/</span>
-        <span>{r.code}</span>
-      </nav>
+      <form onSubmit={save} className="stack-lg">
+        <nav aria-label="Breadcrumb" className="crumbs">
+          <Link to="/usecases">Use cases</Link>
+          <span aria-hidden="true">/</span>
+          <Link to={`/usecases?l1=${r.l1_code}`}>{r.l1_code}</Link>
+          <span aria-hidden="true">/</span>
+          <Link to={`/usecases?l2=${r.l2_code}`}>{r.l2_code}</Link>
+          <span aria-hidden="true">/</span>
+          <span>{r.code}</span>
+        </nav>
 
-      <header className="page-header">
-        <div className="stack-sm">
-          <div className="chips">
-            <span className="code-tag">{r.code}</span>
-            <StatusPill status={r.lifecycle_status} />
-            {r.attack_techniques.map((t) => (
-              <span key={t} className="chip chip-neutral">
-                ATT&CK {t}
-              </span>
-            ))}
-          </div>
-          {editor ? (
-            <>
-              <label className="sr-only" htmlFor="rule-name">
-                Rule name
-              </label>
-              <input
-                id="rule-name"
-                className="title-input"
-                value={form.name}
-                required
-                onChange={(ev) => set({ name: ev.target.value })}
-              />
-            </>
-          ) : (
-            <h1>{r.name}</h1>
-          )}
-        </div>
-        {editor && (
-          <div className="row-actions">
-            {can("admin") && (
-              <button type="button" className="btn" onClick={remove}>
-                Delete
-              </button>
-            )}
-            <button type="button" className="btn btn-dark" onClick={() => setVerifying(true)}>
-              Verify now
-            </button>
-            <button type="submit" className="btn btn-primary" disabled={busy || !dirty}>
-              {dirty ? "Save changes" : "Saved"}
-            </button>
-          </div>
-        )}
-      </header>
-      {!editor && <p className="form-notice">Read-only: your role cannot change rules.</p>}
-      <ErrorNote error={error} />
-      {saved && (
-        <p className="form-notice" role="status">
-          {saved}
-        </p>
-      )}
-
-      <div className="split">
-        <div className="split-side stack-lg">
-          <section className="card stack" aria-labelledby="mh">
-            <h2 id="mh">Metrics</h2>
-            {METRICS.map((m) => {
-              const v = form[m.key];
-              return (
-                <div key={m.key} className="slider">
-                  <div className="slider-head">
-                    <label htmlFor={m.key}>{m.label}</label>
-                    <span className="strong">{v === null ? "not set" : `${Math.round(v * 100)} %`}</span>
-                  </div>
-                  <input
-                    id={m.key}
-                    type="range"
-                    min={0}
-                    max={100}
-                    step={5}
-                    disabled={!editor}
-                    value={v === null ? 0 : Math.round(v * 100)}
-                    className={v === null ? "unset" : ""}
-                    onChange={(ev) => set({ [m.key]: Number(ev.target.value) / 100 } as Partial<Form>)}
-                  />
-                  <span className="small muted">
-                    {m.hint}
-                    {editor && v !== null && (
-                      <>
-                        {" "}
-                        <button type="button" className="link-btn" onClick={() => set({ [m.key]: null } as Partial<Form>)}>
-                          Clear
-                        </button>
-                      </>
-                    )}
-                  </span>
-                </div>
-              );
-            })}
-            <div className="metric-results">
-              <div>
-                <span className="small muted">Weight (eff × impl × cov)</span>
-                <span className="big accent">{num(weight)}</span>
-              </div>
-              <div>
-                <span className="small muted">Potential (eff − weight)</span>
-                <span className="big data1">{num(potential)}</span>
-              </div>
-            </div>
-            {!assessed && <p className="small muted">Set all three metrics to score the rule.</p>}
-            {assessed && !["operational", "maintenance"].includes(form.lifecycle_status) && (
-              <p className="small muted">Only operational and maintenance rules count towards the scores.</p>
-            )}
-          </section>
-
-          <section className="card stack" aria-labelledby="vh">
-            <div className="section-head">
-              <h2 id="vh">Verification</h2>
-              <VerifiedCell rule={r} />
-            </div>
-            <p className="small muted" style={{ margin: 0 }}>
-              Next due {fmtDate(r.verification_due)}
-              {r.verification_interval_days
-                ? ` · every ${r.verification_interval_days} days`
-                : " · default interval"}
-              {r.last_verified_by && ` · last by ${r.last_verified_by}`}
-            </p>
-            <ErrorNote error={history.error} />
-            {history.data && !history.data.length && <p className="muted small">No verifications recorded.</p>}
-            <ul className="history">
-              {history.data?.map((v) => (
-                <li key={v.id}>
-                  <span className={v.result === "ok" ? "pill pill-ok" : "badge-gap"}>
-                    {v.result === "ok" ? "OK" : "Issues"}
-                  </span>
-                  <span className="stack-xs">
-                    <span className="strong-500">
-                      {fmtDate(v.verified_at)} · {v.username}
-                    </span>
-                    {v.note && <span className="ink-2">{v.note}</span>}
-                  </span>
-                </li>
+        <header className="page-header">
+          <div className="stack-sm">
+            <div className="chips">
+              <span className="code-tag">{r.code}</span>
+              <StatusPill status={r.lifecycle_status} />
+              {r.attack_techniques.map((t) => (
+                <span key={t} className="chip chip-neutral">
+                  ATT&CK {t}
+                </span>
               ))}
-            </ul>
-          </section>
-        </div>
-
-        <div className="split-wide stack-lg">
-          <section className="card stack" aria-labelledby="dh">
-            <h2 id="dh">Details</h2>
-            <div className="form-grid">
-              <label className="field">
-                Lifecycle status
-                <select
-                  className="input"
-                  disabled={!editor}
-                  value={form.lifecycle_status}
-                  onChange={(ev) => set({ lifecycle_status: ev.target.value as Lifecycle })}
-                >
-                  {LIFECYCLES.map((s) => (
-                    <option key={s} value={s}>
-                      {STATUS_LABEL[s]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                Onboarded on
-                <input
-                  className="input"
-                  type="date"
-                  disabled={!editor}
-                  value={form.onboarded_at}
-                  onChange={(ev) => set({ onboarded_at: ev.target.value })}
-                />
-              </label>
-              <label className="field">
-                Verify every (days)
-                <input
-                  className="input"
-                  type="number"
-                  min={1}
-                  max={3650}
-                  placeholder="Default"
-                  disabled={!editor}
-                  value={form.interval}
-                  onChange={(ev) => set({ interval: ev.target.value })}
-                />
-              </label>
-              <label className="field">
-                ATT&CK techniques
-                <input
-                  className="input mono"
-                  placeholder="T1003, T1059.001"
-                  disabled={!editor}
-                  value={form.attack}
-                  onChange={(ev) => set({ attack: ev.target.value })}
-                />
-              </label>
             </div>
-            <div className="form-grid">
-              <MultiSelect
-                label="Log sources"
-                options={opts(lists.data?.log)}
-                value={form.log_sources}
-                disabled={!editor}
-                onChange={(v) => set({ log_sources: v })}
-              />
-              <MultiSelect
-                label="Detection technologies"
-                options={opts(lists.data?.tech)}
-                value={form.detection_technologies}
-                disabled={!editor}
-                onChange={(v) => set({ detection_technologies: v })}
-              />
-              <MultiSelect
-                label="Scopes"
-                options={opts(lists.data?.scope)}
-                value={form.scopes}
-                disabled={!editor}
-                onChange={(v) => set({ scopes: v })}
-              />
+            {editor ? (
+              <>
+                <label className="sr-only" htmlFor="rule-name">
+                  Rule name
+                </label>
+                <input
+                  id="rule-name"
+                  className="title-input"
+                  value={form.name}
+                  required
+                  onChange={(ev) => set({ name: ev.target.value })}
+                />
+              </>
+            ) : (
+              <h1>{r.name}</h1>
+            )}
+          </div>
+          {editor && (
+            <div className="row-actions">
+              {can("admin") && (
+                <button type="button" className="btn" onClick={remove}>
+                  Delete
+                </button>
+              )}
+              <button type="button" className="btn btn-dark" onClick={() => setVerifying(true)}>
+                Verify now
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={busy || !dirty}>
+                {dirty ? "Save changes" : "Saved"}
+              </button>
             </div>
-            <label className="field">
-              Description
-              <textarea
-                className="input textarea"
-                rows={3}
-                disabled={!editor}
-                value={form.description}
-                onChange={(ev) => set({ description: ev.target.value })}
-              />
-            </label>
-            <label className="field">
-              Comments
-              <textarea
-                className="input textarea"
-                rows={3}
-                disabled={!editor}
-                value={form.comments}
-                onChange={(ev) => set({ comments: ev.target.value })}
-              />
-            </label>
-            <p className="small muted" style={{ margin: 0 }}>
-              Last changed {fmtDate(r.updated_at)}
-            </p>
-          </section>
+          )}
+        </header>
+        {!editor && <p className="form-notice">Read-only: your role cannot change rules.</p>}
+        <ErrorNote error={error} />
+        {saved && (
+          <p className="form-notice" role="status">
+            {saved}
+          </p>
+        )}
 
-          <section className="card stack" aria-labelledby="yh">
-            <h2 id="yh">Configuration (YAML)</h2>
-            <div className="empty empty-flat">
-              <p>
-                A free-form YAML configuration with a git-like change history (commits, diff, restore and optional
-                git sync) comes in the next milestone.
+        <div className="split">
+          <div className="split-side stack-lg">
+            <section className="card stack" aria-labelledby="mh">
+              <h2 id="mh">Metrics</h2>
+              {METRICS.map((m) => {
+                const v = form[m.key];
+                return (
+                  <div key={m.key} className="slider">
+                    <div className="slider-head">
+                      <label htmlFor={m.key}>{m.label}</label>
+                      <span className="strong">{v === null ? "not set" : `${Math.round(v * 100)} %`}</span>
+                    </div>
+                    <input
+                      id={m.key}
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={5}
+                      disabled={!editor}
+                      value={v === null ? 0 : Math.round(v * 100)}
+                      className={v === null ? "unset" : ""}
+                      onChange={(ev) => set({ [m.key]: Number(ev.target.value) / 100 } as Partial<Form>)}
+                    />
+                    <span className="small muted">
+                      {m.hint}
+                      {editor && v !== null && (
+                        <>
+                          {" "}
+                          <button
+                            type="button"
+                            className="link-btn"
+                            onClick={() => set({ [m.key]: null } as Partial<Form>)}
+                          >
+                            Clear
+                          </button>
+                        </>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
+              <div className="metric-results">
+                <div>
+                  <span className="small muted">Weight (eff × impl × cov)</span>
+                  <span className="big accent">{num(weight)}</span>
+                </div>
+                <div>
+                  <span className="small muted">Potential (eff − weight)</span>
+                  <span className="big data1">{num(potential)}</span>
+                </div>
+              </div>
+              {!assessed && <p className="small muted">Set all three metrics to score the rule.</p>}
+              {assessed && !["operational", "maintenance"].includes(form.lifecycle_status) && (
+                <p className="small muted">Only operational and maintenance rules count towards the scores.</p>
+              )}
+            </section>
+
+            <section className="card stack" aria-labelledby="vh">
+              <div className="section-head">
+                <h2 id="vh">Verification</h2>
+                <VerifiedCell rule={r} />
+              </div>
+              <p className="small muted" style={{ margin: 0 }}>
+                Next due {fmtDate(r.verification_due)}
+                {r.verification_interval_days ? ` · every ${r.verification_interval_days} days` : " · default interval"}
+                {r.last_verified_by && ` · last by ${r.last_verified_by}`}
               </p>
-            </div>
-          </section>
+              <ErrorNote error={history.error} />
+              {history.data && !history.data.length && <p className="muted small">No verifications recorded.</p>}
+              <ul className="history">
+                {history.data?.map((v) => (
+                  <li key={v.id}>
+                    <span className={v.result === "ok" ? "pill pill-ok" : "badge-gap"}>
+                      {v.result === "ok" ? "OK" : "Issues"}
+                    </span>
+                    <span className="stack-xs">
+                      <span className="strong-500">
+                        {fmtDate(v.verified_at)} · {v.username}
+                      </span>
+                      {v.note && <span className="ink-2">{v.note}</span>}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          </div>
+
+          <div className="split-wide stack-lg">
+            <section className="card stack" aria-labelledby="dh">
+              <h2 id="dh">Details</h2>
+              <div className="form-grid">
+                <label className="field">
+                  Lifecycle status
+                  <select
+                    className="input"
+                    disabled={!editor}
+                    value={form.lifecycle_status}
+                    onChange={(ev) => set({ lifecycle_status: ev.target.value as Lifecycle })}
+                  >
+                    {LIFECYCLES.map((s) => (
+                      <option key={s} value={s}>
+                        {STATUS_LABEL[s]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  Onboarded on
+                  <input
+                    className="input"
+                    type="date"
+                    disabled={!editor}
+                    value={form.onboarded_at}
+                    onChange={(ev) => set({ onboarded_at: ev.target.value })}
+                  />
+                </label>
+                <label className="field">
+                  Verify every (days)
+                  <input
+                    className="input"
+                    type="number"
+                    min={1}
+                    max={3650}
+                    placeholder="Default"
+                    disabled={!editor}
+                    value={form.interval}
+                    onChange={(ev) => set({ interval: ev.target.value })}
+                  />
+                </label>
+                <label className="field">
+                  ATT&CK techniques
+                  <input
+                    className="input mono"
+                    placeholder="T1003, T1059.001"
+                    disabled={!editor}
+                    value={form.attack}
+                    onChange={(ev) => set({ attack: ev.target.value })}
+                  />
+                </label>
+              </div>
+              <div className="form-grid">
+                <MultiSelect
+                  label="Log sources"
+                  options={opts(lists.data?.log)}
+                  value={form.log_sources}
+                  disabled={!editor}
+                  onChange={(v) => set({ log_sources: v })}
+                />
+                <MultiSelect
+                  label="Detection technologies"
+                  options={opts(lists.data?.tech)}
+                  value={form.detection_technologies}
+                  disabled={!editor}
+                  onChange={(v) => set({ detection_technologies: v })}
+                />
+                <MultiSelect
+                  label="Scopes"
+                  options={opts(lists.data?.scope)}
+                  value={form.scopes}
+                  disabled={!editor}
+                  onChange={(v) => set({ scopes: v })}
+                />
+              </div>
+              <label className="field">
+                Description
+                <textarea
+                  className="input textarea"
+                  rows={3}
+                  disabled={!editor}
+                  value={form.description}
+                  onChange={(ev) => set({ description: ev.target.value })}
+                />
+              </label>
+              <label className="field">
+                Comments
+                <textarea
+                  className="input textarea"
+                  rows={3}
+                  disabled={!editor}
+                  value={form.comments}
+                  onChange={(ev) => set({ comments: ev.target.value })}
+                />
+              </label>
+              <p className="small muted" style={{ margin: 0 }}>
+                Last changed {fmtDate(r.updated_at)}
+              </p>
+            </section>
+
+            <ConfigPanel level="l3" code={code} editor={editor} />
+          </div>
         </div>
-      </div>
-    </form>
+      </form>
 
       {verifying && (
         <VerifyDialog

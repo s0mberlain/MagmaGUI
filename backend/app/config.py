@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     lockout_minutes: int = 15
     min_password_length: int = 12
 
+    # Verification interval used when a rule has no own interval.
+    default_verification_days: int = 180
+
+    # Fill the catalogue with generated demo data on first start (see app/demo.py).
+    demo_data: bool = False
+    demo_seed: int = 42
+
     @property
     def cookie_secure(self) -> bool:
         return self.base_url.startswith("https://")

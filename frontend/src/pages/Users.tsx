@@ -13,6 +13,7 @@ export default function Users() {
   const [users, setUsers] = useState<User[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [seed, setSeed] = useState(42);
   const [form, setForm] = useState({ username: "", display_name: "", role: "analyst" as Role, password: "" });
 
   const reload = useCallback(() => {
@@ -197,6 +198,39 @@ export default function Users() {
             </button>
           </div>
         </form>
+      </section>
+
+      <section className="card stack" aria-labelledby="demo-h">
+        <h2 id="demo-h">Demo data</h2>
+        <p className="muted" style={{ margin: 0 }}>
+          Fills the catalogue with random but reproducible metrics, statuses, data sources, dates and verification
+          history, and adds sample rules to empty L2 use cases. Existing values of these fields are overwritten.
+        </p>
+        <div className="inline-form-plain">
+          <label className="field">
+            Seed
+            <input
+              className="input input-sm"
+              type="number"
+              value={seed}
+              onChange={(e) => setSeed(Number(e.target.value))}
+              style={{ width: 120 }}
+            />
+          </label>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => {
+              if (window.confirm("Overwrite use case data with generated demo data?"))
+                void run(
+                  () => api.demoData(seed),
+                  `Demo data applied (seed ${seed}). Open the dashboard to see the scores.`,
+                );
+            }}
+          >
+            Load demo data
+          </button>
+        </div>
       </section>
     </>
   );

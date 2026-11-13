@@ -252,6 +252,13 @@ class L3Out(BaseModel):
     detection_technologies: list[str]
     scopes: list[str]
     updated_at: datetime
+    # calculated (app/scoring.py)
+    weight: float | None = None
+    potential: float | None = None
+    assessed: bool = False
+    scored: bool = False
+    verification_due: date | None = None
+    verification_overdue: bool = False
 
 
 class CatalogueSummary(BaseModel):

@@ -3,9 +3,14 @@ import { AuthProvider, RequireAuth } from "./auth";
 import Layout from "./components/Layout";
 import AuditLog from "./pages/AuditLog";
 import Dashboard from "./pages/Dashboard";
+import Drivers from "./pages/Drivers";
 import Login from "./pages/Login";
 import Placeholder from "./pages/Placeholder";
+import References from "./pages/References";
+import RuleDetail from "./pages/RuleDetail";
+import UseCases from "./pages/UseCases";
 import Users from "./pages/Users";
+import Verification from "./pages/Verification";
 import { NAV_ITEMS } from "./nav";
 
 export default function App() {
@@ -21,6 +26,11 @@ export default function App() {
           }
         >
           <Route index element={<Dashboard />} />
+          <Route path="usecases" element={<UseCases />} />
+          <Route path="usecases/l3/:code" element={<RuleDetail />} />
+          <Route path="verification" element={<Verification />} />
+          <Route path="drivers" element={<Drivers />} />
+          <Route path="references" element={<References />} />
           <Route
             path="audit"
             element={

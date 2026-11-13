@@ -53,6 +53,11 @@ class Lifecycle(enum.StrEnum):
     retired = "retired"
 
 
+class VerificationResult(enum.StrEnum):
+    ok = "ok"
+    issues = "issues"
+
+
 class RefKind(enum.StrEnum):
     threat_actor = "threat_actor"
     detection_technology = "detection_technology"
@@ -271,3 +276,24 @@ class L3UseCase(Base):
 
     parent: Mapped[L2UseCase] = relationship(back_populates="children")
     references: Mapped[list[ReferenceItem]] = relationship(secondary=l3_references)
+
+
+class Verification(Base):
+    """History behind last_verified_at on L2 use cases and L3 rules."""
+
+    __tablename__ = "verifications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    l2_id: Mapped[int | None] = mapped_column(
+        ForeignKey("l2_use_cases.id", ondelete="CASCADE"), index=True
+    )
+    l3_id: Mapped[int | None] = mapped_column(
+        ForeignKey("l3_use_cases.id", ondelete="CASCADE"), index=True
+    )
+    verified_at: Mapped[date] = mapped_column(Date)
+    username: Mapped[str] = mapped_column(String(64))
+    result: Mapped[VerificationResult] = mapped_column(
+        _enum(VerificationResult, "verification_result")
+    )
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

@@ -38,5 +38,9 @@ def initialize(engine: Engine, session_factory, settings: Settings) -> None:
     ensure_sqlite_dir(settings.database_url)
     migrate(engine)
     with session_factory() as db:
-        seed_catalogue(db)
+        fresh = seed_catalogue(db)
         ensure_admin(db, settings)
+        if fresh and settings.demo_data:
+            from app.demo import apply_demo_data
+
+            apply_demo_data(db, settings.demo_seed)

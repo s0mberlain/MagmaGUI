@@ -36,6 +36,167 @@ export interface AuditEntry {
   changes: Record<string, unknown>;
 }
 
+export type Lifecycle = "onboarding" | "operational" | "maintenance" | "offloading" | "retired";
+export const LIFECYCLES: Lifecycle[] = ["onboarding", "operational", "maintenance", "offloading", "retired"];
+export type RefKind = "threat_actor" | "detection_technology" | "log_source" | "scope";
+
+export interface Metrics {
+  effectiveness: number | null;
+  implementation: number | null;
+  coverage: number | null;
+  weight: number | null;
+  potential: number | null;
+}
+
+export interface Kpis {
+  soc_detection_score: number | null;
+  growth_potential: number | null;
+  detection_gap: number | null;
+  framework_completeness: number | null;
+  l2_with_scored_rules: number;
+  applicable_l2: number;
+  assessment_coverage: number | null;
+  assessed_rules: number;
+  active_rules: number;
+  verification_health: number | null;
+  verified_in_time: number;
+  verification_overdue: number;
+  operational_rules: number;
+  default_verification_days: number;
+}
+
+export interface GroupScore extends Metrics {
+  code: string;
+  name: string;
+  rules: number;
+  scored_rules: number;
+}
+export interface L1Score extends GroupScore {
+  applicable: boolean;
+  l2_count: number;
+  scored_l2: number;
+}
+export interface L2Score extends GroupScore {
+  l1_code: string;
+}
+export interface Scores {
+  overall: Metrics;
+  kpis: Kpis;
+  l1: L1Score[];
+  l2: L2Score[];
+}
+
+export interface DueRule {
+  code: string;
+  name: string;
+  l2_code: string;
+  lifecycle_status: Lifecycle;
+  last_verified_at: string | null;
+  last_verified_by: string | null;
+  due: string | null;
+  overdue: boolean;
+  days_left: number | null;
+}
+
+export interface Verification {
+  id: number;
+  verified_at: string;
+  username: string;
+  result: "ok" | "issues";
+  note: string;
+}
+
+export interface L1 {
+  id: number;
+  code: string;
+  name: string;
+  threat_category: string;
+  purpose: string;
+  stakeholders: string;
+  description: string;
+  applicable: boolean;
+  sort_order: number;
+  l2_count: number;
+  l3_count: number;
+}
+
+export interface L2 {
+  id: number;
+  code: string;
+  l1_code: string;
+  name: string;
+  description: string;
+  lifecycle_status: Lifecycle;
+  risk_level: number | null;
+  target_implementation: number | null;
+  onboarded_at: string | null;
+  last_verified_at: string | null;
+  last_verified_by: string | null;
+  actors: string[];
+  business_drivers: string[];
+  compliance_driver_ids: number[];
+  l3_count: number;
+}
+
+export interface L3 {
+  id: number;
+  code: string;
+  l1_code: string;
+  l2_code: string;
+  name: string;
+  description: string;
+  effectiveness: number | null;
+  implementation: number | null;
+  coverage: number | null;
+  lifecycle_status: Lifecycle;
+  comments: string;
+  attack_techniques: string[];
+  onboarded_at: string | null;
+  last_verified_at: string | null;
+  last_verified_by: string | null;
+  verification_interval_days: number | null;
+  log_sources: string[];
+  detection_technologies: string[];
+  scopes: string[];
+  updated_at: string;
+  weight: number | null;
+  potential: number | null;
+  assessed: boolean;
+  scored: boolean;
+  verification_due: string | null;
+  verification_overdue: boolean;
+}
+
+export type L2Input = Partial<Omit<L2, "id" | "l1_code" | "l3_count" | "last_verified_by">>;
+export type L3Input = Partial<
+  Omit<L3, "id" | "l1_code" | "l2_code" | "updated_at" | "weight" | "potential" | "assessed" | "scored" | "verification_due" | "verification_overdue" | "last_verified_by">
+>;
+
+export interface RefItem {
+  id: number;
+  kind: RefKind;
+  name: string;
+  description: string;
+}
+export interface BusinessDriver {
+  id: number;
+  code: string;
+  name: string;
+  description: string;
+}
+export interface ComplianceDriver {
+  id: number;
+  source_id: number;
+  ref: string;
+  name: string;
+  description: string;
+}
+export interface ComplianceSource {
+  id: number;
+  name: string;
+  drivers: ComplianceDriver[];
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -94,4 +255,50 @@ export const api = {
     request<User>("PATCH", `/api/users/${id}`, u),
   deleteUser: (id: number) => request<void>("DELETE", `/api/users/${id}`),
   audit: (limit = 100) => request<AuditEntry[]>("GET", `/api/audit?limit=${limit}`),
+
+  scores: () => request<Scores>("GET", "/api/scores"),
+  due: (withinDays = 30) => request<DueRule[]>("GET", `/api/verification/due?within_days=${withinDays}`),
+  verify: (level: "l2" | "l3", code: string, body: { result: "ok" | "issues"; note: string; verified_at?: string }) =>
+    request<Verification>("POST", `/api/${level}/${enc(code)}/verify`, body),
+  verifications: (level: "l2" | "l3", code: string) =>
+    request<Verification[]>("GET", `/api/${level}/${enc(code)}/verifications`),
+
+  l1s: () => request<L1[]>("GET", "/api/l1"),
+  l2s: (l1?: string) => request<L2[]>("GET", `/api/l2${l1 ? `?l1=${enc(l1)}` : ""}`),
+  l2: (code: string) => request<L2>("GET", `/api/l2/${enc(code)}`),
+  createL2: (body: L2Input & { code: string; name: string }) => request<L2>("POST", "/api/l2", body),
+  updateL2: (code: string, body: L2Input) => request<L2>("PATCH", `/api/l2/${enc(code)}`, body),
+  deleteL2: (code: string) => request<void>("DELETE", `/api/l2/${enc(code)}`),
+  l3s: (filter: { l2?: string; l1?: string } = {}) =>
+    request<L3[]>("GET", `/api/l3?${new URLSearchParams(filter as Record<string, string>)}`),
+  l3: (code: string) => request<L3>("GET", `/api/l3/${enc(code)}`),
+  createL3: (body: L3Input & { code: string; name: string }) => request<L3>("POST", "/api/l3", body),
+  updateL3: (code: string, body: L3Input) => request<L3>("PATCH", `/api/l3/${enc(code)}`, body),
+  deleteL3: (code: string) => request<void>("DELETE", `/api/l3/${enc(code)}`),
+  nextL3Code: (l2: string) => request<{ code: string }>("GET", `/api/l3/next-code/${enc(l2)}`),
+
+  refs: (kind: RefKind) => request<RefItem[]>("GET", `/api/references/${kind}`),
+  createRef: (kind: RefKind, body: { name: string; description: string }) =>
+    request<RefItem>("POST", `/api/references/${kind}`, body),
+  updateRef: (kind: RefKind, id: number, body: { name: string; description: string }) =>
+    request<RefItem>("PATCH", `/api/references/${kind}/${id}`, body),
+  deleteRef: (kind: RefKind, id: number) => request<void>("DELETE", `/api/references/${kind}/${id}`),
+
+  drivers: () => request<BusinessDriver[]>("GET", "/api/business-drivers"),
+  createDriver: (body: Omit<BusinessDriver, "id">) => request<BusinessDriver>("POST", "/api/business-drivers", body),
+  updateDriver: (id: number, body: Omit<BusinessDriver, "id">) =>
+    request<BusinessDriver>("PATCH", `/api/business-drivers/${id}`, body),
+  deleteDriver: (id: number) => request<void>("DELETE", `/api/business-drivers/${id}`),
+  compliance: () => request<ComplianceSource[]>("GET", "/api/compliance"),
+  createSource: (name: string) => request<ComplianceSource>("POST", "/api/compliance", { name }),
+  deleteSource: (id: number) => request<void>("DELETE", `/api/compliance/${id}`),
+  createComplianceDriver: (sourceId: number, body: { ref: string; name: string; description: string }) =>
+    request<ComplianceDriver>("POST", `/api/compliance/${sourceId}/drivers`, body),
+  updateComplianceDriver: (id: number, body: { ref: string; name: string; description: string }) =>
+    request<ComplianceDriver>("PATCH", `/api/compliance/drivers/${id}`, body),
+  deleteComplianceDriver: (id: number) => request<void>("DELETE", `/api/compliance/drivers/${id}`),
+
+  demoData: (seed: number) => request<Record<string, number>>("POST", "/api/admin/demo-data", { seed }),
 };
+
+const enc = encodeURIComponent;

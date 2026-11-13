@@ -11,11 +11,11 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", path: "/" },
-  { label: "Use cases", path: "/usecases", milestone: "M2" },
-  { label: "Verification", path: "/verification", milestone: "M2" },
+  { label: "Use cases", path: "/usecases" },
+  { label: "Verification", path: "/verification" },
   { label: "ATT&CK coverage", path: "/attack", milestone: "M6" },
-  { label: "Business drivers", path: "/drivers", milestone: "M2" },
-  { label: "Reference lists", path: "/references", milestone: "M2" },
+  { label: "Business drivers", path: "/drivers" },
+  { label: "Reference lists", path: "/references" },
   { label: "History & trends", path: "/history", milestone: "M4" },
   { label: "Import / Export", path: "/import-export", milestone: "M3" },
   { label: "Audit log", path: "/audit", roles: ["admin", "auditor"] },

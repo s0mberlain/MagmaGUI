@@ -1,5 +1,6 @@
 """L1 / L2 / L3 use cases. Parents are derived from the identifier prefix, as in the Excel tool."""
 
+from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -7,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app import audit
-from app.api.deps import DB
+from app.api.deps import DB, SettingsDep
 from app.models import (
     BusinessDriver,
     ComplianceDriver,
@@ -31,6 +32,7 @@ from app.schemas import (
     L3Out,
     L3Update,
 )
+from app.scoring import RuleInput, score_rule
 from app.security import Admin, Editor, Reader
 
 router = APIRouter(tags=["use cases"])
@@ -129,7 +131,21 @@ def l2_out(l2: L2UseCase, l3_count: int | None = None) -> L2Out:
     )
 
 
-def l3_out(l3: L3UseCase) -> L3Out:
+def l3_out(l3: L3UseCase, default_interval: int = 180) -> L3Out:
+    score = score_rule(
+        RuleInput(
+            l3.code,
+            l3.parent.code,
+            l3.lifecycle_status,
+            l3.effectiveness,
+            l3.implementation,
+            l3.coverage,
+            l3.last_verified_at,
+            l3.verification_interval_days,
+        ),
+        date.today(),
+        default_interval,
+    )
     by_kind: dict[RefKind, list[str]] = {k: [] for k in RefKind}
     for r in l3.references:
         by_kind[r.kind].append(r.name)
@@ -154,6 +170,12 @@ def l3_out(l3: L3UseCase) -> L3Out:
         detection_technologies=sorted(by_kind[RefKind.detection_technology]),
         scopes=sorted(by_kind[RefKind.scope]),
         updated_at=l3.updated_at,
+        weight=score.weight,
+        potential=score.potential,
+        assessed=score.assessed,
+        scored=score.scored,
+        verification_due=score.verification_due,
+        verification_overdue=score.verification_overdue,
     )
 
 
@@ -344,6 +366,7 @@ def _set_l3_refs(db: Session, l3: L3UseCase, data: dict[str, Any]) -> dict[str, 
 def list_l3(
     _: Reader,
     db: DB,
+    settings: SettingsDep,
     l2: str | None = None,
     l1: str | None = None,
     status_: Lifecycle | None = Query(None, alias="status"),
@@ -359,16 +382,16 @@ def list_l3(
         q = q.where(L3UseCase.code.startswith(l1 + "-"))
     if status_:
         q = q.where(L3UseCase.lifecycle_status == status_)
-    return [l3_out(x) for x in db.scalars(q)]
+    return [l3_out(x, settings.default_verification_days) for x in db.scalars(q)]
 
 
 @router.get("/l3/{code}", response_model=L3Out)
-def get_l3(code: str, _: Reader, db: DB) -> L3Out:
-    return l3_out(_by_code(db, L3UseCase, code, "L3 rule"))
+def get_l3(code: str, _: Reader, db: DB, settings: SettingsDep) -> L3Out:
+    return l3_out(_by_code(db, L3UseCase, code, "L3 rule"), settings.default_verification_days)
 
 
 @router.post("/l3", response_model=L3Out, status_code=201)
-def create_l3(body: L3Create, user: Editor, db: DB) -> L3Out:
+def create_l3(body: L3Create, user: Editor, db: DB, settings: SettingsDep) -> L3Out:
     _ensure_unique(db, L3UseCase, body.code)
     l2_code = body.code.rsplit("-", 1)[0]
     parent = db.scalar(select(L2UseCase).where(L2UseCase.code == l2_code))
@@ -381,17 +404,17 @@ def create_l3(body: L3Create, user: Editor, db: DB) -> L3Out:
     _apply(l3, data, user)
     audit.record(db, user, "create", "l3", l3.code, body.model_dump())
     db.commit()
-    return l3_out(l3)
+    return l3_out(l3, settings.default_verification_days)
 
 
 @router.patch("/l3/{code}", response_model=L3Out)
-def update_l3(code: str, body: L3Update, user: Editor, db: DB) -> L3Out:
+def update_l3(code: str, body: L3Update, user: Editor, db: DB, settings: SettingsDep) -> L3Out:
     l3 = _by_code(db, L3UseCase, code, "L3 rule")
     data = body.model_dump(exclude_unset=True)
     changes = _set_l3_refs(db, l3, data) | _apply(l3, data, user)
     audit.record(db, user, "update", "l3", code, changes)
     db.commit()
-    return l3_out(l3)
+    return l3_out(l3, settings.default_verification_days)
 
 
 @router.delete("/l3/{code}", status_code=204)

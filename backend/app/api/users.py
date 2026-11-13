@@ -87,3 +87,15 @@ def delete_user(user_id: int, admin: Admin, db: DB) -> None:
     audit.record(db, admin, "delete", "user", user.username)
     db.delete(user)
     db.commit()
+
+
+@router.delete("/{user_id}/totp", response_model=UserOut)
+def reset_totp(user_id: int, admin: Admin, db: DB) -> User:
+    """Turn off two-factor login, e.g. when someone lost their phone and recovery codes."""
+    from app.api.auth import clear_totp
+
+    user = _get(db, user_id)
+    clear_totp(user)
+    audit.record(db, admin, "totp_reset", "user", user.username)
+    db.commit()
+    return user

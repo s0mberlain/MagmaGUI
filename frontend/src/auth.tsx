@@ -5,7 +5,8 @@ import { api, setUnauthorizedHandler, type Role, type User } from "./api";
 interface AuthState {
   user: User | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string, otp?: string) => Promise<void>;
+  refresh: () => Promise<void>;
   logout: () => Promise<void>;
   can: (...roles: Role[]) => boolean;
 }
@@ -32,8 +33,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, [navigate]);
 
-  const login = useCallback(async (username: string, password: string) => {
-    setUser(await api.login(username, password));
+  const login = useCallback(async (username: string, password: string, otp?: string) => {
+    setUser(await api.login(username, password, otp));
+  }, []);
+
+  const refresh = useCallback(async () => {
+    setUser(await api.me());
   }, []);
 
   const logout = useCallback(async () => {
@@ -44,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const can = useCallback((...roles: Role[]) => !!user && roles.includes(user.role), [user]);
 
-  return <AuthContext.Provider value={{ user, loading, login, logout, can }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, loading, login, logout, can, refresh }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthState {

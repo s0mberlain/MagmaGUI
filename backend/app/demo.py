@@ -26,6 +26,7 @@ from app.models import (
     L3UseCase,
     Lifecycle,
     LifecycleEvent,
+    MaturityAssessment,
     ReferenceItem,
     RefKind,
     Snapshot,
@@ -231,6 +232,54 @@ def _demo_lifecycle(db: Session, rnd: random.Random, l2s, rules, users, today: d
     return n
 
 
+MATURITY_HISTORY = [
+    # days ago, level, target, aspects, notes
+    (
+        400,
+        2,
+        3,
+        {"people": 2, "process": 1, "technology": 2},
+        "Use cases live in a spreadsheet; no review cycle yet.",
+    ),
+    (
+        230,
+        2,
+        3,
+        {"people": 2, "process": 2, "technology": 3},
+        "Use case template agreed, onboarding follows a checklist.",
+    ),
+    (
+        110,
+        3,
+        4,
+        {"people": 3, "process": 3, "technology": 3},
+        "Definition of done enforced, verification every 180 days.",
+    ),
+    (
+        20,
+        3,
+        4,
+        {"people": 3, "process": 3, "technology": 4},
+        "Monthly trend review started; next step is steering with metrics.",
+    ),
+]
+
+
+def _demo_maturity(db: Session, today: date) -> int:
+    for days, level, target, aspects, notes in MATURITY_HISTORY:
+        db.add(
+            MaturityAssessment(
+                level=level,
+                target_level=target,
+                aspects=aspects,
+                notes=notes,
+                assessed_by="jana",
+                assessed_at=today - timedelta(days=days),
+            )
+        )
+    return len(MATURITY_HISTORY)
+
+
 def _status_at(db: Session, rule: L3UseCase, when: datetime) -> Lifecycle | None:
     ev = db.scalar(
         select(LifecycleEvent)
@@ -303,6 +352,7 @@ def apply_demo_data(
     db.execute(delete(Verification))
     db.execute(delete(ConfigCommit))
     db.execute(delete(LifecycleEvent))
+    db.execute(delete(MaturityAssessment))
     db.execute(delete(Snapshot).where(Snapshot.kind == "demo"))
 
     # Earlier demo rules are replaced, so re-running with the same seed gives the same result.
@@ -376,6 +426,9 @@ def apply_demo_data(
         rule.onboarded_at = today - timedelta(days=rnd.randint(30, 1095))
         rule.verification_interval_days = rnd.choice([None] * 8 + [30, 90])
         rule.comments = ""
+        # most rules follow their L2; some have their own risk or target
+        rule.risk_level = rnd.randint(1, 5) if rnd.random() < 0.15 else None
+        rule.target_implementation = rnd.choice([0.5, 0.7, 0.9]) if rnd.random() < 0.1 else None
         rule.last_verified_at = None
         rule.last_verified_by = None
 
@@ -414,6 +467,7 @@ def apply_demo_data(
 
     counts["config_commits"] = _demo_configs(db, rnd, rules, users, today)
     counts["lifecycle_events"] = _demo_lifecycle(db, rnd, l2s, rules, users, today)
+    counts["maturity_assessments"] = _demo_maturity(db, today)
     db.flush()
     counts["snapshots"] = _demo_snapshots(db, rules, today, default_interval)
 

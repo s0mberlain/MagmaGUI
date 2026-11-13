@@ -41,12 +41,12 @@ export default function Layout() {
             <div className="avatar" aria-hidden="true">
               {initials(name)}
             </div>
-            <div className="user-meta">
+            <NavLink className="user-meta" to="/account" title="Account and two-factor login">
               <span>{name}</span>
               <span>
                 {ROLE_LABEL[user.role]} · {user.auth_source === "sso" ? "SSO" : "Local"}
               </span>
-            </div>
+            </NavLink>
             <button type="button" className="signout" onClick={() => void logout()}>
               Sign out
             </button>

@@ -27,6 +27,7 @@ from app.models import (
     Lifecycle,
     LifecycleEvent,
     MaturityAssessment,
+    OutputMetric,
     ReferenceItem,
     RefKind,
     Snapshot,
@@ -280,6 +281,48 @@ def _demo_maturity(db: Session, today: date) -> int:
     return len(MATURITY_HISTORY)
 
 
+def _demo_output(db: Session, rnd: random.Random, rules, today: date) -> int:
+    """Monthly alert counts for live rules. Less effective rules raise more false positives;
+    a few noisy rules stand out so the summary has something to show."""
+    from app.api.output import months_back
+    from app.scoring import SCORED_STATES
+
+    n = 0
+    for rule in rules:
+        if rule.lifecycle_status not in SCORED_STATES:
+            continue
+        noisy = rnd.random() < 0.12
+        base = rnd.uniform(20, 160) if noisy else rnd.uniform(0.5, 25)
+        fp_share = min(0.95, (1.05 - (rule.effectiveness or 0.5)) * rnd.uniform(0.4, 0.9))
+        if noisy:
+            fp_share = max(fp_share, rnd.uniform(0.7, 0.92))
+        start = rule.onboarded_at.replace(day=1) if rule.onboarded_at else None
+        trend = rnd.uniform(-0.04, 0.03)  # tuning tends to reduce noise over time
+        for i, period in enumerate(months_back(12, today)):
+            if start and period < start:
+                continue
+            alerts = max(0, round(rnd.gauss(base * (1 + trend * i), base * 0.3)))
+            fp = min(alerts, round(alerts * fp_share * rnd.uniform(0.8, 1.2)))
+            incidents = sum(1 for _ in range(alerts - fp) if rnd.random() < 0.18)
+            db.add(
+                OutputMetric(
+                    l3_id=rule.id,
+                    period=period,
+                    alerts=alerts,
+                    incidents=incidents,
+                    false_positives=fp,
+                    false_negatives=1
+                    if rnd.random() < 0.04
+                    else (0 if rnd.random() < 0.5 else None),
+                    note="",
+                    source="demo",
+                    updated_by=rnd.choice(["jana", "tom"]),
+                )
+            )
+            n += 1
+    return n
+
+
 def _status_at(db: Session, rule: L3UseCase, when: datetime) -> Lifecycle | None:
     ev = db.scalar(
         select(LifecycleEvent)
@@ -353,6 +396,7 @@ def apply_demo_data(
     db.execute(delete(ConfigCommit))
     db.execute(delete(LifecycleEvent))
     db.execute(delete(MaturityAssessment))
+    db.execute(delete(OutputMetric).where(OutputMetric.source == "demo"))
     db.execute(delete(Snapshot).where(Snapshot.kind == "demo"))
 
     # Earlier demo rules are replaced, so re-running with the same seed gives the same result.
@@ -468,6 +512,7 @@ def apply_demo_data(
     counts["config_commits"] = _demo_configs(db, rnd, rules, users, today)
     counts["lifecycle_events"] = _demo_lifecycle(db, rnd, l2s, rules, users, today)
     counts["maturity_assessments"] = _demo_maturity(db, today)
+    counts["output_metrics"] = _demo_output(db, rnd, rules, today)
     db.flush()
     counts["snapshots"] = _demo_snapshots(db, rules, today, default_interval)
 

@@ -425,6 +425,99 @@ export interface TotpSetup {
 }
 
 /** 409 from a config save: someone committed in between. */
+export interface AttackHit {
+  code: string;
+  name: string;
+  weight: number | null;
+  direct: boolean;
+}
+export interface AttackTech {
+  id: string;
+  name: string;
+  best: number | null;
+  rules: AttackHit[];
+  subs: AttackTech[];
+}
+export interface AttackTactic {
+  id: string;
+  short: string;
+  name: string;
+  techniques: AttackTech[];
+  covered: number;
+  total: number;
+}
+export interface AttackOutdated {
+  code: string;
+  name: string;
+  id: string;
+  status: "revoked" | "deprecated" | "unknown";
+  replacement: string | null;
+}
+export interface AttackCoverage {
+  version: string;
+  tactics: AttackTactic[];
+  techniques_total: number;
+  techniques_with_rules: number;
+  techniques_scored: number;
+  rules_total: number;
+  rules_mapped: number;
+  outdated: AttackOutdated[];
+}
+export interface RemapResult {
+  version: string;
+  rules: number;
+  ids_replaced: number;
+  applied: boolean;
+  changes: { code: string; name: string; before: string[]; after: string[]; kept: string[] }[];
+}
+export interface OutputMetric {
+  period: string;
+  alerts: number;
+  incidents: number;
+  false_positives: number;
+  false_negatives: number | null;
+  fp_rate: number | null;
+  note: string;
+  source: string;
+  updated_by: string;
+}
+export type OutputMetricInput = Pick<
+  OutputMetric,
+  "alerts" | "incidents" | "false_positives" | "false_negatives" | "note"
+>;
+export interface OutputTotal {
+  period: string;
+  rules: number;
+  alerts: number;
+  incidents: number;
+  false_positives: number;
+  false_negatives: number;
+  fp_rate: number | null;
+}
+export interface OutputRuleTotal {
+  code: string;
+  name: string;
+  months: number;
+  alerts: number;
+  incidents: number;
+  false_positives: number;
+  false_negatives: number;
+  fp_rate: number | null;
+}
+export interface OutputSummary {
+  months: OutputTotal[];
+  rules: OutputRuleTotal[];
+  rules_reporting: number;
+  totals: OutputTotal;
+}
+export interface CsvReport {
+  dry_run: boolean;
+  rows: number;
+  created: number;
+  updated: number;
+  errors: string[];
+}
+
 export class ConflictError extends Error {
   constructor(
     message: string,
@@ -617,6 +710,26 @@ export const api = {
   totpNewCodes: (password: string, code: string) =>
     request<{ recovery_codes: string[] }>("POST", "/api/auth/me/totp/recovery-codes", { password, code }),
   resetTotp: (userId: number) => request<User>("DELETE", `/api/users/${userId}/totp`),
+
+  attackCoverage: () => request<AttackCoverage>("GET", "/api/attack/coverage"),
+  remapPreview: () => request<RemapResult>("GET", "/api/attack/remap"),
+  remapApply: () => request<RemapResult>("POST", "/api/attack/remap"),
+  outputMetrics: (code: string, months = 12) =>
+    request<OutputMetric[]>("GET", `/api/l3/${enc(code)}/output-metrics?months=${months}`),
+  setOutputMetric: (code: string, period: string, body: OutputMetricInput) =>
+    request<OutputMetric>("PUT", `/api/l3/${enc(code)}/output-metrics/${period}`, body),
+  deleteOutputMetric: (code: string, period: string) =>
+    request<void>("DELETE", `/api/l3/${enc(code)}/output-metrics/${period}`),
+  outputSummary: (months = 12) => request<OutputSummary>("GET", `/api/output-metrics/summary?months=${months}`),
+  importOutputCsv: async (file: File, dryRun: boolean): Promise<CsvReport> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("dry_run", String(dryRun));
+    const res = await fetch("/api/import/output-metrics", { method: "POST", body: fd, credentials: "same-origin" });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new ApiError(res.status, detailMessage(data) ?? `${res.status} ${res.statusText}`);
+    return data as CsvReport;
+  },
 
   demoData: (seed: number) => request<Record<string, number>>("POST", "/api/admin/demo-data", { seed }),
 };

@@ -89,6 +89,35 @@ so the work with the most detection gain on the riskiest use cases comes first.
 optional target level, a level per aspect (people, process, technology) and notes. The level is
 kept in every snapshot, so it shows up on *History & trends*.
 
+## ATT&CK coverage
+
+The app ships a compact copy of MITRE ATT&CK Enterprise (`backend/app/attack_data/enterprise.json`), so the
+coverage page works offline. Each technique is coloured by the best weight of an operational rule mapped to it;
+a rule on a sub-technique also counts for its parent. **Download Navigator layer** exports the same view as an
+[ATT&CK Navigator](https://mitre-attack.github.io/attack-navigator/) layer (score = weight × 100).
+
+The original MaGMa catalogue uses 2017 technique IDs. Most were later revoked and replaced, or deprecated. The
+page lists them, and an admin can replace revoked IDs by their successor in one step (**Review update**, audited).
+Deprecated IDs without a successor stay on the rule until someone maps it by hand.
+
+To refresh the bundled data from a newer ATT&CK release:
+
+```bash
+cd backend && python -m app.attack_data.update            # downloads the latest enterprise-attack.json
+python -m app.attack_data.update path/to/enterprise-attack.json
+```
+
+## Output metrics and report
+
+Each rule can record per month: alerts, incidents, false positives and (optionally) false negatives. Enter them on
+the rule page or import a CSV file on **Output metrics** (columns `rule, period, alerts, incidents,
+false_positives, false_negatives, note`; period `YYYY-MM`; comma or semicolon separated; **Check** runs a dry run,
+and a file with any error imports nothing). The page shows monthly totals and the rules with the most false
+positives.
+
+**Download PDF report** on the dashboard creates a management report: KPIs, the SOC score trend, detection per
+L1, top priorities, ATT&CK coverage per tactic, the noisiest rules and overdue verifications.
+
 ## Excel import / export
 
 *Import / Export* writes the classic MaGMa UCF Tool layout (L1 UC, L2 UC, L3 UC, Drivers,

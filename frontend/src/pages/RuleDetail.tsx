@@ -4,6 +4,7 @@ import { api, type L3, type RefItem } from "../api";
 import { useAuth } from "../auth";
 import ConfigPanel from "../components/ConfigPanel";
 import LifecyclePanel from "../components/LifecyclePanel";
+import OutputPanel from "../components/OutputPanel";
 import { ErrorNote, MultiSelect, StatusPill, useLoad } from "../components/ui";
 import { fmtDate, num, pct } from "../lib/format";
 import { VerifiedCell, VerifyDialog } from "./UseCases";
@@ -425,6 +426,8 @@ export default function RuleDetail() {
                 Last changed {fmtDate(r.updated_at)}
               </p>
             </section>
+
+            <OutputPanel code={code} editor={editor} />
 
             <ConfigPanel level="l3" code={code} editor={editor} />
           </div>

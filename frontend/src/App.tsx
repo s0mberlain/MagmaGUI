@@ -1,6 +1,7 @@
 import { Route, Routes } from "react-router-dom";
 import { AuthProvider, RequireAuth } from "./auth";
 import Layout from "./components/Layout";
+import AttackPage from "./pages/AttackPage";
 import AuditLog from "./pages/AuditLog";
 import Dashboard from "./pages/Dashboard";
 import Drivers from "./pages/Drivers";
@@ -10,6 +11,7 @@ import MaturityPage from "./pages/MaturityPage";
 import Priorities from "./pages/Priorities";
 import ImportExport from "./pages/ImportExport";
 import Login from "./pages/Login";
+import OutputPage from "./pages/OutputPage";
 import Placeholder from "./pages/Placeholder";
 import References from "./pages/References";
 import RuleDetail from "./pages/RuleDetail";
@@ -40,6 +42,8 @@ export default function App() {
           <Route path="history" element={<History />} />
           <Route path="priorities" element={<Priorities />} />
           <Route path="maturity" element={<MaturityPage />} />
+          <Route path="attack" element={<AttackPage />} />
+          <Route path="output" element={<OutputPage />} />
           <Route path="account" element={<Account />} />
           <Route
             path="audit"

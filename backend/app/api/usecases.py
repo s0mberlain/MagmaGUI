@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app import audit
+from app import audit, lifecycle
 from app.api.deps import DB, SettingsDep
 from app.models import (
     BusinessDriver,
@@ -18,6 +18,7 @@ from app.models import (
     Lifecycle,
     ReferenceItem,
     RefKind,
+    Role,
     User,
 )
 from app.schemas import (
@@ -106,6 +107,24 @@ def _apply(obj, data: dict[str, Any], user: User) -> dict[str, Any]:
     if "last_verified_at" in data and data["last_verified_at"] != before["last_verified_at"]:
         obj.last_verified_by = user.username if data["last_verified_at"] else None
     return audit.diff(before, data)
+
+
+def _status_change(db: Session, obj, old: Lifecycle | None, user: User) -> None:
+    """Log a status change made by a plain edit; Operational still needs the definition of done."""
+    if obj.id is None:
+        db.flush()
+    new = obj.lifecycle_status
+    if new == old:
+        return
+    missing = lifecycle.dod_missing(obj) if new == Lifecycle.operational else []
+    if missing and user.role != Role.admin:
+        raise HTTPException(
+            422,
+            "Definition of done is not complete; tick the checklist or ask an admin",
+        )
+    if new == Lifecycle.operational and obj.onboarded_at is None:
+        obj.onboarded_at = date.today()
+    lifecycle.record_change(db, obj, old, new, user.username, override=bool(missing))
 
 
 # ---------------------------------------------------------------- serializers
@@ -311,6 +330,7 @@ def create_l2(body: L2Create, user: Editor, db: DB) -> L2Out:
     db.add(l2)
     rel = _set_l2_relations(db, l2, data)
     _apply(l2, data, user)
+    _status_change(db, l2, None, user)
     audit.record(db, user, "create", "l2", l2.code, body.model_dump() | rel)
     db.commit()
     return l2_out(l2)
@@ -320,7 +340,9 @@ def create_l2(body: L2Create, user: Editor, db: DB) -> L2Out:
 def update_l2(code: str, body: L2Update, user: Editor, db: DB) -> L2Out:
     l2 = _by_code(db, L2UseCase, code, "L2 use case")
     data = body.model_dump(exclude_unset=True)
+    old = l2.lifecycle_status
     changes = _set_l2_relations(db, l2, data) | _apply(l2, data, user)
+    _status_change(db, l2, old, user)
     audit.record(db, user, "update", "l2", code, changes)
     db.commit()
     return l2_out(l2)
@@ -402,6 +424,7 @@ def create_l3(body: L3Create, user: Editor, db: DB, settings: SettingsDep) -> L3
     db.add(l3)
     _set_l3_refs(db, l3, data)
     _apply(l3, data, user)
+    _status_change(db, l3, None, user)
     audit.record(db, user, "create", "l3", l3.code, body.model_dump())
     db.commit()
     return l3_out(l3, settings.default_verification_days)
@@ -411,7 +434,9 @@ def create_l3(body: L3Create, user: Editor, db: DB, settings: SettingsDep) -> L3
 def update_l3(code: str, body: L3Update, user: Editor, db: DB, settings: SettingsDep) -> L3Out:
     l3 = _by_code(db, L3UseCase, code, "L3 rule")
     data = body.model_dump(exclude_unset=True)
+    old = l3.lifecycle_status
     changes = _set_l3_refs(db, l3, data) | _apply(l3, data, user)
+    _status_change(db, l3, old, user)
     audit.record(db, user, "update", "l3", code, changes)
     db.commit()
     return l3_out(l3, settings.default_verification_days)

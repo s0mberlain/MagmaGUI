@@ -30,5 +30,37 @@ services:
     volumes:
       - ./deploy/keycloak:/opt/keycloak/data/import:ro
 
+  # Local git sync testing only: `docker compose --profile gitea up -d`
+  # Gitea on http://localhost:3000, user magma / magma-password, repository magma/usecases.
+  # Settings for the app: see .env.example (GIT_*).
+  gitea:
+    profiles: ["gitea"]
+    image: docker.io/gitea/gitea:1.22.6
+    environment:
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__server__ROOT_URL: http://localhost:3000/
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__service__DISABLE_REGISTRATION: "true"
+    ports:
+      - "3000:3000"
+    volumes:
+      - gitea-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:3000/api/healthz"]
+      interval: 5s
+      retries: 20
+  gitea-init:
+    profiles: ["gitea"]
+    image: docker.io/gitea/gitea:1.22.6
+    depends_on:
+      gitea:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/init.sh"]
+    restart: "no"
+    volumes:
+      - gitea-data:/data
+      - ./deploy/gitea/init.sh:/init.sh:ro
+
 volumes:
   magma-data:
+  gitea-data:

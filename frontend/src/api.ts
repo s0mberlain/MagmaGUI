@@ -231,6 +231,7 @@ export interface ConfigCommit {
   author: string;
   created_at: string;
   restored_from: string | null;
+  git_sha?: string | null;
   tags: ConfigTag[];
 }
 export interface ConfigState {
@@ -270,6 +271,90 @@ export interface ImportReport {
   counts: Record<string, { created: number; updated: number; unchanged: number; deleted: number }>;
   warnings: { sheet: string; row: number | null; message: string }[];
   errors: { sheet: string; row: number | null; message: string }[];
+}
+
+export interface LifecycleMeta {
+  dod_items: { key: string; label: string; hint: string }[];
+  drivers: Record<string, { key: string; label: string }[]>;
+}
+export interface LifecycleEvent {
+  id: number;
+  level: Level;
+  code: string;
+  name: string;
+  from_status: Lifecycle | null;
+  to_status: Lifecycle;
+  driver_type: string;
+  driver: string;
+  note: string;
+  dod_override: boolean;
+  username: string;
+  at: string;
+}
+export interface LifecycleState {
+  status: Lifecycle;
+  dod: { key: string; done: boolean; by: string | null; at: string | null }[];
+  dod_complete: boolean;
+  events: LifecycleEvent[];
+}
+export interface LifecycleChange {
+  to_status: Lifecycle;
+  driver_type: string;
+  driver: string;
+  note: string;
+  override?: boolean;
+}
+export type KpiMap = Record<string, number | null>;
+export interface Snapshot {
+  id: number;
+  label: string;
+  kind: "manual" | "scheduled" | "demo" | "live";
+  taken_at: string;
+  taken_by: string;
+  kpis: KpiMap;
+}
+export interface TrendPoint {
+  id: number | null;
+  label: string;
+  kind: Snapshot["kind"];
+  taken_at: string;
+  kpis: KpiMap;
+  lifecycle_changes: number;
+  config_commits: number;
+}
+export interface Trends {
+  metrics: { key: string; label: string; unit: "pct" | "count" }[];
+  schedule: string;
+  points: TrendPoint[];
+}
+export interface GroupChange {
+  code: string;
+  name: string;
+  change: "added" | "removed" | "changed";
+  a: Record<string, unknown> | null;
+  b: Record<string, unknown> | null;
+}
+export interface SnapshotCompare {
+  a: Snapshot;
+  b: Snapshot;
+  kpis: Record<string, { a: number | null; b: number | null }>;
+  l1: GroupChange[];
+  l2: GroupChange[];
+  rules: GroupChange[];
+}
+export interface GitStatus {
+  enabled: boolean;
+  remote: string;
+  branch: string;
+  auth: string;
+  auto_sync: boolean;
+  running: boolean;
+  last_attempt_at: string | null;
+  last_success_at: string | null;
+  last_error: string | null;
+  head_sha: string | null;
+  commits_total: number;
+  commits_unsynced: number;
 }
 
 /** 409 from a config save: someone committed in between. */
@@ -418,6 +503,26 @@ export const api = {
     if (!res.ok) throw new ApiError(res.status, detailMessage(data) ?? `${res.status} ${res.statusText}`);
     return data as ImportReport;
   },
+
+  lifecycleMeta: () => request<LifecycleMeta>("GET", "/api/lifecycle/meta"),
+  lifecycle: (level: Level, code: string) => request<LifecycleState>("GET", `/api/${level}/${enc(code)}/lifecycle`),
+  changeStatus: (level: Level, code: string, body: LifecycleChange) =>
+    request<LifecycleState>("POST", `/api/${level}/${enc(code)}/lifecycle`, body),
+  setDod: (level: Level, code: string, items: Record<string, boolean>) =>
+    request<LifecycleState>("PUT", `/api/${level}/${enc(code)}/dod`, { items }),
+  changes: (limit = 50, driverType = "") =>
+    request<LifecycleEvent[]>(
+      "GET",
+      `/api/changes?${new URLSearchParams({ limit: String(limit), ...(driverType ? { driver_type: driverType } : {}) })}`,
+    ),
+  snapshots: () => request<Snapshot[]>("GET", "/api/snapshots"),
+  takeSnapshot: (label: string) => request<Snapshot>("POST", "/api/snapshots", { label }),
+  deleteSnapshot: (id: number) => request<void>("DELETE", `/api/snapshots/${id}`),
+  compareSnapshots: (a: string, b: string) =>
+    request<SnapshotCompare>("GET", `/api/snapshots/compare?${new URLSearchParams({ a, b })}`),
+  trends: () => request<Trends>("GET", "/api/trends"),
+  gitStatus: () => request<GitStatus>("GET", "/api/admin/git"),
+  gitSync: () => request<GitStatus>("POST", "/api/admin/git/sync"),
 
   demoData: (seed: number) => request<Record<string, number>>("POST", "/api/admin/demo-data", { seed }),
 };

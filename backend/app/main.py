@@ -6,17 +6,22 @@ from pathlib import Path
 from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
 
-from app import __version__
+from app import __version__, gitsync
+from app import snapshots as snapshot_jobs
 from app.api import (
     admin,
     audit_log,
     auth,
     business,
     configs,
+    gitsync_api,
+    lifecycle,
     oidc,
     scores,
+    snapshots,
     transfer,
     usecases,
     users,
@@ -67,11 +72,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     engine = make_engine(settings.database_url)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
 
+    @event.listens_for(session_factory, "after_commit")
+    def _git_after_commit(session) -> None:
+        if session.info.pop("git_dirty", False) and settings.git_enabled and settings.git_auto_sync:
+            gitsync.request(session_factory, settings)
+
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         if settings.auto_migrate:
             initialize(engine, session_factory, settings)
+        scheduler = snapshot_jobs.Scheduler(
+            session_factory, settings.snapshot_schedule, settings.default_verification_days
+        )
+        if settings.auto_migrate:
+            scheduler.start()
+        if settings.git_enabled:
+            gitsync.request(session_factory, settings)
         yield
+        scheduler.stop()
         engine.dispose()
 
     app = FastAPI(
@@ -98,6 +116,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         admin.router,
         configs.router,
         transfer.router,
+        lifecycle.router,
+        snapshots.router,
+        gitsync_api.router,
     ):
         api.include_router(r)
     app.include_router(api)

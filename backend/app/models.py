@@ -230,6 +230,8 @@ class L2UseCase(Base):
     onboarded_at: Mapped[date | None] = mapped_column(Date)
     last_verified_at: Mapped[date | None] = mapped_column(Date)
     last_verified_by: Mapped[str | None] = mapped_column(String(64))
+    # "Operational" definition of done: {item_key: {"by": user, "at": iso date}} (app/lifecycle.py)
+    dod: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
@@ -269,6 +271,7 @@ class L3UseCase(Base):
     last_verified_at: Mapped[date | None] = mapped_column(Date)
     last_verified_by: Mapped[str | None] = mapped_column(String(64))
     verification_interval_days: Mapped[int | None] = mapped_column(Integer)
+    dod: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
@@ -323,6 +326,8 @@ class ConfigCommit(Base):
     author: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     restored_from: Mapped[str | None] = mapped_column(String(64))
+    # optional git repository sync (app/gitsync.py): commit id in the connected repo
+    git_sha: Mapped[str | None] = mapped_column(String(64))
 
     tags: Mapped[list["ConfigTag"]] = relationship(
         back_populates="commit", cascade="all, delete-orphan", order_by="ConfigTag.id"
@@ -344,3 +349,50 @@ class ConfigTag(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     commit: Mapped[ConfigCommit] = relationship(back_populates="tags")
+
+
+class LifecycleEvent(Base):
+    """A lifecycle status change with the reason (change driver) behind it (PLAN 2.4)."""
+
+    __tablename__ = "lifecycle_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    l2_id: Mapped[int | None] = mapped_column(
+        ForeignKey("l2_use_cases.id", ondelete="CASCADE"), index=True
+    )
+    l3_id: Mapped[int | None] = mapped_column(
+        ForeignKey("l3_use_cases.id", ondelete="CASCADE"), index=True
+    )
+    from_status: Mapped[Lifecycle | None] = mapped_column(_enum(Lifecycle, "lifecycle"))
+    to_status: Mapped[Lifecycle] = mapped_column(_enum(Lifecycle, "lifecycle"))
+    driver_type: Mapped[str] = mapped_column(String(32), default="unspecified")
+    driver: Mapped[str] = mapped_column(String(64), default="")
+    note: Mapped[str] = mapped_column(Text, default="")
+    dod_override: Mapped[bool] = mapped_column(Boolean, default=False)
+    username: Mapped[str] = mapped_column(String(64))
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class Snapshot(Base):
+    """Frozen copy of all computed scores and counts, for trends and comparisons."""
+
+    __tablename__ = "snapshots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    label: Mapped[str] = mapped_column(String(200), default="")
+    kind: Mapped[str] = mapped_column(String(16), default="manual")  # manual|scheduled|demo
+    taken_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    taken_by: Mapped[str] = mapped_column(String(64), default="system")
+    data: Mapped[dict] = mapped_column(JSON)
+
+
+class GitSyncState(Base):
+    """Single row with the state of the optional git repository sync."""
+
+    __tablename__ = "git_sync_state"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    head_sha: Mapped[str | None] = mapped_column(String(64))

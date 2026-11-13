@@ -106,6 +106,7 @@ def make_commit(
         c.l3_id = obj.id
     db.add(c)
     db.flush()
+    db.info["git_dirty"] = True  # picked up by app/gitsync.py after the commit
     return c
 
 
@@ -118,6 +119,7 @@ def add_tag(db: Session, obj, commit: ConfigCommit, name: str, user: str) -> Con
     tag = ConfigTag(commit_id=commit.id, name=name, created_by=user)
     db.add(tag)
     db.flush()
+    db.info["git_dirty"] = True
     db.refresh(commit)
     return tag
 

@@ -34,6 +34,7 @@ class CommitOut(BaseModel):
     author: str
     created_at: datetime
     restored_from: str | None
+    git_sha: str | None = None
     tags: list[TagOut]
 
 
@@ -91,6 +92,7 @@ def commit_out(c: ConfigCommit) -> CommitOut:
         author=c.author,
         created_at=c.created_at,
         restored_from=c.restored_from,
+        git_sha=c.git_sha,
         tags=[
             TagOut(name=t.name, created_by=t.created_by, created_at=t.created_at) for t in c.tags
         ],
@@ -278,6 +280,7 @@ for _level in ("l2", "l3"):
                 raise HTTPException(404, "Tag not found")
             audit.record(db, user, "config_untag", level, code, {"tag": name})
             db.delete(tag)
+            db.info["git_dirty"] = True
             db.commit()
 
         @router.get(f"{base}/download")

@@ -1,8 +1,9 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { api, LIFECYCLES, type ConfigCommit, type L1, type L2, type L3, type Lifecycle, type Scores } from "../api";
+import { api, type ConfigCommit, type L1, type L2, type L3, type Scores } from "../api";
 import { useAuth } from "../auth";
 import ConfigPanel from "../components/ConfigPanel";
+import LifecyclePanel from "../components/LifecyclePanel";
 import { Chips, ErrorNote, GapBadge, Modal, MultiSelect, StatusPill, useLoad } from "../components/ui";
 import { fmtDate, num, pct, STATUS_LABEL } from "../lib/format";
 
@@ -169,7 +170,12 @@ export default function UseCases() {
               )}
             </div>
           )}
-          {selected && <ConfigPanel key={selected.code} level="l2" code={selected.code} editor={editor} />}
+          {selected && (
+            <div className="two-col">
+              <LifecyclePanel key={selected.code} level="l2" code={selected.code} onChanged={refresh} />
+              <ConfigPanel key={"cfg" + selected.code} level="l2" code={selected.code} editor={editor} />
+            </div>
+          )}
         </section>
       </div>
 
@@ -360,7 +366,6 @@ function EditL2Dialog({ l2, onClose, onSaved }: { l2: L2; onClose: () => void; o
   const [form, setForm] = useState({
     name: l2.name,
     description: l2.description,
-    lifecycle_status: l2.lifecycle_status,
     risk_level: l2.risk_level?.toString() ?? "",
     target_implementation: l2.target_implementation === null ? "" : Math.round(l2.target_implementation * 100) + "",
     onboarded_at: l2.onboarded_at ?? "",
@@ -380,7 +385,6 @@ function EditL2Dialog({ l2, onClose, onSaved }: { l2: L2; onClose: () => void; o
       await api.updateL2(l2.code, {
         name: form.name,
         description: form.description,
-        lifecycle_status: form.lifecycle_status,
         risk_level: form.risk_level ? Number(form.risk_level) : null,
         target_implementation: form.target_implementation === "" ? null : Number(form.target_implementation) / 100,
         onboarded_at: form.onboarded_at || null,
@@ -416,20 +420,6 @@ function EditL2Dialog({ l2, onClose, onSaved }: { l2: L2; onClose: () => void; o
           />
         </label>
         <div className="form-grid">
-          <label className="field">
-            Lifecycle status
-            <select
-              className="input"
-              value={form.lifecycle_status}
-              onChange={(e) => set({ lifecycle_status: e.target.value as Lifecycle })}
-            >
-              {LIFECYCLES.map((s) => (
-                <option key={s} value={s}>
-                  {STATUS_LABEL[s]}
-                </option>
-              ))}
-            </select>
-          </label>
           <label className="field">
             Risk level (1–5)
             <select className="input" value={form.risk_level} onChange={(e) => set({ risk_level: e.target.value })}>

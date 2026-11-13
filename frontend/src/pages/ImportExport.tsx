@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { api, type ImportReport } from "../api";
+import { api, type GitStatus, type ImportReport } from "../api";
 import { useAuth } from "../auth";
-import { ErrorNote } from "../components/ui";
+import { ErrorNote, useLoad } from "../components/ui";
+import { fmtDate } from "../lib/format";
 
 const ENTITY_LABEL: Record<string, string> = {
   l1: "L1 use cases",
@@ -189,6 +190,87 @@ export default function ImportExport() {
       ) : (
         <p className="form-notice">Import is not available for your role.</p>
       )}
+
+      {can("admin") && <GitCard />}
     </>
+  );
+}
+
+function fmtTime(iso: string | null) {
+  if (!iso) return "never";
+  const d = new Date(iso);
+  return `${fmtDate(iso)} ${d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
+}
+
+function GitCard() {
+  const status = useLoad<GitStatus>(() => api.gitStatus());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const g = status.data;
+
+  async function sync() {
+    setBusy(true);
+    setError(null);
+    try {
+      status.setData(await api.gitSync());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card stack" aria-labelledby="git-h">
+      <div className="section-head">
+        <h2 id="git-h">Git repository</h2>
+        {g && (
+          <span className={!g.enabled ? "pill" : g.last_error ? "badge-gap" : "pill pill-ok"}>
+            {!g.enabled ? "Not connected" : g.last_error ? "Sync failed" : "Connected"}
+          </span>
+        )}
+      </div>
+      <ErrorNote error={error ?? status.error} />
+      {g && !g.enabled && (
+        <p className="muted" style={{ margin: 0 }}>
+          The YAML configurations can also be pushed to a git repository, one commit per configuration commit, with tags
+          as <span className="mono">&lt;use case&gt;/&lt;tag&gt;</span>. Set{" "}
+          <span className="mono">GIT_REMOTE_URL</span> and a token or SSH key in the environment to turn it on. The app
+          stays the place where configurations are edited.
+        </p>
+      )}
+      {g?.enabled && (
+        <>
+          <dl className="facts">
+            <dt>Repository</dt>
+            <dd className="mono">{g.remote}</dd>
+            <dt>Branch</dt>
+            <dd className="mono">{g.branch}</dd>
+            <dt>Authentication</dt>
+            <dd>{g.auth}</dd>
+            <dt>Last successful sync</dt>
+            <dd>{fmtTime(g.last_success_at)}</dd>
+            <dt>Commits in git</dt>
+            <dd>
+              {g.commits_total - g.commits_unsynced} of {g.commits_total}
+              {g.head_sha && <span className="mono muted"> · head {g.head_sha.slice(0, 10)}</span>}
+            </dd>
+            <dt>Automatic sync</dt>
+            <dd>{g.auto_sync ? "After every config commit and tag" : "Off, sync by hand"}</dd>
+          </dl>
+          {g.last_error && (
+            <div className="form-error">
+              <strong>Last attempt {fmtTime(g.last_attempt_at)} failed:</strong>{" "}
+              <span className="mono">{g.last_error}</span>
+            </div>
+          )}
+          <div className="row-actions start">
+            <button type="button" className="btn" disabled={busy || g.running} onClick={() => void sync()}>
+              {busy || g.running ? "Syncing…" : "Sync now"}
+            </button>
+          </div>
+        </>
+      )}
+    </section>
   );
 }

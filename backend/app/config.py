@@ -36,6 +36,20 @@ class Settings(BaseSettings):
     demo_data: bool = False
     demo_seed: int = 42
 
+    # Automatic snapshots for trend charts: off | daily | weekly | monthly (app/snapshots.py).
+    snapshot_schedule: str = "monthly"
+
+    # Optional git repository for the YAML configs (app/gitsync.py). Off when the URL is empty.
+    git_remote_url: str = ""
+    git_branch: str = "main"
+    git_username: str = "magma"
+    git_token: str | None = None
+    git_ssh_key_file: str | None = None
+    git_workdir: Path = Path("/data/git-repo")
+    git_author_email_domain: str = "magma.local"
+    # Push automatically after each config commit and tag (in the background).
+    git_auto_sync: bool = True
+
     # SSO via OpenID Connect (see app/oidc.py). Enabled when issuer and client id are set.
     oidc_issuer: str | None = None
     oidc_client_id: str | None = None
@@ -53,6 +67,10 @@ class Settings(BaseSettings):
     @property
     def sso_enabled(self) -> bool:
         return bool(self.oidc_issuer and self.oidc_client_id)
+
+    @property
+    def git_enabled(self) -> bool:
+        return bool(self.git_remote_url)
 
     @property
     def cookie_secure(self) -> bool:

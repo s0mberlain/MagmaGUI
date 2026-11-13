@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, LIFECYCLES, type L3, type Lifecycle, type RefItem } from "../api";
+import { api, type L3, type RefItem } from "../api";
 import { useAuth } from "../auth";
 import ConfigPanel from "../components/ConfigPanel";
+import LifecyclePanel from "../components/LifecyclePanel";
 import { ErrorNote, MultiSelect, StatusPill, useLoad } from "../components/ui";
-import { fmtDate, num, STATUS_LABEL } from "../lib/format";
+import { fmtDate, num } from "../lib/format";
 import { VerifiedCell, VerifyDialog } from "./UseCases";
 
 type Metric = "effectiveness" | "implementation" | "coverage";
@@ -17,7 +18,6 @@ const METRICS: { key: Metric; label: string; hint: string }[] = [
 interface Form {
   name: string;
   description: string;
-  lifecycle_status: Lifecycle;
   effectiveness: number | null;
   implementation: number | null;
   coverage: number | null;
@@ -34,7 +34,6 @@ function toForm(r: L3): Form {
   return {
     name: r.name,
     description: r.description,
-    lifecycle_status: r.lifecycle_status,
     effectiveness: r.effectiveness,
     implementation: r.implementation,
     coverage: r.coverage,
@@ -100,7 +99,6 @@ export default function RuleDetail() {
       const updated = await api.updateL3(code, {
         name: form.name,
         description: form.description,
-        lifecycle_status: form.lifecycle_status,
         effectiveness: form.effectiveness,
         implementation: form.implementation,
         coverage: form.coverage,
@@ -253,7 +251,7 @@ export default function RuleDetail() {
                 </div>
               </div>
               {!assessed && <p className="small muted">Set all three metrics to score the rule.</p>}
-              {assessed && !["operational", "maintenance"].includes(form.lifecycle_status) && (
+              {assessed && !["operational", "maintenance"].includes(r.lifecycle_status) && (
                 <p className="small muted">Only operational and maintenance rules count towards the scores.</p>
               )}
             </section>
@@ -286,27 +284,14 @@ export default function RuleDetail() {
                 ))}
               </ul>
             </section>
+
+            <LifecyclePanel level="l3" code={code} onChanged={() => void rule.reload()} />
           </div>
 
           <div className="split-wide stack-lg">
             <section className="card stack" aria-labelledby="dh">
               <h2 id="dh">Details</h2>
               <div className="form-grid">
-                <label className="field">
-                  Lifecycle status
-                  <select
-                    className="input"
-                    disabled={!editor}
-                    value={form.lifecycle_status}
-                    onChange={(ev) => set({ lifecycle_status: ev.target.value as Lifecycle })}
-                  >
-                    {LIFECYCLES.map((s) => (
-                      <option key={s} value={s}>
-                        {STATUS_LABEL[s]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
                 <label className="field">
                   Onboarded on
                   <input

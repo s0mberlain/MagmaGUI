@@ -29,7 +29,8 @@ class Effective:
     target: float | None
     target_source: str | None  # rule | l2 | risk
     gap: float | None  # target - implementation, never below 0
-    # potential x risk / 5 x driver boost: what is gained by working on this rule
+    # gap to target x risk / 5 x driver boost: a rule at or above its target has priority 0, a
+    # rule without an implementation score counts its whole target as gap (not assessed yet)
     priority: float | None
     drivers: int = 0  # business + compliance drivers linked to the rule's L2
     boost: float = 1.0
@@ -59,6 +60,6 @@ def effective(rule: L3UseCase, targets: dict[int, float], potential: float | Non
     links = link_count(l2)
     boost = driver_boost(links)
     priority = None
-    if risk is not None and potential is not None:
-        priority = round(potential * risk / 5 * boost, 4)
+    if risk is not None and gap is not None:
+        priority = round(gap * risk / 5 * boost, 4)
     return Effective(risk, rsrc, target, tsrc, gap, priority, links, boost)

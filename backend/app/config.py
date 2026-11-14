@@ -1,7 +1,15 @@
+import logging
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+MIN_SECRET_KEY_LENGTH = 32
+WEAK_SECRET_KEYS = {"change-me", "changeme", "secret", "magma"}
+
+
+class WeakSecretKey(RuntimeError):
+    pass
 
 
 class Settings(BaseSettings):
@@ -18,7 +26,10 @@ class Settings(BaseSettings):
     db_statement_timeout_ms: int = 0
     # How long startup waits for the database to accept connections.
     db_wait_seconds: int = 60
-    secret_key: str = "change-me"
+    # Encrypts TOTP seeds and signs the SSO state cookie. Startup refuses a missing, default or
+    # short key unless ALLOW_WEAK_SECRET_KEY=true (local development only).
+    secret_key: str = ""
+    allow_weak_secret_key: bool = False
     base_url: str = "http://localhost:8080"
     # Directory with the built frontend (index.html + assets). Empty or missing = API only.
     static_dir: Path = Path(__file__).resolve().parent.parent / "static"
@@ -35,6 +46,9 @@ class Settings(BaseSettings):
     max_failed_logins: int = 5
     lockout_minutes: int = 15
     min_password_length: int = 12
+    # Failed sign-ins per client address before /auth/login answers 429 (0 = off).
+    login_ip_max_failures: int = 20
+    login_ip_window_minutes: int = 15
 
     # Verification interval used when a rule has no own interval.
     default_verification_days: int = 180
@@ -99,8 +113,33 @@ class Settings(BaseSettings):
         return bool(self.git_remote_url)
 
     @property
+    def secret_key_problem(self) -> str | None:
+        key = self.secret_key.strip()
+        if not key:
+            return "SECRET_KEY is not set"
+        if key.lower() in WEAK_SECRET_KEYS:
+            return "SECRET_KEY still has the example value"
+        if len(key) < MIN_SECRET_KEY_LENGTH:
+            return f"SECRET_KEY is shorter than {MIN_SECRET_KEY_LENGTH} characters"
+        return None
+
+    @property
     def cookie_secure(self) -> bool:
         return self.base_url.startswith("https://")
+
+
+def check_secret_key(settings: "Settings") -> None:
+    """Refuse to run with a guessable key: it protects the TOTP seeds in the database."""
+    problem = settings.secret_key_problem
+    if problem is None:
+        return
+    hint = 'Generate one with: python -c "import secrets; print(secrets.token_urlsafe(48))"'
+    if settings.allow_weak_secret_key:
+        logging.getLogger("magma.config").warning(
+            "%s; running anyway because ALLOW_WEAK_SECRET_KEY is set. %s", problem, hint
+        )
+        return
+    raise WeakSecretKey(f"{problem}. {hint}")
 
 
 @lru_cache

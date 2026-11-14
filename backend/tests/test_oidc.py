@@ -150,30 +150,41 @@ def test_refused_logins(sso_client, idp):
     r = sign_in(
         sso_client, idp, {"sub": "u-4", "preferred_username": "mallory", "groups": ["Other"]}
     )
-    assert r.status_code == 303 and "no+matching+group" in r.headers["location"]
+    assert r.status_code == 303 and r.headers["location"].endswith("sso_error=no_access")
     assert sso_client.get("/api/auth/me").status_code == 401
 
     # a local account with the same name is not taken over
     r = sign_in(
         sso_client, idp, {"sub": "u-5", "preferred_username": "admin", "groups": ["SOC-Admins"]}
     )
-    assert "local+account" in r.headers["location"]
+    assert r.headers["location"].endswith("sso_error=local_account")
     assert sso_client.get("/api/auth/me").status_code == 401
 
 
 def test_bad_state_and_bad_nonce(sso_client, idp):
     r = sso_client.get("/api/auth/oidc/callback", params={"code": "x", "state": "forged"})
-    assert "sso_error" in r.headers["location"]
+    assert r.headers["location"].endswith("sso_error=expired")
+    # the IdP's error text is not reflected onto the login page
+    r = sso_client.get("/api/auth/oidc/callback", params={"error": "Call +1 555 now"})
+    assert r.headers["location"] == "/login?sso_error=cancelled"
 
     r = sso_client.get("/api/auth/oidc/login")
     q = parse_qs(urlparse(r.headers["location"]).query)
     idp.nonce = "wrong"
     idp.claims = {"sub": "u-6", "groups": ["Audit"]}
     r = sso_client.get("/api/auth/oidc/callback", params={"code": "c", "state": q["state"][0]})
-    assert "nonce" in r.headers["location"]
+    assert r.headers["location"].endswith("sso_error=invalid_token")
     assert sso_client.get("/api/auth/me").status_code == 401
 
 
 def test_sso_disabled_by_default(anon):
     assert anon.get("/api/auth/oidc/login", follow_redirects=False).status_code == 404
     assert not anon.get("/api/auth/config").json()["sso_enabled"]
+
+
+def test_sso_username_is_normalised():
+    from app.api.oidc import sso_username
+
+    assert sso_username("Jane Doe <jane@x>") == "Jane_Doe_jane@x"
+    assert sso_username("ok.name-1") == "ok.name-1"
+    assert sso_username("??").startswith("sso_") and len(sso_username("x" * 200)) == 64

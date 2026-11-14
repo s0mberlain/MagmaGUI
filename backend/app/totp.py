@@ -37,6 +37,26 @@ def decrypt(token: str, secret_key: str) -> str | None:
         return None
 
 
+def reencrypt_all(db, old_key: str, new_key: str) -> tuple[int, list[str]]:
+    """Re-encrypt every stored TOTP seed after SECRET_KEY changed. Returns (done, failed users).
+    Seeds already readable with the new key are left as they are (the command can be re-run)."""
+    from sqlalchemy import select
+
+    from app.models import User
+
+    done, failed = 0, []
+    for user in db.scalars(select(User).where(User.totp_secret.is_not(None))):
+        if decrypt(user.totp_secret, new_key) is not None:
+            continue
+        secret = decrypt(user.totp_secret, old_key)
+        if secret is None:
+            failed.append(user.username)
+            continue
+        user.totp_secret = encrypt(secret, new_key)
+        done += 1
+    return done, failed
+
+
 def code_at(secret: str, step: int) -> str:
     key = base64.b32decode(secret + "=" * (-len(secret) % 8), casefold=True)
     mac = hmac.new(key, struct.pack(">Q", step), hashlib.sha1).digest()

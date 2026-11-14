@@ -29,6 +29,7 @@ SCHEDULES = {"daily": timedelta(days=1), "weekly": timedelta(days=7), "monthly":
 # Control metrics shown on the trends page; all are stored in each snapshot under "kpis".
 METRICS = [
     ("soc_detection_score", "SOC detection score", "pct"),
+    ("catalogue_coverage", "Catalogue coverage", "pct"),
     ("growth_potential", "Growth potential", "pct"),
     ("framework_completeness", "Framework completeness", "pct"),
     ("assessment_coverage", "Assessment coverage", "pct"),

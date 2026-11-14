@@ -4,7 +4,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import event, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -31,8 +32,11 @@ from app.api import (
     usecases,
     users,
 )
-from app.config import Settings, get_settings
+from app.config import Settings, check_secret_key, get_settings
 from app.db import make_engine
+from app.middleware import SecurityHeaders
+from app.ratelimit import FailureLimiter
+from app.security import Reader
 from app.startup import initialize
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -96,6 +100,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        check_secret_key(settings)
         if settings.auto_migrate:
             initialize(engine, session_factory, settings)
         scheduler = snapshot_jobs.Scheduler(
@@ -115,27 +120,51 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version=__version__,
-        docs_url="/api/docs",
-        openapi_url="/api/openapi.json",
+        # served below for signed-in users only
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
         lifespan=lifespan,
     )
+    app.add_middleware(SecurityHeaders, hsts=settings.cookie_secure)
 
     @app.exception_handler(IntegrityError)
     async def _conflict(_: Request, exc: IntegrityError) -> JSONResponse:
         # e.g. two users saving the same thing at the same moment: a clean 409, not a 500
         logging.getLogger("magma.db").info("Integrity error: %s", str(exc.orig)[:300])
+        sqlstate = getattr(exc.orig, "sqlstate", None)
+        unique = sqlstate == "23505" or "UNIQUE constraint" in str(exc.orig)
+        if not unique:  # NOT NULL, foreign key ...: the request itself was wrong
+            return JSONResponse(
+                {"detail": "The data is incomplete or refers to something that does not exist."},
+                status_code=422,
+            )
         return JSONResponse(
             {"detail": "This was changed by someone else at the same time. Reload and retry."},
             status_code=409,
         )
 
     app.state.engine = engine
+    app.state.login_limiter = FailureLimiter(
+        settings.login_ip_max_failures, settings.login_ip_window_minutes * 60
+    )
     app.state.sessionmaker = session_factory
     app.dependency_overrides[get_settings] = lambda: settings
 
     api = APIRouter(prefix="/api")
+    docs_router = APIRouter(include_in_schema=False)
+
+    @docs_router.get("/openapi.json")
+    def openapi(_: Reader) -> JSONResponse:
+        return JSONResponse(app.openapi())
+
+    @docs_router.get("/docs")
+    def docs(_: Reader) -> HTMLResponse:
+        return get_swagger_ui_html(openapi_url="/api/openapi.json", title=settings.app_name)
+
     for r in (
         system,
+        docs_router,
         auth.router,
         oidc.router,
         users.router,

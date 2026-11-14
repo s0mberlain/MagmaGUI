@@ -1,6 +1,7 @@
 """Password hashing, server-side sessions and role checks."""
 
 import hashlib
+import re
 import secrets
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -61,6 +62,14 @@ def drop_session(db: Session, token: str | None) -> None:
         db.execute(delete(UserSession).where(UserSession.token_hash == _token_hash(token)))
 
 
+def drop_user_sessions(db: Session, user: User, keep_token: str | None = None) -> None:
+    """Sign the user out everywhere (e.g. after a password change), except the given session."""
+    q = delete(UserSession).where(UserSession.user_id == user.id)
+    if keep_token:
+        q = q.where(UserSession.token_hash != _token_hash(keep_token))
+    db.execute(q)
+
+
 TOKEN_PREFIX = "mgm_"
 
 
@@ -68,7 +77,7 @@ def new_api_token() -> str:
     return TOKEN_PREFIX + secrets.token_urlsafe(32)
 
 
-def _bearer_user(db: Session, token: str) -> User:
+def _bearer_user(db: Session, token: str) -> tuple[User, list[str]]:
     now = datetime.now(UTC)
     tok = db.scalar(select(ApiToken).where(ApiToken.token_hash == _token_hash(token)))
     if (
@@ -80,13 +89,35 @@ def _bearer_user(db: Session, token: str) -> User:
     if tok.last_used_at is None or now - as_utc(tok.last_used_at) > timedelta(minutes=5):
         db.execute(update(ApiToken).where(ApiToken.id == tok.id).values(last_used_at=now))
         db.commit()
-    return tok.user
+    return tok.user, list(tok.scopes or [])
+
+
+# What an API token may call, by scope. Everything else is refused for bearer tokens, so a leaked
+# SIEM token cannot edit the catalogue even though its account has the analyst role.
+TOKEN_SCOPES = ("siem", "read")
+_SIEM_PATH = re.compile(r"^/api/integrations/siem(/[^/]+/(rules|alerts))?$")
+
+
+def token_allows(scopes: list[str], method: str, path: str) -> bool:
+    if path == "/api/auth/me":
+        return True  # "who am I", to test a token
+    if "siem" in scopes and _SIEM_PATH.match(path) and method in ("GET", "PUT", "POST"):
+        return True
+    return "read" in scopes and method in ("GET", "HEAD")
 
 
 def current_user(request: Request, db: Annotated[Session, Depends(get_db)]) -> User:
     auth = request.headers.get("authorization", "")
     if auth[:7].lower() == "bearer ":
-        return _bearer_user(db, auth[7:].strip())
+        user, scopes = _bearer_user(db, auth[7:].strip())
+        if not token_allows(scopes, request.method, request.url.path):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "This API token's scope does not allow this call (scopes: "
+                + (", ".join(scopes) or "none")
+                + ")",
+            )
+        return user
     token = request.cookies.get(SESSION_COOKIE)
     if token:
         sess = db.scalar(select(UserSession).where(UserSession.token_hash == _token_hash(token)))

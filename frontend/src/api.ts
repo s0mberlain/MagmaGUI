@@ -37,6 +37,7 @@ export interface AuditEntry {
   entity: string;
   entity_key: string;
   changes: Record<string, unknown>;
+  ip: string | null;
 }
 
 export type Lifecycle = "onboarding" | "operational" | "maintenance" | "offloading" | "retired";
@@ -53,6 +54,7 @@ export interface Metrics {
 
 export interface Kpis {
   soc_detection_score: number | null;
+  catalogue_coverage: number | null;
   growth_potential: number | null;
   detection_gap: number | null;
   framework_completeness: number | null;
@@ -446,12 +448,14 @@ export interface ApiTokenInfo {
   name: string;
   prefix: string;
   role: Role;
+  scopes: TokenScope[];
   username: string;
   created_by: string;
   created_at: string;
   expires_at: string | null;
   last_used_at: string | null;
 }
+export type TokenScope = "siem" | "read";
 export interface ApiTokenCreated extends ApiTokenInfo {
   token: string;
 }
@@ -696,7 +700,12 @@ export const api = {
   logout: () => request<void>("POST", "/api/auth/logout"),
   me: () => request<User>("GET", "/api/auth/me"),
   apiTokens: () => request<ApiTokenInfo[]>("GET", "/api/integrations/tokens"),
-  createApiToken: (body: { name: string; role: "analyst" | "auditor"; expires_days: number | null }) =>
+  createApiToken: (body: {
+    name: string;
+    role: "analyst" | "auditor";
+    scopes: TokenScope[];
+    expires_days: number | null;
+  }) =>
     request<ApiTokenCreated>("POST", "/api/integrations/tokens", body),
   revokeApiToken: (id: number) => request<void>("DELETE", `/api/integrations/tokens/${id}`),
   siem: () => request<SiemOverview>("GET", "/api/integrations/siem"),

@@ -12,6 +12,9 @@ Aggregation, without the Excel quirks:
 - Overall = average over applicable L1s that have a score.
 - SOC detection score = average weight, growth potential = average potential,
   detection gap = 1 − SOC detection score.
+- Catalogue coverage = the same average, but an applicable L2 without scored rules counts as 0
+  (as in driver coverage, app/drivers.py), so empty use cases pull it down. Shown next to the
+  SOC detection score, which only looks at what is in place.
 
 The module is pure (no database access) so it can be tested directly.
 """
@@ -83,6 +86,7 @@ class GroupScore(Scores):
 @dataclass
 class Kpis:
     soc_detection_score: float | None
+    catalogue_coverage: float | None
     growth_potential: float | None
     detection_gap: float | None
     framework_completeness: float | None
@@ -190,8 +194,14 @@ def compute(
         return a / b if b else None
 
     soc = res.overall.weight
+    per_l1 = []
+    for code in applicable:
+        children = [res.l2[c] for c in l2_by_l1.get(code, [])]
+        if children:
+            per_l1.append(sum(c.weight or 0.0 for c in children) / len(children))
     res.kpis = Kpis(
         soc_detection_score=soc,
+        catalogue_coverage=_avg(per_l1),
         growth_potential=res.overall.potential,
         detection_gap=None if soc is None else 1 - soc,
         framework_completeness=ratio(len(with_scored), len(applicable_l2)),

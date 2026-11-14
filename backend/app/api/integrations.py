@@ -29,6 +29,7 @@ Text255 = Annotated[str, StringConstraints(strip_whitespace=True, max_length=255
 class TokenIn(BaseModel):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=48)]
     role: Literal["analyst", "auditor"] = "analyst"
+    scopes: Annotated[list[Literal["siem", "read"]], Field(min_length=1)] = ["siem"]
     expires_days: Annotated[int, Field(ge=1, le=3650)] | None = 365
 
 
@@ -37,6 +38,7 @@ class TokenOut(BaseModel):
     name: str
     prefix: str
     role: Role
+    scopes: list[str]
     username: str
     created_by: str
     created_at: datetime
@@ -54,6 +56,7 @@ def _token_out(t: ApiToken, cls=TokenOut, **extra) -> TokenOut:
         name=t.name,
         prefix=t.prefix,
         role=t.user.role,
+        scopes=list(t.scopes or []),
         username=t.user.username,
         created_by=t.created_by,
         created_at=t.created_at,
@@ -91,11 +94,19 @@ def create_token(body: TokenIn, user: Admin, db: DB) -> TokenCreated:
         token_hash=_token_hash(token),
         created_by=user.username,
         created_at=now,
+        scopes=list(dict.fromkeys(body.scopes)),
         expires_at=now + timedelta(days=body.expires_days) if body.expires_days else None,
     )
     db.add(t)
     db.flush()
-    audit.record(db, user, "create", "api_token", body.name, {"role": body.role, "user": username})
+    audit.record(
+        db,
+        user,
+        "create",
+        "api_token",
+        body.name,
+        {"role": body.role, "scopes": body.scopes, "user": username},
+    )
     db.commit()
     return _token_out(t, TokenCreated, token=token)
 
@@ -236,11 +247,15 @@ class AlertItem(BaseModel):
     @classmethod
     def _month(cls, v):
         if isinstance(v, date):
-            return v.replace(day=1)
-        try:
-            return parse_period(str(v))
-        except ValueError as e:
-            raise ValueError(str(e)) from e
+            p = v.replace(day=1)
+        else:
+            try:
+                p = parse_period(str(v))
+            except ValueError as e:
+                raise ValueError(str(e)) from e
+        if p > date.today().replace(day=1):
+            raise ValueError(f"period {p:%Y-%m} is in the future")
+        return p
 
 
 class AlertsIn(BaseModel):
@@ -249,11 +264,21 @@ class AlertsIn(BaseModel):
         description="replace: the counts are the month's totals; add: add them to what is "
         "stored (for daily pushes)",
     )
+    batch_id: Annotated[
+        str | None,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=128),
+    ] = Field(
+        None,
+        description="Optional id of this push, e.g. the SIEM search job id or the date. A push "
+        "with an id that was already applied for this source is skipped (safe retries in add "
+        "mode).",
+    )
     items: Annotated[list[AlertItem], Field(max_length=50_000)]
 
 
 class AlertsOut(BaseModel):
     dry_run: bool
+    duplicate: bool = False
     created: int
     updated: int
     matched: list[str]
@@ -267,6 +292,17 @@ def push_alerts(
 ) -> AlertsOut | JSONResponse:
     """Alert, incident and false positive counts per SIEM rule and month -> output metrics."""
     src = siem.source(db, source)
+    if body.batch_id and siem.batch_applied(db, src, body.batch_id):
+        db.rollback()
+        return AlertsOut(
+            dry_run=dry_run,
+            duplicate=True,
+            created=0,
+            updated=0,
+            matched=[],
+            unmatched=[],
+            errors=[],
+        )
     rep = siem.push_alerts(
         db, src, [i.model_dump() for i in body.items], body.mode, user.username, dry_run
     )
@@ -277,13 +313,20 @@ def push_alerts(
     if dry_run:
         db.rollback()
         return out
+    if body.batch_id:
+        siem.mark_batch(db, src, body.batch_id, user.username)
     audit.record(
         db,
         user,
         "siem_alerts",
         "siem",
         source,
-        {"mode": body.mode, "created": rep.created, "updated": rep.updated},
+        {
+            "mode": body.mode,
+            "batch_id": body.batch_id,
+            "created": rep.created,
+            "updated": rep.updated,
+        },
     )
     db.commit()
     return out

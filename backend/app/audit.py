@@ -1,8 +1,12 @@
+from contextvars import ContextVar
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.models import AuditLog, User
+
+# Set per request by app/middleware.py; None in background jobs.
+client_ip: ContextVar[str | None] = ContextVar("client_ip", default=None)
 
 
 def record(
@@ -22,6 +26,7 @@ def record(
             entity=entity,
             entity_key=key,
             changes=_jsonable(changes or {}),
+            ip=client_ip.get(),
         )
     )
 

@@ -6,6 +6,31 @@ import Logo from "../components/Logo";
 import { t } from "../i18n";
 import LanguageSelect from "../components/LanguageSelect";
 
+// Codes from the SSO callback (backend/app/api/oidc.py SSO_ERROR_CODES). Only fixed texts are
+// shown, so a crafted link cannot put its own message on the login page.
+function ssoErrorText(code: string): string {
+  switch (code) {
+    case "unreachable":
+      return t("The identity provider is not reachable. Try again later.");
+    case "invalid_token":
+      return t("The identity provider's answer could not be verified. Ask an admin.");
+    case "local_account":
+      return t("Your user name belongs to a local account. Ask an admin.");
+    case "name_taken":
+      return t("Another SSO account already uses your user name. Ask an admin.");
+    case "disabled":
+      return t("Your account is disabled");
+    case "no_access":
+      return t("Your account has no access to this app (no matching group)");
+    case "cancelled":
+      return t("Sign-in was cancelled or refused by the identity provider");
+    case "expired":
+      return t("The sign-in took too long or came from another browser. Please try again.");
+    default:
+      return t("The identity provider rejected the sign-in");
+  }
+}
+
 export default function Login() {
   const { user, loading, login } = useAuth();
   const navigate = useNavigate();
@@ -74,7 +99,7 @@ export default function Login() {
           <h2 style={{ fontSize: 24 }}>{t("Sign in")}</h2>
           {ssoError && (
             <p className="form-error" role="alert">
-              {ssoError}
+              {ssoErrorText(ssoError)}
             </p>
           )}
           {cfg?.sso_enabled && (

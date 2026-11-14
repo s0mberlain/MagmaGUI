@@ -102,6 +102,10 @@ jobs:
         if: "!startsWith(github.ref, 'refs/tags/v')"
         run: |
           docker build -t magma:ci .
-          docker run -d --name magma -p 8080:8080 magma:ci
+          docker run -d --name magma -p 8080:8080 \
+            -e SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')" magma:ci
           for i in $(seq 1 30); do curl -fs http://localhost:8080/api/health && break; sleep 1; done
           curl -fs http://localhost:8080/ | grep -q '<div id="root">'
+          curl -fsI http://localhost:8080/ | grep -qi '^content-security-policy:'
+          # without a SECRET_KEY the container must refuse to start
+          timeout 60 docker run --rm magma:ci 2>&1 | grep -q "SECRET_KEY is not set"

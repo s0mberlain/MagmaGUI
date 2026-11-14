@@ -112,3 +112,14 @@ def test_random_properties():
             assert v is None or 0 <= v <= 1
         if group.weight is not None:
             assert group.potential <= group.effectiveness + 1e-9
+
+
+def test_catalogue_coverage_counts_empty_l2_as_zero():
+    """One perfect rule in one of four L2s: the SOC score says 100 %, the catalogue coverage
+    (the rule driver coverage uses) says 25 %."""
+    l2s = [L2Input(c, "AO") for c in ("AO-AAA", "AO-BBB", "AO-CCC", "AO-DDD")]
+    r = compute([L1Input("AO")], l2s, [rule("AO-AAA-01", 1.0, 1.0, 1.0)], TODAY)
+    assert r.kpis.soc_detection_score == pytest.approx(1.0)
+    assert r.kpis.catalogue_coverage == pytest.approx(0.25)
+    empty = compute([L1Input("AO")], [], [], TODAY)
+    assert empty.kpis.catalogue_coverage is None

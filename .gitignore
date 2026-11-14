@@ -9,3 +9,6 @@ __pycache__/
 backend/static/
 *.db
 *.tsbuildinfo
+
+# downloaded wheels (install from the package index instead)
+*.whl

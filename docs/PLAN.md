@@ -132,7 +132,7 @@ Optional later: a configurable "risk weight" per L2 so averages can be risk-weig
 ### Framework extensions (phase 2+)
 9. **Lifecycle status** per use case (Onboarding / Operational / Maintenance / Offloading / Retired) with the "Operational" definition-of-done checklist, and a change log with driver type.
 10. **History & control metrics**: automatic snapshots (on demand and scheduled), trend charts for #use cases, avg weight, avg potential, scope changes; compare two snapshots.
-11. **Risk-based prioritisation**: risk level and target implementation per L2/L3; "gap to target" view sorted by potential × risk.
+11. **Risk-based prioritisation**: risk level and target implementation per L2/L3; "gap to target" view sorted by gap to target × risk (see README, Priorities).
 12. **Maturity self-assessment** (CMMI 1–5) with notes and history.
 13. **Output metrics** per L3: alerts, incidents, false positives, false negatives per period (manual entry first, CSV/API import later).
 14. **MITRE ATT&CK view**: parse technique IDs from the old wiki URLs, map to current ATT&CK (techniques were renumbered/split into sub-techniques since 2017), heatmap of coverage per tactic/technique, export as ATT&CK Navigator layer JSON.

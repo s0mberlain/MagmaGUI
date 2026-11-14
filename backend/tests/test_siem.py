@@ -26,8 +26,18 @@ def test_tokens(app, admin, make_user):
     me = svc.get("/api/auth/me").json()
     assert me["username"] == "svc-splunk-prod" and me["auth_source"] == "service"
     assert me["role"] == "analyst"
-    assert svc.patch("/api/l3/AO-CRE-01", json={"comments": "via token"}).status_code == 200
-    assert svc.get("/api/users").status_code == 403  # not an admin
+    assert tok["scopes"] == ["siem"]
+    # a SIEM token can push to the SIEM API but nothing else, although its account is an analyst
+    assert svc.put("/api/integrations/siem/splunk/rules", json={"rules": []}).status_code == 200
+    assert svc.get("/api/integrations/siem").status_code == 200
+    r = svc.patch("/api/l3/AO-CRE-01", json={"comments": "via token"})
+    assert r.status_code == 403 and "scope" in r.json()["detail"]
+    assert svc.get("/api/scores").status_code == 403  # no read scope
+    assert svc.post("/api/import/excel").status_code == 403
+    rw = bearer(app, make_token(admin, "Both", scopes=["siem", "read"])["token"])
+    assert rw.get("/api/scores").status_code == 200
+    assert rw.patch("/api/l3/AO-CRE-01", json={"comments": "x"}).status_code == 403
+    assert rw.get("/api/users").status_code == 403  # not an admin
     assert admin.get("/api/integrations/tokens").json()[0]["last_used_at"]
 
     # a service account cannot sign in with a password
@@ -37,7 +47,7 @@ def test_tokens(app, admin, make_user):
     assert r.status_code == 401
 
     # read-only token, wrong token, revoked token
-    ro = bearer(app, make_token(admin, "Reader", role="auditor")["token"])
+    ro = bearer(app, make_token(admin, "Reader", role="auditor", scopes=["read"])["token"])
     assert ro.get("/api/scores").status_code == 200
     assert ro.patch("/api/l3/AO-CRE-01", json={"comments": "x"}).status_code == 403
     assert bearer(app, "mgm_wrong").get("/api/scores").status_code == 401
@@ -48,6 +58,11 @@ def test_tokens(app, admin, make_user):
         admin.post("/api/integrations/tokens", json={"name": "x1", "role": "admin"}).status_code
         == 422
     )
+    bad = {"name": "x2", "scopes": ["write"]}
+    assert admin.post("/api/integrations/tokens", json=bad).status_code == 422
+    # a token account cannot be made an admin on the Users page either
+    svc_id = next(u["id"] for u in admin.get("/api/users").json() if u["username"] == "svc-both")
+    assert admin.patch(f"/api/users/{svc_id}", json={"role": "admin"}).status_code == 409
 
 
 def test_expired_token(app, admin):
@@ -140,6 +155,19 @@ def test_alert_counts(app, admin):
         m for m in a.get("/api/l3/AO-CRE-01/output-metrics").json() if m["period"] == "2026-10"
     )
     assert oct_["alerts"] == 18
+
+    # a retried add push with the same batch id is not counted twice
+    batch = add | {"batch_id": "2026-10-31"}
+    assert svc.post("/api/integrations/siem/splunk/alerts", json=batch).json()["updated"] == 1
+    again = svc.post("/api/integrations/siem/splunk/alerts", json=batch).json()
+    assert again["duplicate"] and again["updated"] == 0
+    oct_ = next(
+        m for m in a.get("/api/l3/AO-CRE-01/output-metrics").json() if m["period"] == "2026-10"
+    )
+    assert oct_["alerts"] == 21
+    # months in the future are refused, as in manual and CSV entry
+    future = {"items": [{"rule": "lsass", "period": "2099-01", "alerts": 1}]}
+    assert svc.post("/api/integrations/siem/splunk/alerts", json=future).status_code == 422
 
     # replace again; an impossible row rejects the whole push
     bad = {"items": [{"rule": "lsass", "period": "2026-11", "alerts": 1, "false_positives": 2}]}

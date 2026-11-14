@@ -140,8 +140,12 @@ class Repo:
         if not self.ok("rev-parse", "-q", "--verify", "HEAD"):
             return {}
         out = self.git("log", f"--format=%H %(trailers:key={TRAILER},valueonly,separator=)")
-        pairs = (line.split() for line in out.splitlines())
-        return {p[1]: p[0] for p in pairs if len(p) == 2}
+        found: dict[str, str] = {}
+        for line in out.splitlines():  # newest first: the latest commit claiming a sha wins
+            p = line.split()
+            if len(p) == 2:
+                found.setdefault(p[1], p[0])
+        return found
 
     def push(self, tags: list[str]) -> None:
         b = self.s.git_branch
@@ -216,9 +220,12 @@ def import_remote(db: Session, repo: Repo, settings: Settings, res: Result, expo
     shas = out.split()
 
     # per config file: the people's commits after the last commit the app wrote to it
+    known = set(db.scalars(select(ConfigCommit.sha)))
     changes: dict[str, list[tuple[str, str]]] = {}
     for sha in shas:
         body = repo.git("show", "-s", "--format=%(trailers:key=" + TRAILER + ",valueonly)", sha)
+        # anyone can write the trailer: only one naming a real app commit marks an app commit
+        body = " ".join(v for v in body.split() if v in known)
         files = repo.git(
             "diff-tree", "--no-commit-id", "--root", "-r", "--name-status", "--no-renames", sha
         )
@@ -266,7 +273,8 @@ def import_remote(db: Session, repo: Repo, settings: Settings, res: Result, expo
                 obj,
                 content,
                 (subject or "Change in git")[:500],
-                (name or "git")[:64],
+                # the git author is self-asserted: mark it so it cannot pose as an app user
+                f"git:{name or 'unknown'}"[:64],
                 at=datetime.fromisoformat(when),
             )
             c.source, c.git_sha = "git", sha
@@ -285,6 +293,31 @@ def import_remote(db: Session, repo: Repo, settings: Settings, res: Result, expo
     db.info.pop("git_dirty", None)  # nothing new to export because of the import itself
 
 
+def verified_exports(db: Session, repo: Repo, done: dict[str, str], res: Result) -> dict[str, str]:
+    """Drop trailer claims that do not hold: anyone with push access can write a `Magma-Commit`
+    trailer. A claim is accepted when the app recorded that git commit itself, or when the file
+    in that git commit has exactly the content of the app commit (then it is in git anyway)."""
+    out = {}
+    for c in db.scalars(select(ConfigCommit).where(ConfigCommit.sha.in_(list(done)))):
+        git_sha = done[c.sha]
+        if c.git_sha == git_sha:
+            out[c.sha] = git_sha
+            continue
+        _, rel = path_for(db, c)
+        if repo.ok("cat-file", "-e", f"{git_sha}:{rel}"):
+            content = repo.git("show", f"{git_sha}:{rel}", raw=True)
+        else:
+            content = ""
+        if content.strip() == c.content.strip():
+            out[c.sha] = git_sha
+        else:
+            res.notes.append(
+                f"git commit {git_sha[:7]} claims app commit {c.sha[:7]} but its content "
+                "differs; exported again"
+            )
+    return out
+
+
 def sync(db: Session, settings: Settings) -> Result:
     repo = Repo(settings)
     repo.prepare()
@@ -293,6 +326,7 @@ def sync(db: Session, settings: Settings) -> Result:
     if settings.git_pull:
         import_remote(db, repo, settings, res, set(done))
         db.flush()
+    done = verified_exports(db, repo, done, res)
     todo = [
         c
         for c in db.scalars(select(ConfigCommit).order_by(ConfigCommit.created_at, ConfigCommit.id))
@@ -328,7 +362,7 @@ def sync(db: Session, settings: Settings) -> Result:
         )
         res.exported += 1
 
-    done = repo.exported()
+    done = verified_exports(db, repo, repo.exported(), res)
     wanted: dict[str, str] = {}
     for t in db.scalars(select(ConfigTag)):
         c = t.commit
@@ -342,7 +376,13 @@ def sync(db: Session, settings: Settings) -> Result:
         if name not in local or repo.git("rev-list", "-n1", name) != sha:
             repo.git("tag", "-f", name, sha)
             changed.append(name)
-    stale = [t for t in local if OUR_TAG.match(t) and t not in wanted]
+    # only tags on commits the app exported; tags people set on their own commits stay
+    ours = set(done.values())
+    stale = [
+        t
+        for t in local
+        if OUR_TAG.match(t) and t not in wanted and repo.git("rev-list", "-n1", t) in ours
+    ]
     repo.push(changed)
     if stale:
         repo.git("push", "-q", "origin", *[f":refs/tags/{t}" for t in stale], remote=True)
@@ -350,7 +390,7 @@ def sync(db: Session, settings: Settings) -> Result:
     res.tags = len(changed)
 
     # record the git ids (they can change when a rebase was needed before the push)
-    done = repo.exported()
+    done = verified_exports(db, repo, repo.exported(), res)
     for c in db.scalars(select(ConfigCommit).where(ConfigCommit.source != "git")):
         if done.get(c.sha) != c.git_sha:
             c.git_sha = done.get(c.sha)

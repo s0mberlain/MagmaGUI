@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import secrets
 import time
 from datetime import UTC, datetime
@@ -38,7 +39,27 @@ _discovery: dict[str, tuple[float, dict]] = {}
 
 
 class SsoError(Exception):
-    """Shown to the user on the login page."""
+    """A failed SSO sign-in. Only `code` reaches the browser (the login page maps it to a fixed
+    text); `detail` goes to the log, so nobody can put their own text on the login page."""
+
+    def __init__(self, code: str, detail: str = ""):
+        super().__init__(detail or code)
+        self.code = code
+        self.detail = detail
+
+
+# Codes the login page knows (frontend/src/pages/Login.tsx SSO_ERRORS).
+SSO_ERROR_CODES = {
+    "unreachable",
+    "rejected",
+    "invalid_token",
+    "local_account",
+    "name_taken",
+    "disabled",
+    "no_access",
+    "cancelled",
+    "expired",
+}
 
 
 def http_client() -> httpx.Client:
@@ -91,7 +112,7 @@ def discover(settings: Settings) -> dict:
     with http_client() as c:
         r = c.get(f"{issuer}/.well-known/openid-configuration")
     if r.status_code != 200:
-        raise SsoError(f"Identity provider discovery failed ({r.status_code})")
+        raise SsoError("unreachable", f"Identity provider discovery failed ({r.status_code})")
     meta = r.json()
     _discovery[issuer] = (time.time() + 3600, meta)
     return meta
@@ -122,8 +143,9 @@ def _safe_next(target: str | None) -> str:
     return target if target and target.startswith("/") and not target.startswith("//") else "/"
 
 
-def _fail(message: str) -> RedirectResponse:
-    resp = RedirectResponse("/login?" + urlencode({"sso_error": message}), status_code=303)
+def _fail(code: str) -> RedirectResponse:
+    code = code if code in SSO_ERROR_CODES else "rejected"
+    resp = RedirectResponse("/login?" + urlencode({"sso_error": code}), status_code=303)
     resp.delete_cookie(STATE_COOKIE, path="/api/auth/oidc")
     return resp
 
@@ -136,7 +158,7 @@ def oidc_login(settings: SettingsDep, next: str = "/") -> RedirectResponse:  # n
         meta = discover(settings)
     except (SsoError, httpx.HTTPError) as e:
         log.warning("OIDC discovery failed: %s", e)
-        return _fail("The identity provider is not reachable. Try again later.")
+        return _fail("unreachable")
     state, nonce, verifier = (secrets.token_urlsafe(32) for _ in range(3))
     challenge = (
         base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
@@ -194,7 +216,7 @@ def _exchange(settings: Settings, meta: dict, code: str, verifier: str) -> dict:
         r = c.post(meta["token_endpoint"], data=data, auth=auth)
     if r.status_code != 200:
         log.warning("OIDC token exchange failed: %s %s", r.status_code, r.text[:300])
-        raise SsoError("The identity provider rejected the sign-in")
+        raise SsoError("rejected", f"Token exchange failed ({r.status_code})")
     return r.json()
 
 
@@ -202,14 +224,14 @@ def _validate_id_token(settings: Settings, meta: dict, token: str, nonce: str) -
     with http_client() as c:
         r = c.get(meta["jwks_uri"])
     if r.status_code != 200:
-        raise SsoError("Could not load the identity provider's signing keys")
+        raise SsoError("invalid_token", "Could not load the identity provider's signing keys")
     keys = jwt.PyJWKSet.from_dict(r.json())
     header = jwt.get_unverified_header(token)
     key = next((k for k in keys.keys if k.key_id == header.get("kid")), None)
     if key is None and len(keys.keys) == 1:
         key = keys.keys[0]
     if key is None:
-        raise SsoError("Unknown signing key in the ID token")
+        raise SsoError("invalid_token", "Unknown signing key in the ID token")
     algs = meta.get("id_token_signing_alg_values_supported") or ["RS256"]
     try:
         claims = jwt.decode(
@@ -222,9 +244,9 @@ def _validate_id_token(settings: Settings, meta: dict, token: str, nonce: str) -
             options={"require": ["exp", "iat", "sub"]},
         )
     except jwt.PyJWTError as e:
-        raise SsoError(f"Invalid ID token: {e}") from e
+        raise SsoError("invalid_token", f"Invalid ID token: {e}") from e
     if claims.get("nonce") != nonce:
-        raise SsoError("Invalid ID token: nonce mismatch")
+        raise SsoError("invalid_token", "Invalid ID token: nonce mismatch")
     return claims
 
 
@@ -236,23 +258,29 @@ def _userinfo(meta: dict, access_token: str | None) -> dict:
     return r.json() if r.status_code == 200 else {}
 
 
+def sso_username(raw: object) -> str:
+    """The same characters local user names may use (it also ends up as a git author name)."""
+    name = re.sub(r"[^A-Za-z0-9._@-]+", "_", str(raw)).strip("_")[:64]
+    if len(name) < 2:
+        name = ("sso_" + hashlib.sha256(str(raw).encode()).hexdigest())[:16]
+    return name
+
+
 def _upsert_user(db, settings: Settings, claims: dict, role: Role) -> User:
     subject = f"{claims['iss']}|{claims['sub']}"
-    username = str(
+    username = sso_username(
         claims.get(settings.oidc_username_claim)
         or claims.get("preferred_username")
         or claims.get("email")
         or claims["sub"]
-    )[:64]
+    )
     user = db.scalar(select(User).where(User.sso_subject == subject))
     if user is None:
         clash = db.scalar(select(User).where(User.username == username))
         if clash is not None:
             if clash.auth_source == AuthSource.local:
-                raise SsoError(
-                    f"The user name '{username}' belongs to a local account. Ask an admin."
-                )
-            raise SsoError(f"Another SSO account already uses the user name '{username}'")
+                raise SsoError("local_account", f"user name {username!r} is a local account")
+            raise SsoError("name_taken", f"user name {username!r} is used by another SSO account")
         user = User(
             username=username,
             auth_source=AuthSource.sso,
@@ -264,7 +292,7 @@ def _upsert_user(db, settings: Settings, claims: dict, role: Role) -> User:
         db.add(user)
         audit.record(db, None, "create", "user", username, {"source": "sso", "role": role.value})
     if not user.active:
-        raise SsoError("Your account is disabled")
+        raise SsoError("disabled", f"account {user.username!r} is disabled")
     if user.role != role:
         audit.record(db, None, "update", "user", user.username, {"role": [user.role, role]})
         user.role = role
@@ -280,10 +308,11 @@ def oidc_callback(request: Request, db: DB, settings: SettingsDep) -> RedirectRe
         raise HTTPException(404, "SSO is not configured")
     q = request.query_params
     if q.get("error"):
-        return _fail(f"Sign-in was cancelled or refused ({q.get('error')})")
+        log.info("OIDC sign-in returned error %r", q.get("error"))
+        return _fail("cancelled")
     saved = _unsign(request.cookies.get(STATE_COOKIE), settings.secret_key)
     if not saved or not q.get("state") or not hmac.compare_digest(saved["state"], q["state"]):
-        return _fail("The sign-in took too long or came from another browser. Please try again.")
+        return _fail("expired")
     try:
         meta = discover(settings)
         tokens = _exchange(settings, meta, q.get("code", ""), saved["verifier"])
@@ -293,7 +322,7 @@ def oidc_callback(request: Request, db: DB, settings: SettingsDep) -> RedirectRe
         role = map_role(claims, settings)
         if role is None:
             log.info("OIDC login refused for %s: no mapped group", claims.get("sub"))
-            raise SsoError("Your account has no access to this app (no matching group)")
+            raise SsoError("no_access", "no matching group")
         user = _upsert_user(db, settings, claims, role)
         db.flush()
         token = create_session(db, user, settings)
@@ -301,11 +330,12 @@ def oidc_callback(request: Request, db: DB, settings: SettingsDep) -> RedirectRe
         db.commit()
     except SsoError as e:
         db.rollback()
-        return _fail(str(e))
+        log.info("OIDC sign-in refused (%s): %s", e.code, e.detail)
+        return _fail(e.code)
     except httpx.HTTPError as e:
         db.rollback()
         log.warning("OIDC request failed: %s", e)
-        return _fail("The identity provider is not reachable. Try again later.")
+        return _fail("unreachable")
 
     resp = RedirectResponse(saved["next"], status_code=303)
     resp.delete_cookie(STATE_COOKIE, path="/api/auth/oidc")

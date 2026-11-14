@@ -250,7 +250,7 @@ def build(db: Session, settings: Settings) -> bytes:
             (
                 "SOC detection score",
                 pct(k.soc_detection_score),
-                "Average weight of applicable L1",
+                f"Catalogue coverage {pct(k.catalogue_coverage)} (empty L2 = 0)",
                 k.soc_detection_score,
             ),
             (

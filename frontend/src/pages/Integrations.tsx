@@ -1,6 +1,13 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { api, type ApiTokenCreated, type ApiTokenInfo, type SiemOverview, type SiemSourceInfo } from "../api";
+import {
+  api,
+  type ApiTokenCreated,
+  type ApiTokenInfo,
+  type SiemOverview,
+  type SiemSourceInfo,
+  type TokenScope,
+} from "../api";
 import { ROLE_LABEL, useAuth } from "../auth";
 import { ErrorNote, StatusPill, useLoad } from "../components/ui";
 import { t } from "../i18n";
@@ -145,9 +152,25 @@ function SourceCard({ s, editor, onDelete }: { s: SiemSourceInfo; editor: boolea
   );
 }
 
+type Access = "siem" | "siem+read" | "read";
+const ACCESS_SCOPES: Record<Access, TokenScope[]> = { siem: ["siem"], "siem+read": ["siem", "read"], read: ["read"] };
+
+function accessLabel(scopes: TokenScope[]): string {
+  const siem = scopes.includes("siem");
+  const read = scopes.includes("read");
+  if (siem && read) return t("SIEM push + read");
+  if (siem) return t("SIEM push only");
+  return t("Read only");
+}
+
 function Tokens() {
   const tokens = useLoad<ApiTokenInfo[]>(() => api.apiTokens());
-  const [form, setForm] = useState({ name: "", role: "analyst" as "analyst" | "auditor", days: "365" });
+  const [form, setForm] = useState({
+    name: "",
+    role: "analyst" as "analyst" | "auditor",
+    access: "siem" as Access,
+    days: "365",
+  });
   const [created, setCreated] = useState<ApiTokenCreated | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -158,6 +181,7 @@ function Tokens() {
       const tok = await api.createApiToken({
         name: form.name,
         role: form.role,
+        scopes: ACCESS_SCOPES[form.access],
         expires_days: form.days ? Number(form.days) : null,
       });
       setCreated(tok);
@@ -181,7 +205,7 @@ function Tokens() {
       </div>
       <p className="muted" style={{ margin: 0 }}>
         {t(
-          "A token signs a script in as its own service account. Send it as Authorization: Bearer <token>. Analyst tokens can push data, auditor tokens can only read.",
+          "A token signs a script in as its own service account. Send it as Authorization: Bearer <token>. Its access limits what it may call: SIEM push tokens can only use the SIEM API below, so a leaked token cannot change the catalogue.",
         )}
       </p>
       <ErrorNote error={error ?? tokens.error} />
@@ -208,6 +232,7 @@ function Tokens() {
                 <th>{t("Name")}</th>
                 <th>{t("Token")}</th>
                 <th>{t("Role")}</th>
+                <th>{t("Access")}</th>
                 <th>{t("Last used")}</th>
                 <th>{t("Expires")}</th>
                 <th />
@@ -222,6 +247,7 @@ function Tokens() {
                   </td>
                   <td className="mono small">{tok.prefix}…</td>
                   <td>{ROLE_LABEL[tok.role]}</td>
+                  <td>{accessLabel(tok.scopes)}</td>
                   <td>{fmtTime(tok.last_used_at)}</td>
                   <td>{tok.expires_at ? fmtDate(tok.expires_at) : t("never")}</td>
                   <td className="num">
@@ -260,6 +286,18 @@ function Tokens() {
           </select>
         </label>
         <label className="field">
+          {t("Access")}
+          <select
+            className="input"
+            value={form.access}
+            onChange={(e) => setForm({ ...form, access: e.target.value as Access })}
+          >
+            <option value="siem">{t("SIEM push only")}</option>
+            <option value="siem+read">{t("SIEM push + read")}</option>
+            <option value="read">{t("Read only")}</option>
+          </select>
+        </label>
+        <label className="field">
           {t("Valid for (days, empty = no expiry)")}
           <input
             className="input"
@@ -288,7 +326,7 @@ const EXAMPLE_RULES = `curl -X PUT ${BASE}/api/integrations/siem/splunk/rules \\
 
 const EXAMPLE_ALERTS = `curl -X POST "${BASE}/api/integrations/siem/splunk/alerts" \\
   -H "Authorization: Bearer $MAGMA_TOKEN" -H "Content-Type: application/json" \\
-  -d '{"mode": "replace", "items": [{"rule": "Credential Dumping - LSASS",
+  -d '{"mode": "replace", "batch_id": "2026-10-monthly", "items": [{"rule": "Credential Dumping - LSASS",
        "period": "2026-10", "alerts": 42, "incidents": 3, "false_positives": 30}]}'`;
 
 export default function Integrations() {

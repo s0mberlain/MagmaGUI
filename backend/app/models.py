@@ -125,6 +125,8 @@ class AuditLog(Base):
     entity: Mapped[str] = mapped_column(String(32), index=True)
     entity_key: Mapped[str] = mapped_column(String(128))
     changes: Mapped[dict] = mapped_column(JSON, default=dict)
+    # client address of the request that caused the entry (None for background jobs)
+    ip: Mapped[str | None] = mapped_column(String(64))
 
 
 # ---------------------------------------------------------------- business layer
@@ -480,6 +482,9 @@ class ApiToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # what the token may call (app/security.py TOKEN_SCOPES): "siem" = the SIEM push API,
+    # "read" = read-only access to the rest of the API
+    scopes: Mapped[list[str]] = mapped_column(JSON, default=lambda: ["siem"])
 
     user: Mapped[User] = relationship()
 
@@ -520,3 +525,18 @@ class SiemRule(Base):
     techniques: Mapped[list[str]] = mapped_column(JSON, default=list)
 
     source: Mapped[SiemSource] = relationship(back_populates="rules")
+
+
+class SiemAlertBatch(Base):
+    """An alert push that carried a batch id: a retry with the same id is not counted twice."""
+
+    __tablename__ = "siem_alert_batches"
+    __table_args__ = (UniqueConstraint("source_id", "batch_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_id: Mapped[int] = mapped_column(
+        ForeignKey("siem_sources.id", ondelete="CASCADE"), index=True
+    )
+    batch_id: Mapped[str] = mapped_column(String(128))
+    applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    applied_by: Mapped[str] = mapped_column(String(64))

@@ -148,7 +148,14 @@ async def import_excel(
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, "File is larger than 20 MB")
     try:
-        report = excel.import_workbook(db, data, replace=mode == "replace", dry_run=dry_run)
+        report = excel.import_workbook(
+            db,
+            data,
+            replace=mode == "replace",
+            dry_run=dry_run,
+            username=user.username,
+            is_admin=user.role == Role.admin,
+        )
     except excel.ImportFailed as e:
         db.rollback()
         raise HTTPException(422, str(e)) from e

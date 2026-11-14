@@ -143,8 +143,9 @@ def test_gaps_on_driver_linked_use_cases_rank_higher(admin, make_user):
     g = make_user("auditor").get("/api/growth/gaps?l1=ZZ").json()
     rows = {x["code"]: x for x in g["rows"]}
     assert [x["code"] for x in g["rows"]][:2] == ["ZZ-DDD-01", "ZZ-EEE-01"]
-    assert abs(rows["ZZ-EEE-01"]["priority"] - 0.4 * 3 / 5) < 1e-9
-    assert abs(rows["ZZ-DDD-01"]["priority"] - 0.4 * 3 / 5 * 1.2) < 1e-9
+    # gap to the risk-3 target 0.6 is 0.1
+    assert abs(rows["ZZ-EEE-01"]["priority"] - 0.1 * 3 / 5) < 1e-9
+    assert abs(rows["ZZ-DDD-01"]["priority"] - 0.1 * 3 / 5 * 1.2) < 1e-9
     assert rows["ZZ-DDD-01"]["driver_boost"] == 1.2
     assert rows["ZZ-DDD-01"]["business_drivers"] == ["T-1"]
     assert rows["ZZ-DDD-01"]["compliance_drivers"] == ["Test Reg R1"]

@@ -1,8 +1,9 @@
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type CSSProperties, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { api, ApiError, type RefItem, type RefKind } from "../api";
 import { useAuth } from "../auth";
 import { confirmDialog, ErrorNote, useLoad } from "../components/ui";
-import { REF_KINDS } from "../lib/format";
+import { codeList, REF_KINDS, refHref } from "../lib/format";
 import { t } from "../i18n";
 
 export default function References() {
@@ -47,6 +48,60 @@ function RefList({ kind }: { kind: RefKind }) {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState({ name: "", description: "" });
   const [editing, setEditing] = useState<{ id: number; name: string; description: string } | null>(null);
+  const [sort, setSort] = useState<{ key: "name" | "used"; desc: boolean }>({ key: "name", desc: false });
+  const actors = kind === "threat_actor";
+
+  const rows = useMemo(() => {
+    const items = [...(list.data ?? [])];
+    const used = (i: RefItem) => i.used_by?.length ?? 0;
+    items.sort((a, b) => {
+      const byName = a.name.localeCompare(b.name);
+      const d = sort.key === "used" ? used(a) - used(b) || byName : byName;
+      return sort.desc ? -d : d;
+    });
+    return items;
+  }, [list.data, sort]);
+
+  /** Column header that sorts by `key`; a second click reverses the order. */
+  const sortHead = (key: "name" | "used", label: string, className?: string, style?: CSSProperties) => {
+    const active = sort.key === key;
+    return (
+      <th
+        className={className}
+        style={style}
+        aria-sort={active ? (sort.desc ? "descending" : "ascending") : "none"}
+      >
+        <button
+          type="button"
+          className="sort-btn"
+          onClick={() => setSort({ key, desc: active ? !sort.desc : false })}
+        >
+          {label}
+          <span aria-hidden="true" className={active ? "" : "muted"}>
+            {active ? (sort.desc ? " ▾" : " ▴") : " ↕"}
+          </span>
+        </button>
+      </th>
+    );
+  };
+
+  const usedCell = (item: RefItem) => {
+    const codes = item.used_by ?? [];
+    if (!codes.length) return <span className="muted">0</span>;
+    return (
+      <Link
+        to={refHref(kind, item.name)}
+        title={codeList(codes)}
+        aria-label={
+          actors
+            ? t("{n} L2 use cases use {name}", { n: codes.length, name: item.name })
+            : t("{n} L3 rules use {name}", { n: codes.length, name: item.name })
+        }
+      >
+        {codes.length}
+      </Link>
+    );
+  };
 
   const run = async (fn: () => Promise<unknown>) => {
     setError(null);
@@ -139,13 +194,14 @@ function RefList({ kind }: { kind: RefKind }) {
         <table className="table">
           <thead>
             <tr>
-              <th style={{ width: "30%" }}>{t("Name")}</th>
+              {sortHead("name", t("Name"), undefined, { width: "30%" })}
               <th>{t("Description")}</th>
+              {sortHead("used", actors ? t("Used by (L2)") : t("Used by (L3)"), "num")}
               {editor && <th className="num">{t("Actions")}</th>}
             </tr>
           </thead>
           <tbody>
-            {list.data?.map((item) =>
+            {rows.map((item) =>
               editing?.id === item.id ? (
                 <tr key={item.id}>
                   <td>
@@ -165,6 +221,7 @@ function RefList({ kind }: { kind: RefKind }) {
                       onChange={(e) => setEditing({ ...editing, description: e.target.value })}
                     />
                   </td>
+                  <td className="num">{usedCell(item)}</td>
                   <td>
                     <div className="row-actions">
                       <button type="button" className="btn btn-sm" onClick={() => setEditing(null)}>
@@ -186,6 +243,7 @@ function RefList({ kind }: { kind: RefKind }) {
                 <tr key={item.id}>
                   <td className="strong-500">{item.name}</td>
                   <td className="ink-2">{item.description || <span className="muted">–</span>}</td>
+                  <td className="num">{usedCell(item)}</td>
                   {editor && (
                     <td>
                       <div className="row-actions">

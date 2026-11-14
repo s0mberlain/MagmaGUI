@@ -16,6 +16,8 @@ from app.models import (
     L3UseCase,
     ReferenceItem,
     RefKind,
+    l2_actors,
+    l3_references,
 )
 from app.schemas import (
     BusinessDriverIn,
@@ -27,6 +29,7 @@ from app.schemas import (
     DriverCoverageOut,
     RefItemIn,
     RefItemOut,
+    RefItemUsageOut,
 )
 from app.security import Editor, Reader
 
@@ -51,13 +54,38 @@ def _get(db, model, id_: int):
 # ---------------------------------------------------------------- reference lists
 
 
-@router.get("/references/{kind}", response_model=list[RefItemOut])
-def list_refs(kind: RefKind, _: Reader, db: DB) -> list[ReferenceItem]:
-    return list(
+@router.get("/references/{kind}", response_model=list[RefItemUsageOut])
+def list_refs(kind: RefKind, _: Reader, db: DB) -> list[RefItemUsageOut]:
+    """Entries of one list, each with the codes of what uses it: L2 use cases for threat actors
+    (they are assigned to L2), L3 rules for the other kinds."""
+    items = list(
         db.scalars(
             select(ReferenceItem).where(ReferenceItem.kind == kind).order_by(ReferenceItem.name)
         )
     )
+    if kind == RefKind.threat_actor:
+        links = select(l2_actors.c.item_id, L2UseCase.code).join(
+            L2UseCase, L2UseCase.id == l2_actors.c.l2_id
+        )
+    else:
+        links = select(l3_references.c.item_id, L3UseCase.code).join(
+            L3UseCase, L3UseCase.id == l3_references.c.l3_id
+        )
+    used: dict[int, list[str]] = {}
+    for item_id, code in db.execute(
+        links.where(links.selected_columns[0].in_([i.id for i in items]))
+    ):
+        used.setdefault(item_id, []).append(code)
+    return [
+        RefItemUsageOut(
+            id=i.id,
+            kind=i.kind,
+            name=i.name,
+            description=i.description,
+            used_by=sorted(used.get(i.id, [])),
+        )
+        for i in items
+    ]
 
 
 @router.post("/references/{kind}", response_model=RefItemOut, status_code=201)

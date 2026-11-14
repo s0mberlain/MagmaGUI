@@ -247,6 +247,9 @@ export interface RefItem {
   kind: RefKind;
   name: string;
   description: string;
+  /** Codes of what uses the entry: L2 use cases for threat actors, L3 rules otherwise.
+   *  Only filled by the list endpoint. */
+  used_by?: string[];
 }
 export interface BusinessDriver {
   id: number;

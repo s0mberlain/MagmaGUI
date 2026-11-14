@@ -7,8 +7,8 @@ import ConfigPanel from "../components/ConfigPanel";
 import LifecyclePanel from "../components/LifecyclePanel";
 import { DriverBlock } from "../components/Drivers";
 import OutputPanel from "../components/OutputPanel";
-import { confirmDialog, ErrorNote, MultiSelect, StatusPill, useLoad, useUnsavedGuard } from "../components/ui";
-import { fmtDate, num, pct } from "../lib/format";
+import { Chips, confirmDialog, ErrorNote, MultiSelect, StatusPill, useLoad, useUnsavedGuard } from "../components/ui";
+import { fmtDate, num, pct, refHref } from "../lib/format";
 import { VerifiedCell, VerifyDialog } from "./UseCases";
 import { t } from "../i18n";
 
@@ -487,6 +487,33 @@ export default function RuleDetail() {
                   disabled={!editor}
                   onChange={(v) => set({ scopes: v })}
                 />
+              </div>
+              <div className="form-grid ref-links" aria-label={t("Rules that share an entry")}>
+                {(
+                  [
+                    ["log_source", r.log_sources, lists.data?.log],
+                    ["detection_technology", r.detection_technologies, lists.data?.tech],
+                    ["scope", r.scopes, lists.data?.scope],
+                  ] as const
+                ).map(([kind, names, items]) => (
+                  <div key={kind} className="small">
+                    {names.length > 0 && (
+                      <>
+                        <span className="muted">{t("Show rules with:")} </span>
+                        <Chips
+                          items={[...names]}
+                          href={(n) => refHref(kind, n)}
+                          title={(n) => {
+                            const used = items?.find((i) => i.name === n)?.used_by?.length;
+                            return used === undefined
+                              ? t("Show all rules that use {name}", { name: n })
+                              : t("{n} L3 rules use {name}", { n: used, name: n });
+                          }}
+                        />
+                      </>
+                    )}
+                  </div>
+                ))}
               </div>
               <label className="field">
                 {t("Description")}

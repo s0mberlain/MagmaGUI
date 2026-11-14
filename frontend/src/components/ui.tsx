@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useBlocker } from "react-router-dom";
+import { Link, useBlocker } from "react-router-dom";
 import { isLeavingSession, type Lifecycle } from "../api";
 import { STATUS_LABEL } from "../lib/format";
 import { t } from "../i18n";
@@ -32,15 +32,32 @@ export function StatusPill({ status }: { status: Lifecycle }) {
   return <span className={`pill status-${status}`}>{STATUS_LABEL[status]}</span>;
 }
 
-export function Chips({ items, tone = "info" }: { items: string[]; tone?: "info" | "neutral" }) {
+/** Chips; with `href` each chip is a link (e.g. to the use cases that share the entry). */
+export function Chips({
+  items,
+  tone = "info",
+  href,
+  title,
+}: {
+  items: string[];
+  tone?: "info" | "neutral";
+  href?: (item: string) => string;
+  title?: (item: string) => string;
+}) {
   if (!items.length) return <span className="muted">–</span>;
   return (
     <div className="chips">
-      {items.map((s) => (
-        <span key={s} className={`chip chip-${tone}`}>
-          {s}
-        </span>
-      ))}
+      {items.map((s) =>
+        href ? (
+          <Link key={s} to={href(s)} className={`chip chip-${tone} chip-link`} title={title?.(s)}>
+            {s}
+          </Link>
+        ) : (
+          <span key={s} className={`chip chip-${tone}`}>
+            {s}
+          </span>
+        ),
+      )}
     </div>
   );
 }

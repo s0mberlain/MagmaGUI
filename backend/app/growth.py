@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+from app.drivers import driver_boost, link_count
 from app.models import L3UseCase
 
 DEFAULT_RISK_TARGETS = {1: 0.4, 2: 0.5, 3: 0.6, 4: 0.75, 5: 0.9}
@@ -28,7 +29,10 @@ class Effective:
     target: float | None
     target_source: str | None  # rule | l2 | risk
     gap: float | None  # target - implementation, never below 0
-    priority: float | None  # potential x risk / 5: what is gained by working on this rule
+    # potential x risk / 5 x driver boost: what is gained by working on this rule
+    priority: float | None
+    drivers: int = 0  # business + compliance drivers linked to the rule's L2
+    boost: float = 1.0
 
 
 def effective(rule: L3UseCase, targets: dict[int, float], potential: float | None) -> Effective:
@@ -52,7 +56,9 @@ def effective(rule: L3UseCase, targets: dict[int, float], potential: float | Non
         gap = round(max(0.0, target - rule.implementation), 4)
     elif target is not None:
         gap = target
+    links = link_count(l2)
+    boost = driver_boost(links)
     priority = None
     if risk is not None and potential is not None:
-        priority = round(potential * risk / 5, 4)
-    return Effective(risk, rsrc, target, tsrc, gap, priority)
+        priority = round(potential * risk / 5 * boost, 4)
+    return Effective(risk, rsrc, target, tsrc, gap, priority, links, boost)

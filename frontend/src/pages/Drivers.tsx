@@ -1,8 +1,42 @@
 import { useState, type FormEvent } from "react";
-import { api, type BusinessDriver, type ComplianceDriver, type ComplianceSource } from "../api";
+import { Link } from "react-router-dom";
+import {
+  api,
+  type BusinessDriver,
+  type ComplianceDriver,
+  type ComplianceSource,
+  type DriverCoverage,
+  type LinkedUseCase,
+} from "../api";
 import { useAuth } from "../auth";
+import { ConfirmDeleteDialog, CoverageCell } from "../components/Drivers";
 import { ErrorNote, Modal, useLoad } from "../components/ui";
+import { pct } from "../lib/format";
 import { t } from "../i18n";
+
+type Deleting = { title: string; load: () => Promise<LinkedUseCase[]>; run: () => Promise<unknown> };
+
+/** Linked L2 / L3 counts with a link to the filtered use case list. */
+function LinkedCells({ d, filter }: { d?: DriverCoverage; filter: string }) {
+  if (!d) return <td colSpan={3} />;
+  return (
+    <>
+      <td className="num">
+        {d.l2_count ? (
+          <Link to={`/usecases?${filter}`} title={d.l2_codes.join(", ")}>
+            {d.l2_count}
+          </Link>
+        ) : (
+          <span className="muted">0</span>
+        )}
+      </td>
+      <td className="num">{d.l3_count}</td>
+      <td>
+        <CoverageCell d={d} />
+      </td>
+    </>
+  );
+}
 
 type DriverForm = { code: string; name: string; description: string };
 type CdForm = { ref: string; name: string; description: string };
@@ -11,9 +45,21 @@ export default function Drivers() {
   const { can } = useAuth();
   const editor = can("admin", "analyst");
   const data = useLoad(async () => {
-    const [drivers, compliance] = await Promise.all([api.drivers(), api.compliance()]);
-    return { drivers, compliance };
+    const [drivers, compliance, coverage] = await Promise.all([
+      api.drivers(),
+      api.compliance(),
+      api.driverCoverage(),
+    ]);
+    return {
+      drivers,
+      compliance,
+      coverage,
+      bdCov: new Map(coverage.business.map((d) => [d.id, d])),
+      cdCov: new Map(coverage.compliance.map((d) => [d.id, d])),
+      srcCov: new Map(coverage.sources.map((x) => [x.id, x])),
+    };
   });
+  const [deleting, setDeleting] = useState<Deleting | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [bd, setBd] = useState<{ id?: number; form: DriverForm } | null>(null);
   const [cd, setCd] = useState<{ id?: number; sourceId: number; form: CdForm } | null>(null);
@@ -52,7 +98,11 @@ export default function Drivers() {
         <div>
           <h1>{t("Business drivers")}</h1>
           <div className="subtitle">
-            {t("Why the SOC monitors a threat: business and compliance drivers linked to L2 use cases.")}
+            {t("Why the SOC monitors a threat: business and compliance drivers linked to L2 use cases.")}{" "}
+            {data.data &&
+              t("Coverage = average weight of the linked L2 use cases; L2 without scored rules count as 0. Below {p} is low.", {
+                p: pct(data.data.coverage.low_threshold),
+              })}
           </div>
         </div>
         {editor && (
@@ -76,9 +126,12 @@ export default function Drivers() {
         <table className="table">
           <thead>
             <tr>
-              <th style={{ width: 110 }}>ID</th>
-              <th style={{ width: "28%" }}>{t("Name")}</th>
+              <th style={{ width: 90 }}>ID</th>
+              <th style={{ width: "22%" }}>{t("Name")}</th>
               <th>{t("Description")}</th>
+              <th className="num">L2</th>
+              <th className="num">L3</th>
+              <th style={{ width: 200 }}>{t("Coverage")}</th>
               {editor && <th className="num">{t("Actions")}</th>}
             </tr>
           </thead>
@@ -88,6 +141,7 @@ export default function Drivers() {
                 <td className="mono">{d.code}</td>
                 <td className="strong-500">{d.name}</td>
                 <td className="ink-2">{d.description || <span className="muted">–</span>}</td>
+                <LinkedCells d={data.data?.bdCov.get(d.id)} filter={`bd=${encodeURIComponent(d.code)}&view=table`} />
                 {editor && (
                   <td>
                     <div className="row-actions">
@@ -103,10 +157,13 @@ export default function Drivers() {
                       <button
                         type="button"
                         className="btn btn-sm"
-                        onClick={() => {
-                          if (window.confirm(t("Delete {code}? It is unlinked from every use case.", { code: d.code })))
-                            void run(() => api.deleteDriver(d.id));
-                        }}
+                        onClick={() =>
+                          setDeleting({
+                            title: t("Delete {code}?", { code: d.code }),
+                            load: () => api.driverUseCases(d.id),
+                            run: () => api.deleteDriver(d.id),
+                          })
+                        }
                       >
                         {t("Delete")}
                       </button>
@@ -150,7 +207,19 @@ export default function Drivers() {
       {data.data?.compliance.map((src: ComplianceSource) => (
         <section key={src.id} className="card table-card" aria-label={src.name}>
           <div className="table-title section-head">
-            <h3>{src.name}</h3>
+            <h3>
+              {src.name}
+              {data.data?.srcCov.get(src.id) && (
+                <span className="small muted" style={{ fontWeight: 400, marginLeft: 10 }}>
+                  {t("{a} of {b} linked · {n} L2 · coverage {p}", {
+                    a: data.data.srcCov.get(src.id)!.linked_drivers,
+                    b: data.data.srcCov.get(src.id)!.drivers,
+                    n: data.data.srcCov.get(src.id)!.l2_count,
+                    p: pct(data.data.srcCov.get(src.id)!.coverage),
+                  })}
+                </span>
+              )}
+            </h3>
             {editor && (
               <div className="row-actions">
                 <button
@@ -163,10 +232,13 @@ export default function Drivers() {
                 <button
                   type="button"
                   className="btn btn-sm"
-                  onClick={() => {
-                    if (window.confirm(t("Delete {name} and all its requirements?", { name: src.name })))
-                      void run(() => api.deleteSource(src.id));
-                  }}
+                  onClick={() =>
+                    setDeleting({
+                      title: t("Delete {name} and all its requirements?", { name: src.name }),
+                      load: () => api.sourceUseCases(src.id),
+                      run: () => api.deleteSource(src.id),
+                    })
+                  }
                 >
                   {t("Delete source")}
                 </button>
@@ -176,9 +248,12 @@ export default function Drivers() {
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: 110 }}>{t("Reference")}</th>
-                <th style={{ width: "28%" }}>{t("Name")}</th>
+                <th style={{ width: 90 }}>{t("Reference")}</th>
+                <th style={{ width: "22%" }}>{t("Name")}</th>
                 <th>{t("Description")}</th>
+                <th className="num">L2</th>
+                <th className="num">L3</th>
+                <th style={{ width: 200 }}>{t("Coverage")}</th>
                 {editor && <th className="num">{t("Actions")}</th>}
               </tr>
             </thead>
@@ -188,6 +263,7 @@ export default function Drivers() {
                   <td className="mono">{c.ref}</td>
                   <td className="strong-500">{c.name}</td>
                   <td className="ink-2">{c.description || <span className="muted">–</span>}</td>
+                  <LinkedCells d={data.data?.cdCov.get(c.id)} filter={`cd=${c.id}&view=table`} />
                   {editor && (
                     <td>
                       <div className="row-actions">
@@ -207,10 +283,13 @@ export default function Drivers() {
                         <button
                           type="button"
                           className="btn btn-sm"
-                          onClick={() => {
-                            if (window.confirm(t("Delete {name}?", { name: c.ref })))
-                              void run(() => api.deleteComplianceDriver(c.id));
-                          }}
+                          onClick={() =>
+                            setDeleting({
+                              title: t("Delete {name}?", { name: `${src.name} ${c.ref}` }),
+                              load: () => api.complianceDriverUseCases(c.id),
+                              run: () => api.deleteComplianceDriver(c.id),
+                            })
+                          }
                         >
                           {t("Delete")}
                         </button>
@@ -221,7 +300,7 @@ export default function Drivers() {
               ))}
               {!src.drivers.length && (
                 <tr>
-                  <td colSpan={4} className="muted">
+                  <td colSpan={7} className="muted">
                     {t("No requirements yet.")}
                   </td>
                 </tr>
@@ -230,6 +309,18 @@ export default function Drivers() {
           </table>
         </section>
       ))}
+
+      {deleting && (
+        <ConfirmDeleteDialog
+          title={deleting.title}
+          load={deleting.load}
+          onConfirm={async () => {
+            await deleting.run();
+            await data.reload();
+          }}
+          onClose={() => setDeleting(null)}
+        />
+      )}
 
       {bd && (
         <Modal

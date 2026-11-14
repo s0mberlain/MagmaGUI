@@ -37,6 +37,10 @@ L2_RE = re.compile(r"^[A-Z]{2}-[A-Z0-9]{3}$")
 L3_RE = re.compile(r"^[A-Z]{2}-[A-Z0-9]{3}-\d{2,3}$")
 ATTACK_RE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b")
 
+# App-only L2 columns with every linked driver (the classic columns hold one value each)
+ALL_BD = "All business drivers"
+ALL_CD = "All compliance drivers"
+
 REF_SECTIONS = [
     (RefKind.threat_actor, "Threat Actors", "Actor"),
     (RefKind.detection_technology, "Detection Technologies", "Technology"),
@@ -172,8 +176,11 @@ def export_workbook(db: Session) -> bytes:
         "Target implementation",
         "Onboarded",
         "Last verified",
+        ALL_BD,
+        ALL_CD,
     ]
     _header(ws, 1, base + comp_cols + extras, extra_from=len(base) + len(comp_cols) + 1)
+    order = {src.id: j for j, src in enumerate(sources)}
     for i, x in enumerate(l2s, start=2):
         ws.cell(i, 1, f"=VLOOKUP(LEFT(C{i},2),'L1 UC'!C:D,2,FALSE)")
         ws.cell(i, 2, f"=LEFT(C{i},2)")
@@ -185,16 +192,23 @@ def export_workbook(db: Session) -> bytes:
         for col, src in zip("HIJKL", "IJKLM", strict=True):
             ws[f"{col}{i}"] = f"=IFERROR(AVERAGEIF('L3 UC'!E:E,C{i},'L3 UC'!{src}:{src}),0)"
             ws[f"{col}{i}"].number_format = "0%"
-        ws.cell(i, 13, _join(sorted(b.code for b in x.business_drivers)))
+        # The classic tool takes one value per cell: write the first link there and every link
+        # in the app columns on the right, so nothing is lost on the way back.
+        bds = sorted(b.code for b in x.business_drivers)
+        ws.cell(i, 13, bds[0] if bds else None)
         for j, src in enumerate(sources):
             refs = sorted(c.ref for c in x.compliance_drivers if c.source_id == src.id)
-            ws.cell(i, 14 + j, _join(refs))
+            ws.cell(i, 14 + j, refs[0] if refs else None)
         e = 14 + len(sources)
         ws.cell(i, e, x.lifecycle_status.value)
         ws.cell(i, e + 1, x.risk_level)
         ws.cell(i, e + 2, x.target_implementation)
         ws.cell(i, e + 3, x.onboarded_at)
         ws.cell(i, e + 4, x.last_verified_at)
+        ws.cell(i, e + 5, _join(bds) if len(bds) > 1 else None)
+        cds = sorted(x.compliance_drivers, key=lambda c: (order.get(c.source_id, 0), c.ref))
+        multi = any(sum(1 for c in cds if c.source_id == src.id) > 1 for src in sources)
+        ws.cell(i, e + 6, _join(f"{c.source.name}: {c.ref}" for c in cds) if multi else None)
     _widths(ws, {"A": 22, "C": 12, "D": 30, "E": 50, "F": 28, "M": 18})
 
     # ---- L3 UC
@@ -371,6 +385,19 @@ def _date(v: Any) -> date | None:
         except ValueError:
             continue
     raise ValueError(f"'{s}' is not a date (use YYYY-MM-DD)")
+
+
+def _source_for_header(header: str, sources: dict[str, ComplianceSource]):
+    """Compliance source for an L2 column header: 'Internal Security Policy', 'Policy reference',
+    'External Regulator #1 ref' ... A header that fits no source or several is not a source."""
+    h = re.sub(r"\s*\b(refs?|references?|ids?)$", "", header).strip()
+    h = {"internal policy": "internal security policy"}.get(h, h)
+    if h in sources:
+        return sources[h]
+    if len(h) < 4:
+        return None
+    hits = [s for name, s in sources.items() if h in name]
+    return hits[0] if len(hits) == 1 else None
 
 
 def _sheet(wb, name: str):
@@ -638,17 +665,19 @@ class _Importer:
         hrow, cols = found
         c_code, c_name = cols["l2 use case identifier"], cols["use case name"]
         c_desc, c_actors = _col(cols, "use case description"), _col(cols, "actors")
-        c_bd = _col(cols, "business drivers")
+        c_bd = _col(cols, "business driver")
+        c_all_bd, c_all_cd = cols.get(ALL_BD.lower()), cols.get(ALL_CD.lower())
         c_status, c_risk = _col(cols, "lifecycle status"), _col(cols, "risk level")
         c_target = _col(cols, "target implementation")
         c_onb, c_ver = _col(cols, "onboarded"), cols.get("last verified")
         sources = {s.name.lower(): s for s in self.db.scalars(select(ComplianceSource))}
-        aliases = {"internal policy": "internal security policy"}
-        comp_cols = {}
-        for name, col in cols.items():
-            src = sources.get(aliases.get(name, name))
-            if src:
-                comp_cols[col] = src
+        taken = {c_code, c_name, c_desc, c_actors, c_bd, c_all_bd, c_all_cd}
+        taken |= {c_status, c_risk, c_target, c_onb, c_ver}
+        comp_cols = {
+            col: src
+            for name, col in cols.items()
+            if col not in taken and (src := _source_for_header(name, sources))
+        }
         l1s = {x.code: x for x in self.db.scalars(select(L1UseCase))}
         bds = {x.code: x for x in self.db.scalars(select(BusinessDriver))}
         existing = {x.code: x for x in self.db.scalars(select(L2UseCase))}
@@ -697,26 +726,43 @@ class _Importer:
                     self.ref(RefKind.threat_actor, a, sheet, r)
                     for a in self.ref_names(RefKind.threat_actor, ws.cell(r, c_actors).value)
                 ]
-            if c_bd:
+            if c_bd or c_all_bd:
                 chosen = []
-                for b in _split(ws.cell(r, c_bd).value):
+                codes = _split(ws.cell(r, c_bd).value) if c_bd else []
+                codes += _split(ws.cell(r, c_all_bd).value) if c_all_bd else []
+                for b in dict.fromkeys(codes):
                     if b in bds:
                         chosen.append(bds[b])
                     else:
-                        self.r.warn(sheet, r, f"{code}: unknown business driver '{b}' skipped")
+                        self.r.warn(sheet, r, f"{code}: unknown business driver '{b}' not linked")
                 obj.business_drivers = chosen
-            if comp_cols:
-                chosen_cd = []
+            if comp_cols or c_all_cd:
+                wanted: list[tuple[ComplianceSource | None, str, str]] = []
                 for col, src in comp_cols.items():
-                    for ref in _split(ws.cell(r, col).value):
-                        d = next((x for x in src.drivers if x.ref == ref), None)
-                        if d is None:
-                            d = ComplianceDriver(ref=ref, name="", description="")
-                            src.drivers.append(d)
-                            self.r.count("compliance_drivers", "created")
-                            self.r.warn(sheet, r, f"Added compliance driver {ref} to {src.name}")
-                        chosen_cd.append(d)
-                obj.compliance_drivers = chosen_cd
+                    wanted += [(src, src.name, ref) for ref in _split(ws.cell(r, col).value)]
+                if c_all_cd:
+                    for token in re.split(r"[;\n]", _text(ws.cell(r, c_all_cd).value)):
+                        src_name, sep, ref = token.rpartition(":")
+                        if not sep or not ref.strip():
+                            if token.strip():
+                                self.r.warn(
+                                    sheet, r, f"{code}: '{token.strip()}' is not 'Source: ref'"
+                                )
+                            continue
+                        name = src_name.strip()
+                        wanted.append((sources.get(name.lower()), name, ref.strip()))
+                chosen_cd: dict[int, ComplianceDriver] = {}
+                for src, src_name, ref in wanted:
+                    d = next((x for x in src.drivers if x.ref == ref), None) if src else None
+                    if d is None:
+                        self.r.warn(
+                            sheet,
+                            r,
+                            f"{code}: unknown compliance driver {src_name} {ref} not linked",
+                        )
+                        continue
+                    chosen_cd[id(d)] = d
+                obj.compliance_drivers = list(chosen_cd.values())
             keep.add(code)
         self.db.flush()
         self.keep_l2 = keep

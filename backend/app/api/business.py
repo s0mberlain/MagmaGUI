@@ -1,11 +1,13 @@
 """Business layer (drivers, compliance) and reference lists."""
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app import audit
-from app.api.deps import DB
+from app import audit, drivers
+from app.api.deps import DB, SettingsDep
 from app.models import (
     BusinessDriver,
     ComplianceDriver,
@@ -20,6 +22,7 @@ from app.schemas import (
     ComplianceDriverOut,
     ComplianceSourceIn,
     ComplianceSourceOut,
+    DriverCoverageOut,
     RefItemIn,
     RefItemOut,
 )
@@ -88,6 +91,59 @@ def delete_ref(kind: RefKind, item_id: int, user: Editor, db: DB) -> None:
     _commit(db, "Entry")
 
 
+# ---------------------------------------------------------------- links and coverage
+
+
+class LinkedUseCaseOut(BaseModel):
+    code: str
+    name: str
+    l3_count: int
+
+
+Confirm = Query(False, description="Also remove the links to use cases")
+
+
+def _guard_links(linked: list, confirm: bool, what: str) -> JSONResponse | None:
+    """Deleting a driver that is still linked needs confirm=true; the 409 lists the use cases."""
+    if linked and not confirm:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "detail": f"{what} is linked to {len(linked)} L2 use cases; "
+                "repeat with confirm=true to remove the links",
+                "use_cases": drivers.linked_use_cases(linked),
+            },
+        )
+    return None
+
+
+@router.get("/drivers/coverage", response_model=DriverCoverageOut)
+def driver_coverage(_: Reader, db: DB, settings: SettingsDep) -> DriverCoverageOut:
+    """Per business driver, compliance driver and compliance source: linked use cases and
+    their average weight. Drivers without links are gaps."""
+    return drivers.coverage(db, settings.default_verification_days, settings.driver_low_coverage)
+
+
+@router.get("/business-drivers/{bd_id}/use-cases", response_model=list[LinkedUseCaseOut])
+def bd_use_cases(bd_id: int, _: Reader, db: DB) -> list[dict]:
+    bd = _get(db, BusinessDriver, bd_id)
+    return drivers.linked_use_cases(drivers.l2s_linked_to_business(db, bd))
+
+
+@router.get("/compliance/drivers/{cd_id}/use-cases", response_model=list[LinkedUseCaseOut])
+def cd_use_cases(cd_id: int, _: Reader, db: DB) -> list[dict]:
+    cd = _get(db, ComplianceDriver, cd_id)
+    return drivers.linked_use_cases(drivers.l2s_linked_to_compliance(db, [cd.id]))
+
+
+@router.get("/compliance/{source_id}/use-cases", response_model=list[LinkedUseCaseOut])
+def source_use_cases(source_id: int, _: Reader, db: DB) -> list[dict]:
+    src = _get(db, ComplianceSource, source_id)
+    return drivers.linked_use_cases(
+        drivers.l2s_linked_to_compliance(db, [c.id for c in src.drivers])
+    )
+
+
 # ---------------------------------------------------------------- business drivers
 
 
@@ -117,12 +173,20 @@ def update_bd(bd_id: int, body: BusinessDriverIn, user: Editor, db: DB) -> Busin
     return bd
 
 
-@router.delete("/business-drivers/{bd_id}", status_code=204)
-def delete_bd(bd_id: int, user: Editor, db: DB) -> None:
+@router.delete("/business-drivers/{bd_id}", status_code=204, response_model=None)
+def delete_bd(bd_id: int, user: Editor, db: DB, confirm: bool = Confirm) -> JSONResponse | None:
     bd = _get(db, BusinessDriver, bd_id)
-    audit.record(db, user, "delete", "business_driver", bd.code)
+    linked = drivers.l2s_linked_to_business(db, bd)
+    if blocked := _guard_links(linked, confirm, f"Business driver {bd.code}"):
+        return blocked
+    for l2 in linked:
+        l2.business_drivers.remove(bd)
+    audit.record(
+        db, user, "delete", "business_driver", bd.code, {"unlinked": [x.code for x in linked]}
+    )
     db.delete(bd)
     _commit(db, "Business driver")
+    return None
 
 
 # ---------------------------------------------------------------- compliance
@@ -142,12 +206,23 @@ def create_source(body: ComplianceSourceIn, user: Editor, db: DB) -> ComplianceS
     return src
 
 
-@router.delete("/compliance/{source_id}", status_code=204)
-def delete_source(source_id: int, user: Editor, db: DB) -> None:
+@router.delete("/compliance/{source_id}", status_code=204, response_model=None)
+def delete_source(
+    source_id: int, user: Editor, db: DB, confirm: bool = Confirm
+) -> JSONResponse | None:
     src = _get(db, ComplianceSource, source_id)
-    audit.record(db, user, "delete", "compliance_source", src.name)
+    ids = {c.id for c in src.drivers}
+    linked = drivers.l2s_linked_to_compliance(db, list(ids))
+    if blocked := _guard_links(linked, confirm, f"Compliance source {src.name}"):
+        return blocked
+    for l2 in linked:
+        l2.compliance_drivers = [c for c in l2.compliance_drivers if c.id not in ids]
+    audit.record(
+        db, user, "delete", "compliance_source", src.name, {"unlinked": [x.code for x in linked]}
+    )
     db.delete(src)
     _commit(db, "Compliance source")
+    return None
 
 
 @router.post("/compliance/{source_id}/drivers", response_model=ComplianceDriverOut, status_code=201)
@@ -172,9 +247,18 @@ def update_cd(cd_id: int, body: ComplianceDriverIn, user: Editor, db: DB) -> Com
     return cd
 
 
-@router.delete("/compliance/drivers/{cd_id}", status_code=204)
-def delete_cd(cd_id: int, user: Editor, db: DB) -> None:
+@router.delete("/compliance/drivers/{cd_id}", status_code=204, response_model=None)
+def delete_cd(cd_id: int, user: Editor, db: DB, confirm: bool = Confirm) -> JSONResponse | None:
     cd = _get(db, ComplianceDriver, cd_id)
-    audit.record(db, user, "delete", "compliance_driver", cd.ref)
+    label = drivers.compliance_label(cd)
+    linked = drivers.l2s_linked_to_compliance(db, [cd.id])
+    if blocked := _guard_links(linked, confirm, f"Compliance driver {label}"):
+        return blocked
+    for l2 in linked:
+        l2.compliance_drivers.remove(cd)
+    audit.record(
+        db, user, "delete", "compliance_driver", label, {"unlinked": [x.code for x in linked]}
+    )
     db.delete(cd)
     _commit(db, "Compliance driver")
+    return None

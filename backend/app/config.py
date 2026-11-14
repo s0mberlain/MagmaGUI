@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # Target implementation per risk level when a use case sets no own target (app/growth.py).
     risk_targets: str = "1=0.4,2=0.5,3=0.6,4=0.75,5=0.9"
 
+    # A business or compliance driver whose linked use cases score below this average weight is
+    # listed as "low coverage" on the Priorities page and in the report (app/drivers.py).
+    driver_low_coverage: float = 0.3
+
     # Fill the catalogue with generated demo data on first start (see app/demo.py).
     demo_data: bool = False
     demo_seed: int = 42

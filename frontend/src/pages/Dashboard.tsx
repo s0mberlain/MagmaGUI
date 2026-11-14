@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
-import { api, type DueRule, type Kpis, type RecentCommit, type Scores } from "../api";
+import { api, type DriverCoverageReport, type DueRule, type Kpis, type RecentCommit, type Scores } from "../api";
 import { useAuth } from "../auth";
+import { CoverageCell } from "../components/Drivers";
 import { ErrorNote, GapBadge, MetricBars, MetricLegend, useLoad } from "../components/ui";
 import { fmtDate, num, pct } from "../lib/format";
 import { t } from "../i18n";
@@ -39,6 +40,7 @@ export default function Dashboard() {
   const scores = useLoad<Scores>(() => api.scores());
   const due = useLoad<DueRule[]>(() => api.due(30));
   const commits = useLoad<RecentCommit[]>(() => api.recentCommits(5));
+  const drivers = useLoad<DriverCoverageReport>(() => api.driverCoverage());
   const s = scores.data;
 
   return (
@@ -188,6 +190,97 @@ export default function Dashboard() {
           </section>
         </div>
       </div>
+      <DriverCoverageCards data={drivers.data} error={drivers.error} />
     </>
+  );
+}
+
+function DriverCoverageCards({ data, error }: { data: DriverCoverageReport | null; error: string | null }) {
+  return (
+    <div className="two-col even">
+      <section className="card table-card" aria-labelledby="bdc">
+        <div className="table-title section-head">
+          <h2 id="bdc">{t("Coverage per business driver")}</h2>
+          <Link to="/drivers" className="small">
+            {t("Drivers")}
+          </Link>
+        </div>
+        <ErrorNote error={error} />
+        <div className="scroll-x">
+        <table className="table table-compact">
+          <thead>
+            <tr>
+              <th>{t("Business driver")}</th>
+              <th className="num">L2</th>
+              <th style={{ width: "38%" }}>{t("Coverage")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data?.business.map((d) => (
+              <tr key={d.id}>
+                <td>
+                  <Link className="code-link" to={`/usecases?bd=${encodeURIComponent(d.code)}&view=table`}>
+                    <span className="code-tag">{d.code}</span>
+                    <span>{d.name}</span>
+                  </Link>
+                </td>
+                <td className="num">{d.l2_count}</td>
+                <td>
+                  <CoverageCell d={d} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
+      </section>
+      <section className="card table-card" aria-labelledby="csc">
+        <div className="table-title section-head">
+          <h2 id="csc">{t("Coverage per compliance source")}</h2>
+        </div>
+        <div className="scroll-x">
+        <table className="table table-compact">
+          <thead>
+            <tr>
+              <th>{t("Compliance source")}</th>
+              <th className="num">{t("Linked")}</th>
+              <th className="num">L2</th>
+              <th style={{ width: "38%" }}>{t("Coverage")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data?.sources.map((x) => (
+              <tr key={x.id}>
+                <td>
+                  <Link to={`/usecases?src=${x.id}&view=table`}>{x.name}</Link>
+                  {x.gap_drivers > 0 && (
+                    <div className="small muted">
+                      {t("Requirements without a use case: {n}", { n: x.gap_drivers })}
+                    </div>
+                  )}
+                </td>
+                <td className="num">
+                  {x.linked_drivers}/{x.drivers}
+                </td>
+                <td className="num">{x.l2_count}</td>
+                <td>
+                  <CoverageCell
+                    d={{ coverage: x.coverage, gap: x.l2_count === 0, low: x.coverage !== null && x.coverage < data.low_threshold }}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
+        {data && (
+          <p className="muted small" style={{ padding: "0 16px 12px" }}>
+            {t("Coverage = average weight of the linked L2 use cases; L2 without scored rules count as 0. Below {p} is low.", {
+              p: pct(data.low_threshold),
+            })}
+          </p>
+        )}
+      </section>
+    </div>
   );
 }

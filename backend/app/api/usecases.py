@@ -7,11 +7,12 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app import audit, growth, lifecycle
+from app import audit, drivers, growth, lifecycle
 from app.api.deps import DB, SettingsDep
 from app.models import (
     BusinessDriver,
     ComplianceDriver,
+    ComplianceSource,
     L1UseCase,
     L2UseCase,
     L3UseCase,
@@ -146,6 +147,7 @@ def l2_out(l2: L2UseCase, l3_count: int | None = None) -> L2Out:
         actors=sorted(a.name for a in l2.actors),
         business_drivers=sorted(b.code for b in l2.business_drivers),
         compliance_driver_ids=sorted(c.id for c in l2.compliance_drivers),
+        compliance_drivers=drivers.compliance_refs(l2.compliance_drivers),
         l3_count=len(l2.children) if l3_count is None else l3_count,
     )
 
@@ -201,6 +203,8 @@ def l3_out(
         detection_technologies=sorted(by_kind[RefKind.detection_technology]),
         scopes=sorted(by_kind[RefKind.scope]),
         updated_at=l3.updated_at,
+        business_drivers=sorted(b.code for b in l3.parent.business_drivers),
+        compliance_drivers=drivers.compliance_refs(l3.parent.compliance_drivers),
         weight=score.weight,
         potential=score.potential,
         assessed=score.assessed,
@@ -241,9 +245,25 @@ def _l1_out(db: Session, l1s: list[L1UseCase]) -> list[L1Out]:
             .group_by(L2UseCase.l1_id)
         )
     )
+    # L1 inherits the drivers of its L2 use cases (read-only)
+    bd: dict[int, set[str]] = {}
+    cd: dict[int, list[ComplianceDriver]] = {}
+    for l2 in db.scalars(
+        select(L2UseCase).options(
+            selectinload(L2UseCase.business_drivers),
+            selectinload(L2UseCase.compliance_drivers).selectinload(ComplianceDriver.source),
+        )
+    ):
+        bd.setdefault(l2.l1_id, set()).update(b.code for b in l2.business_drivers)
+        cd.setdefault(l2.l1_id, []).extend(l2.compliance_drivers)
     return [
         L1Out.model_validate(l1).model_copy(
-            update={"l2_count": l2c.get(l1.id, 0), "l3_count": l3c.get(l1.id, 0)}
+            update={
+                "l2_count": l2c.get(l1.id, 0),
+                "l3_count": l3c.get(l1.id, 0),
+                "business_drivers": sorted(bd.get(l1.id, set())),
+                "compliance_drivers": drivers.compliance_refs(cd.get(l1.id, [])),
+            }
         )
         for l1 in l1s
     ]
@@ -296,7 +316,7 @@ def _l2_query():
         selectinload(L2UseCase.parent),
         selectinload(L2UseCase.actors),
         selectinload(L2UseCase.business_drivers),
-        selectinload(L2UseCase.compliance_drivers),
+        selectinload(L2UseCase.compliance_drivers).selectinload(ComplianceDriver.source),
     )
 
 
@@ -309,19 +329,37 @@ def _set_l2_relations(db: Session, l2: L2UseCase, data: dict[str, Any]) -> dict[
         changes["business_drivers"] = [sorted(b.code for b in l2.business_drivers), sorted(codes)]
         l2.business_drivers = _business_drivers(db, codes)
     if (ids := data.pop("compliance_driver_ids", None)) is not None:
-        changes["compliance_driver_ids"] = [
-            sorted(c.id for c in l2.compliance_drivers),
-            sorted(ids),
-        ]
+        old = sorted(drivers.compliance_label(c) for c in l2.compliance_drivers)
         l2.compliance_drivers = _compliance_drivers(db, ids)
+        changes["compliance_drivers"] = [
+            old,
+            sorted(drivers.compliance_label(c) for c in l2.compliance_drivers),
+        ]
     return {k: v for k, v in changes.items() if v[0] != v[1]}
 
 
 @router.get("/l2", response_model=list[L2Out])
-def list_l2(_: Reader, db: DB, l1: str | None = None) -> list[L2Out]:
+def list_l2(
+    _: Reader,
+    db: DB,
+    l1: str | None = None,
+    business_driver: str | None = Query(None, description="Business driver code"),
+    compliance_driver: int | None = Query(None, description="Compliance driver id"),
+    compliance_source: int | None = Query(None, description="Compliance source id"),
+) -> list[L2Out]:
     q = _l2_query().order_by(L2UseCase.code)
     if l1:
         q = q.join(L2UseCase.parent).where(L1UseCase.code == l1)
+    if business_driver:
+        q = q.where(L2UseCase.business_drivers.any(BusinessDriver.code == business_driver))
+    if compliance_driver is not None:
+        q = q.where(L2UseCase.compliance_drivers.any(ComplianceDriver.id == compliance_driver))
+    if compliance_source is not None:
+        q = q.where(
+            L2UseCase.compliance_drivers.any(
+                ComplianceDriver.source.has(ComplianceSource.id == compliance_source)
+            )
+        )
     counts = _pairs(db.execute(select(L3UseCase.l2_id, func.count()).group_by(L3UseCase.l2_id)))
     return [l2_out(x, counts.get(x.id, 0)) for x in db.scalars(q)]
 
@@ -407,7 +445,7 @@ def list_l3(
 ) -> list[L3Out]:
     q = (
         select(L3UseCase)
-        .options(selectinload(L3UseCase.parent), selectinload(L3UseCase.references))
+        .options(*drivers.l3_parent_options(), selectinload(L3UseCase.references))
         .order_by(L3UseCase.code)
     )
     if l2:

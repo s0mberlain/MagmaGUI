@@ -122,6 +122,18 @@ export interface L1 {
   sort_order: number;
   l2_count: number;
   l3_count: number;
+  /** inherited from its L2 use cases */
+  business_drivers: string[];
+  compliance_drivers: ComplianceRef[];
+}
+
+/** A compliance driver linked to a use case, with its source. */
+export interface ComplianceRef {
+  id: number;
+  source_id: number;
+  source: string;
+  ref: string;
+  name: string;
 }
 
 export interface L2 {
@@ -139,6 +151,7 @@ export interface L2 {
   actors: string[];
   business_drivers: string[];
   compliance_driver_ids: number[];
+  compliance_drivers: ComplianceRef[];
   l3_count: number;
 }
 
@@ -172,6 +185,9 @@ export interface L3 {
   detection_technologies: string[];
   scopes: string[];
   updated_at: string;
+  /** inherited from the L2 use case */
+  business_drivers: string[];
+  compliance_drivers: ComplianceRef[];
   weight: number | null;
   potential: number | null;
   assessed: boolean;
@@ -180,7 +196,9 @@ export interface L3 {
   verification_overdue: boolean;
 }
 
-export type L2Input = Partial<Omit<L2, "id" | "l1_code" | "l3_count" | "last_verified_by">>;
+export type L2Input = Partial<
+  Omit<L2, "id" | "l1_code" | "l3_count" | "last_verified_by" | "compliance_drivers">
+>;
 export type L3Input = Partial<
   Omit<
     L3,
@@ -201,6 +219,8 @@ export type L3Input = Partial<
     | "target_source"
     | "implementation_gap"
     | "priority"
+    | "business_drivers"
+    | "compliance_drivers"
   >
 >;
 
@@ -227,6 +247,43 @@ export interface ComplianceSource {
   id: number;
   name: string;
   drivers: ComplianceDriver[];
+}
+export interface DriverCoverage {
+  id: number;
+  /** business driver code or compliance reference */
+  code: string;
+  name: string;
+  source_id: number | null;
+  source: string | null;
+  l2_count: number;
+  l3_count: number;
+  scored_l2: number;
+  coverage: number | null;
+  gap: boolean;
+  low: boolean;
+  l2_codes: string[];
+}
+export interface SourceCoverage {
+  id: number;
+  name: string;
+  drivers: number;
+  linked_drivers: number;
+  l2_count: number;
+  l3_count: number;
+  coverage: number | null;
+  gap_drivers: number;
+  low_drivers: number;
+}
+export interface DriverCoverageReport {
+  low_threshold: number;
+  business: DriverCoverage[];
+  compliance: DriverCoverage[];
+  sources: SourceCoverage[];
+}
+export interface LinkedUseCase {
+  code: string;
+  name: string;
+  l3_count: number;
 }
 
 export interface AuthConfig {
@@ -442,6 +499,9 @@ export interface GapRow {
   target_source: string | null;
   gap: number | null;
   priority: number | null;
+  business_drivers: string[];
+  compliance_drivers: string[];
+  driver_boost: number;
 }
 export interface Gaps {
   summary: {
@@ -454,6 +514,8 @@ export interface Gaps {
     risk_targets: Record<string, number>;
   };
   rows: GapRow[];
+  driver_gaps: DriverCoverage[];
+  driver_low_threshold: number;
 }
 export interface MaturityAssessment {
   id: number;
@@ -683,15 +745,20 @@ export const api = {
   createDriver: (body: Omit<BusinessDriver, "id">) => request<BusinessDriver>("POST", "/api/business-drivers", body),
   updateDriver: (id: number, body: Omit<BusinessDriver, "id">) =>
     request<BusinessDriver>("PATCH", `/api/business-drivers/${id}`, body),
-  deleteDriver: (id: number) => request<void>("DELETE", `/api/business-drivers/${id}`),
+  deleteDriver: (id: number) => request<void>("DELETE", `/api/business-drivers/${id}?confirm=true`),
+  driverUseCases: (id: number) => request<LinkedUseCase[]>("GET", `/api/business-drivers/${id}/use-cases`),
+  complianceDriverUseCases: (id: number) =>
+    request<LinkedUseCase[]>("GET", `/api/compliance/drivers/${id}/use-cases`),
+  sourceUseCases: (id: number) => request<LinkedUseCase[]>("GET", `/api/compliance/${id}/use-cases`),
+  driverCoverage: () => request<DriverCoverageReport>("GET", "/api/drivers/coverage"),
   compliance: () => request<ComplianceSource[]>("GET", "/api/compliance"),
   createSource: (name: string) => request<ComplianceSource>("POST", "/api/compliance", { name }),
-  deleteSource: (id: number) => request<void>("DELETE", `/api/compliance/${id}`),
+  deleteSource: (id: number) => request<void>("DELETE", `/api/compliance/${id}?confirm=true`),
   createComplianceDriver: (sourceId: number, body: { ref: string; name: string; description: string }) =>
     request<ComplianceDriver>("POST", `/api/compliance/${sourceId}/drivers`, body),
   updateComplianceDriver: (id: number, body: { ref: string; name: string; description: string }) =>
     request<ComplianceDriver>("PATCH", `/api/compliance/drivers/${id}`, body),
-  deleteComplianceDriver: (id: number) => request<void>("DELETE", `/api/compliance/drivers/${id}`),
+  deleteComplianceDriver: (id: number) => request<void>("DELETE", `/api/compliance/drivers/${id}?confirm=true`),
 
   authConfig: () => request<AuthConfig>("GET", "/api/auth/config"),
 

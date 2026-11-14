@@ -1,8 +1,18 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { api, type ConfigCommit, type L1, type L2, type L3, type Scores } from "../api";
+import {
+  api,
+  type BusinessDriver,
+  type ComplianceSource,
+  type ConfigCommit,
+  type L1,
+  type L2,
+  type L3,
+  type Scores,
+} from "../api";
 import { useAuth } from "../auth";
 import ConfigPanel from "../components/ConfigPanel";
+import { BusinessChips, ComplianceChips, DriverBlock, DriverPickers, EditDriversDialog } from "../components/Drivers";
 import LifecyclePanel from "../components/LifecyclePanel";
 import { Chips, ErrorNote, GapBadge, Modal, MultiSelect, StatusPill, useLoad } from "../components/ui";
 import { fmtDate, num, pct, STATUS_LABEL } from "../lib/format";
@@ -12,6 +22,22 @@ interface Catalogue {
   l1s: L1[];
   l2s: L2[];
   scores: Scores;
+  drivers: BusinessDriver[];
+  sources: ComplianceSource[];
+}
+
+/** Filter by business driver (bd), compliance source (src) and compliance driver (cd). */
+interface DriverFilter {
+  bd: string;
+  src: string;
+  cd: string;
+}
+
+function matchesDrivers(l2: L2, f: DriverFilter): boolean {
+  if (f.bd && !l2.business_drivers.includes(f.bd)) return false;
+  if (f.src && !l2.compliance_drivers.some((c) => String(c.source_id) === f.src)) return false;
+  if (f.cd && !l2.compliance_driver_ids.includes(Number(f.cd))) return false;
+  return true;
 }
 
 export default function UseCases() {
@@ -22,11 +48,30 @@ export default function UseCases() {
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [dialog, setDialog] = useState<null | "editL2" | "newL2" | "newL3" | "verifyL2">(null);
+  const [driversOf, setDriversOf] = useState<L2 | null>(null);
 
   const cat = useLoad<Catalogue>(async () => {
-    const [l1s, l2s, scores] = await Promise.all([api.l1s(), api.l2s(), api.scores()]);
-    return { l1s, l2s, scores };
+    const [l1s, l2s, scores, drivers, sources] = await Promise.all([
+      api.l1s(),
+      api.l2s(),
+      api.scores(),
+      api.drivers(),
+      api.compliance(),
+    ]);
+    return { l1s, l2s, scores, drivers, sources };
   });
+  const filter: DriverFilter = { bd: params.get("bd") ?? "", src: params.get("src") ?? "", cd: params.get("cd") ?? "" };
+  const filtering = !!(filter.bd || filter.src || filter.cd);
+  const view = params.get("view") === "table" ? "table" : "tree";
+  /** Change some URL parameters and keep the others (filters, view, selection). */
+  const setParam = (patch: Record<string, string | null>) => {
+    const next = new URLSearchParams(params);
+    for (const [k, v] of Object.entries(patch)) {
+      if (v) next.set(k, v);
+      else next.delete(k);
+    }
+    setParams(next);
+  };
 
   const l2Score = useMemo(() => new Map(cat.data?.scores.l2.map((s) => [s.code, s]) ?? []), [cat.data]);
 
@@ -36,7 +81,7 @@ export default function UseCases() {
     const p = params.get("l2");
     if (p && d.l2s.some((x) => x.code === p)) return p;
     const l1 = params.get("l1");
-    return d.l2s.find((x) => !l1 || x.l1_code === l1)?.code ?? null;
+    return d.l2s.find((x) => (!l1 || x.l1_code === l1) && matchesDrivers(x, filter))?.code ?? null;
   }, [cat.data, params]);
   const selected = cat.data?.l2s.find((x) => x.code === selectedCode) ?? null;
   const rules = useLoad<L3[]>(
@@ -49,7 +94,8 @@ export default function UseCases() {
   );
 
   const q = query.trim().toLowerCase();
-  const matches = (l2: L2) => !q || l2.code.toLowerCase().includes(q) || l2.name.toLowerCase().includes(q);
+  const matches = (l2: L2) =>
+    (!q || l2.code.toLowerCase().includes(q) || l2.name.toLowerCase().includes(q)) && matchesDrivers(l2, filter);
 
   const refresh = () => {
     void cat.reload();
@@ -81,6 +127,95 @@ export default function UseCases() {
 
       <ErrorNote error={cat.error} />
 
+      <section className="card uc-filters" aria-label={t("Filter use cases")}>
+        <div className="view-toggle" role="group" aria-label={t("View")}>
+          {(["tree", "table"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              className={"filter-chip" + (view === v ? " active" : "")}
+              aria-pressed={view === v}
+              onClick={() => setParam({ view: v === "tree" ? null : v })}
+            >
+              {v === "tree" ? t("Tree") : t("Table")}
+            </button>
+          ))}
+        </div>
+        <span className="grow" />
+        <label className="sr-only" htmlFor="f-bd">
+          {t("Business driver")}
+        </label>
+        <select
+          id="f-bd"
+          className="input input-sm"
+          value={filter.bd}
+          onChange={(e) => setParam({ bd: e.target.value || null, l2: null })}
+        >
+          <option value="">{t("All business drivers")}</option>
+          {cat.data?.drivers.map((d) => (
+            <option key={d.id} value={d.code}>
+              {d.code} · {d.name}
+            </option>
+          ))}
+        </select>
+        <label className="sr-only" htmlFor="f-src">
+          {t("Compliance source")}
+        </label>
+        <select
+          id="f-src"
+          className="input input-sm"
+          value={filter.src}
+          onChange={(e) => setParam({ src: e.target.value || null, cd: null, l2: null })}
+        >
+          <option value="">{t("All compliance sources")}</option>
+          {cat.data?.sources.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <label className="sr-only" htmlFor="f-cd">
+          {t("Compliance driver")}
+        </label>
+        <select
+          id="f-cd"
+          className="input input-sm"
+          value={filter.cd}
+          onChange={(e) => setParam({ cd: e.target.value || null, l2: null })}
+        >
+          <option value="">{t("All compliance drivers")}</option>
+          {cat.data?.sources
+            .filter((s) => !filter.src || String(s.id) === filter.src)
+            .map((s) => (
+              <optgroup key={s.id} label={s.name}>
+                {s.drivers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.ref}
+                    {c.name ? ` · ${c.name}` : ""}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+        </select>
+        {filtering && (
+          <button type="button" className="btn btn-sm" onClick={() => setParam({ bd: null, src: null, cd: null })}>
+            {t("Clear filters")}
+          </button>
+        )}
+      </section>
+
+      {view === "table" && cat.data && (
+        <UseCaseTable
+          cat={cat.data}
+          visible={matches}
+          l2Score={l2Score}
+          editor={editor}
+          onEditDrivers={setDriversOf}
+          onOpen={(code) => setParam({ view: null, l2: code })}
+        />
+      )}
+
+      {view === "tree" && (
       <div className="split">
         <section className="card tree" aria-label={t("Use case tree")}>
           <label className="sr-only" htmlFor="uc-search">
@@ -95,8 +230,8 @@ export default function UseCases() {
           />
           {cat.data?.l1s.map((l1) => {
             const children = cat.data!.l2s.filter((x) => x.l1_code === l1.code && matches(x));
-            if (q && !children.length) return null;
-            const open = q || !collapsed.has(l1.code);
+            if ((q || filtering) && !children.length) return null;
+            const open = q || filtering || !collapsed.has(l1.code);
             return (
               <div key={l1.code} className="tree-group">
                 <button
@@ -129,7 +264,7 @@ export default function UseCases() {
                         key={l2.code}
                         className={"tree-l2" + (l2.code === selectedCode ? " active" : "")}
                         aria-current={l2.code === selectedCode ? "true" : undefined}
-                        onClick={() => setParams({ l2: l2.code })}
+                        onClick={() => setParam({ l2: l2.code })}
                       >
                         <span className="mono small muted tree-code">{l2.code}</span>
                         <span className="grow">{l2.name}</span>
@@ -145,12 +280,17 @@ export default function UseCases() {
         </section>
 
         <section className="split-wide stack-lg" aria-labelledby="l2title">
+          {cat.data && filtering && !cat.data.l2s.some(matches) && (
+            <p className="muted">{t("No L2 use case matches the filters.")}</p>
+          )}
           {selected && (
             <L2Header
               l2={selected}
               score={l2Score.get(selected.code)}
+              drivers={cat.data?.drivers}
               editor={editor}
               onEdit={() => setDialog("editL2")}
+              onEditDrivers={() => setDriversOf(selected)}
               onVerify={() => setDialog("verifyL2")}
             />
           )}
@@ -180,7 +320,11 @@ export default function UseCases() {
           )}
         </section>
       </div>
+      )}
 
+      {driversOf && (
+        <EditDriversDialog l2={driversOf} onClose={() => setDriversOf(null)} onSaved={refresh} />
+      )}
       {selected && dialog === "editL2" && (
         <EditL2Dialog l2={selected} onClose={() => setDialog(null)} onSaved={refresh} />
       )}
@@ -195,7 +339,7 @@ export default function UseCases() {
           onCreated={(code) => {
             setDialog(null);
             void cat.reload();
-            setParams({ l2: code });
+            setParam({ view: null, l2: code });
           }}
         />
       )}
@@ -213,14 +357,18 @@ export default function UseCases() {
 function L2Header({
   l2,
   score,
+  drivers,
   editor,
   onEdit,
+  onEditDrivers,
   onVerify,
 }: {
   l2: L2;
   score?: Scores["l2"][number];
+  drivers?: BusinessDriver[];
   editor: boolean;
   onEdit: () => void;
+  onEditDrivers: () => void;
   onVerify: () => void;
 }) {
   const stats = [
@@ -247,11 +395,6 @@ function L2Header({
               {a}
             </span>
           ))}
-          {l2.business_drivers.map((b) => (
-            <span key={b} className="chip chip-neutral">
-              {b}
-            </span>
-          ))}
           {l2.risk_level && (
             <span className="chip chip-neutral">
               {t("Risk")} {l2.risk_level}/5
@@ -263,10 +406,14 @@ function L2Header({
             </span>
           )}
         </div>
+        <DriverBlock business={l2.business_drivers} compliance={l2.compliance_drivers} drivers={drivers} />
         {editor && (
           <div className="row-actions start">
             <button type="button" className="btn btn-sm" onClick={onEdit}>
               {t("Edit use case")}
+            </button>
+            <button type="button" className="btn btn-sm" onClick={onEditDrivers}>
+              {t("Edit drivers")}
             </button>
             <button type="button" className="btn btn-sm" onClick={onVerify}>
               {t("Verify now")}
@@ -283,6 +430,100 @@ function L2Header({
         ))}
       </dl>
     </div>
+  );
+}
+
+function UseCaseTable({
+  cat,
+  visible,
+  l2Score,
+  editor,
+  onEditDrivers,
+  onOpen,
+}: {
+  cat: Catalogue;
+  visible: (l2: L2) => boolean;
+  l2Score: Map<string, Scores["l2"][number]>;
+  editor: boolean;
+  onEditDrivers: (l2: L2) => void;
+  onOpen: (code: string) => void;
+}) {
+  const shown = cat.l2s.filter(visible);
+  return (
+    <section className="card table-card" aria-label={t("Use case table")}>
+      <div className="scroll-x">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>{t("L2 use case")}</th>
+              <th>{t("Status")}</th>
+              <th className="num">{t("Rules")}</th>
+              <th className="num">{t("Weight")}</th>
+              <th>{t("Business drivers")}</th>
+              <th>{t("Compliance drivers")}</th>
+              {editor && <th className="num">{t("Actions")}</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {cat.l1s.map((l1) => {
+              const rows = shown.filter((x) => x.l1_code === l1.code);
+              if (!rows.length) return null;
+              return [
+                <tr key={l1.code} className="l1-row">
+                  <td colSpan={4}>
+                    <span className="code-tag">{l1.code}</span> {l1.name}
+                  </td>
+                  <td title={t("Inherited from its L2 use cases")}>
+                    <BusinessChips codes={l1.business_drivers} drivers={cat.drivers} />
+                  </td>
+                  <td title={t("Inherited from its L2 use cases")}>
+                    <ComplianceChips items={l1.compliance_drivers} />
+                  </td>
+                  {editor && <td />}
+                </tr>,
+                ...rows.map((l2) => {
+                  const sc = l2Score.get(l2.code);
+                  return (
+                    <tr key={l2.code}>
+                      <td>
+                        <button type="button" className="link-btn rule-link" onClick={() => onOpen(l2.code)}>
+                          <span className="mono small muted">{l2.code}</span>
+                          <span className="strong-500">{l2.name}</span>
+                        </button>
+                      </td>
+                      <td>
+                        <StatusPill status={l2.lifecycle_status} />
+                      </td>
+                      <td className="num">{l2.l3_count}</td>
+                      <td className="num strong">
+                        {sc?.weight != null ? num(sc.weight) : <GapBadge>{t("gap")}</GapBadge>}
+                      </td>
+                      <td>
+                        <BusinessChips codes={l2.business_drivers} drivers={cat.drivers} />
+                      </td>
+                      <td>
+                        <ComplianceChips items={l2.compliance_drivers} />
+                      </td>
+                      {editor && (
+                        <td className="num">
+                          <button type="button" className="btn btn-sm" onClick={() => onEditDrivers(l2)}>
+                            {t("Edit drivers")}
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                }),
+              ];
+            })}
+          </tbody>
+        </table>
+      </div>
+      {!shown.length && <p className="muted empty-flat">{t("No L2 use case matches the filters.")}</p>}
+      <p className="muted small" style={{ padding: "0 16px 12px" }}>
+        {t("{n} L2 use cases. L3 rules and L1 use cases inherit the drivers of their L2.", { n: shown.length })}
+      </p>
+    </section>
   );
 }
 
@@ -471,19 +712,12 @@ function EditL2Dialog({ l2, onClose, onSaved }: { l2: L2; onClose: () => void; o
               value={form.actors}
               onChange={(v) => set({ actors: v })}
             />
-            <MultiSelect
-              label={t("Business drivers")}
-              options={d.drivers.map((b) => ({ value: b.code, label: `${b.code} ${b.name}` }))}
-              value={form.business_drivers}
-              onChange={(v) => set({ business_drivers: v })}
-            />
-            <MultiSelect
-              label={t("Compliance drivers")}
-              options={d.compliance.flatMap((s) =>
-                s.drivers.map((c) => ({ value: String(c.id), label: `${c.ref} ${c.name}` })),
-              )}
-              value={form.compliance_driver_ids}
-              onChange={(v) => set({ compliance_driver_ids: v })}
+            <DriverPickers
+              drivers={d.drivers}
+              sources={d.compliance}
+              business={form.business_drivers}
+              compliance={form.compliance_driver_ids}
+              onChange={set}
             />
           </div>
         )}

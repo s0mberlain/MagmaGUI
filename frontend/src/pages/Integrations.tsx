@@ -9,7 +9,7 @@ import {
   type TokenScope,
 } from "../api";
 import { ROLE_LABEL, useAuth } from "../auth";
-import { ErrorNote, StatusPill, useLoad } from "../components/ui";
+import { confirmDialog, ErrorNote, StatusPill, useLoad } from "../components/ui";
 import { t } from "../i18n";
 import { fmtDate, fmtTime } from "../lib/format";
 
@@ -193,7 +193,12 @@ function Tokens() {
   }
 
   async function revoke(tok: ApiTokenInfo) {
-    if (!window.confirm(t("Revoke the token {name}? Scripts using it stop working.", { name: tok.name }))) return;
+    const ok = await confirmDialog(t("Revoke the token {name}? Scripts using it stop working.", { name: tok.name }), {
+      title: t("Revoke API token"),
+      confirmLabel: t("Revoke"),
+      danger: true,
+    });
+    if (!ok) return;
     await api.revokeApiToken(tok.id).catch((e: Error) => setError(e.message));
     void tokens.reload();
   }
@@ -337,7 +342,12 @@ export default function Integrations() {
   const d = data.data;
 
   async function removeSource(name: string) {
-    if (!window.confirm(t("Remove the SIEM source {name} and its rule inventory?", { name }))) return;
+    const ok = await confirmDialog(t("Remove the SIEM source {name} and its rule inventory?", { name }), {
+      title: t("Remove SIEM source"),
+      confirmLabel: t("Remove"),
+      danger: true,
+    });
+    if (!ok) return;
     await api.deleteSiemSource(name);
     void data.reload();
   }

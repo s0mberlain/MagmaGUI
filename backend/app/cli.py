@@ -8,7 +8,8 @@ magma rotate-secret --old KEY      re-encrypt the TOTP seeds after SECRET_KEY wa
 magma reset-password [USER]        set a new password for a local account (default: ADMIN_USER),
                                    unlock it and sign it out; asks for the password, or
                                    --from-env takes ADMIN_PASSWORD; --disable-totp also turns
-                                   off two-factor login
+                                   off two-factor login; --enable also re-enables an account
+                                   that an admin disabled
 """
 
 import argparse
@@ -42,6 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     rp.add_argument("username", nargs="?", help="default: ADMIN_USER")
     rp.add_argument("--from-env", action="store_true", help="use ADMIN_PASSWORD instead of asking")
     rp.add_argument("--disable-totp", action="store_true", help="also turn off two-factor login")
+    rp.add_argument("--enable", action="store_true", help="also re-enable a disabled account")
     args = p.parse_args(argv)
 
     settings = get_settings()
@@ -152,7 +154,9 @@ def reset_password(settings, args) -> int:
             user.password_hash = hash_password(password)
             user.failed_logins = 0
             user.locked_until = None
-            user.active = True
+            # a disabled account stays disabled unless asked: someone switched it off on purpose
+            if args.enable:
+                user.active = True
             if args.disable_totp:
                 clear_totp(user)
             db.execute(delete(UserSession).where(UserSession.user_id == user.id))
@@ -162,11 +166,16 @@ def reset_password(settings, args) -> int:
                 "password_reset_cli",
                 "user",
                 user.username,
-                {"totp_disabled": bool(args.disable_totp)},
+                {"totp_disabled": bool(args.disable_totp), "enabled": bool(args.enable)},
             )
             db.commit()
             totp_note = " Two-factor login is still on." if user.totp_enabled else ""
             print(f"Password of '{username}' was reset; the account is unlocked.{totp_note}")
+            if not user.active:
+                print(
+                    f"'{username}' is still disabled and cannot sign in. Run the command again "
+                    "with --enable to switch the account back on."
+                )
     finally:
         engine.dispose()
     return 0

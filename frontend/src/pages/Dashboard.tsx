@@ -6,8 +6,11 @@ import { ErrorNote, GapBadge, MetricBars, MetricLegend, useLoad } from "../compo
 import { fmtDate, num, pct } from "../lib/format";
 import { t } from "../i18n";
 
-function kpiTiles(k: Kpis) {
-  return [
+const UP = t("Higher is better");
+const DOWN = t("Lower is better");
+
+function kpiTiles(k: Kpis): { label: string; value: number | null; sub: string; invert?: boolean; good: string }[] {
+  const tiles = [
     { label: t("SOC detection score"), value: k.soc_detection_score, sub: t("Average weight of applicable L1") },
     {
       label: t("Catalogue coverage"),
@@ -32,6 +35,9 @@ function kpiTiles(k: Kpis) {
       sub: t("{a} of {b} rules overdue", { a: k.verification_overdue, b: k.operational_rules }),
     },
   ];
+  // growth potential is what is still to gain: it shrinks as the detection score grows
+  const lower = new Set([t("Detection gap"), t("Growth potential")]);
+  return tiles.map((x) => ({ ...x, good: lower.has(x.label) ? DOWN : UP }));
 }
 
 export function DueBadge({ d }: { d: Pick<DueRule, "due" | "overdue" | "days_left"> }) {
@@ -82,6 +88,9 @@ export default function Dashboard() {
               <div style={{ width: `${Math.round((k.value ?? 0) * 100)}%` }} className={k.invert ? "bar-muted" : ""} />
             </div>
             <span className="kpi-sub">{s ? k.sub : "…"}</span>
+            <span className="kpi-good">
+              <span aria-hidden="true">{k.good === UP ? "↑" : "↓"}</span> {k.good}
+            </span>
           </div>
         ))}
       </section>

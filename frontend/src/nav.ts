@@ -8,20 +8,28 @@ export interface NavItem {
   milestone?: string;
   /** Only these roles see the entry (default: everyone). */
   roles?: Role[];
+  /** Heading the entry is listed under in the sidebar. */
+  group: "work" | "analysis" | "admin";
 }
 
+export const NAV_GROUPS: { key: NavItem["group"]; label: string }[] = [
+  { key: "work", label: t("Daily work") },
+  { key: "analysis", label: t("Analysis") },
+  { key: "admin", label: t("Setup") },
+];
+
 export const NAV_ITEMS: NavItem[] = [
-  { label: t("Dashboard"), path: "/" },
-  { label: t("Use cases"), path: "/usecases" },
-  { label: t("Verification"), path: "/verification" },
-  { label: t("Priorities"), path: "/priorities" },
-  { label: t("ATT&CK coverage"), path: "/attack" },
-  { label: t("Output metrics"), path: "/output" },
-  { label: t("Business drivers"), path: "/drivers" },
-  { label: t("Reference lists"), path: "/references" },
-  { label: t("History & trends"), path: "/history" },
-  { label: t("Import / Export"), path: "/import-export" },
-  { label: t("Integrations"), path: "/integrations" },
-  { label: t("Audit log"), path: "/audit", roles: ["admin", "auditor"] },
-  { label: t("Users"), path: "/admin/users", roles: ["admin"] },
+  { label: t("Dashboard"), path: "/", group: "work" },
+  { label: t("Use cases"), path: "/usecases", group: "work" },
+  { label: t("Verification"), path: "/verification", group: "work" },
+  { label: t("Priorities"), path: "/priorities", group: "work" },
+  { label: t("ATT&CK coverage"), path: "/attack", group: "analysis" },
+  { label: t("Output metrics"), path: "/output", group: "analysis" },
+  { label: t("History & trends"), path: "/history", group: "analysis" },
+  { label: t("Business drivers"), path: "/drivers", group: "admin" },
+  { label: t("Reference lists"), path: "/references", group: "admin" },
+  { label: t("Import / Export"), path: "/import-export", group: "admin" },
+  { label: t("Integrations"), path: "/integrations", group: "admin" },
+  { label: t("Audit log"), path: "/audit", roles: ["admin", "auditor"], group: "admin" },
+  { label: t("Users"), path: "/admin/users", roles: ["admin"], group: "admin" },
 ];

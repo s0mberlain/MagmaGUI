@@ -325,7 +325,7 @@ def oidc_callback(request: Request, db: DB, settings: SettingsDep) -> RedirectRe
             raise SsoError("no_access", "no matching group")
         user = _upsert_user(db, settings, claims, role)
         db.flush()
-        token = create_session(db, user, settings)
+        token = create_session(db, user, settings, hours=settings.sso_session_hours)
         audit.record(db, user, "login", "user", user.username, {"source": "sso"})
         db.commit()
     except SsoError as e:
@@ -342,7 +342,7 @@ def oidc_callback(request: Request, db: DB, settings: SettingsDep) -> RedirectRe
     resp.set_cookie(
         SESSION_COOKIE,
         token,
-        max_age=settings.session_hours * 3600,
+        max_age=settings.sso_session_hours * 3600,
         httponly=True,
         secure=settings.cookie_secure,
         samesite="strict",

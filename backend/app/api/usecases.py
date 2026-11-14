@@ -1,6 +1,6 @@
 """L1 / L2 / L3 use cases. Parents are derived from the identifier prefix, as in the Excel tool."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -35,7 +35,7 @@ from app.schemas import (
     L3Update,
 )
 from app.scoring import RuleInput, score_rule
-from app.security import Admin, Editor, Reader
+from app.security import Admin, Editor, Reader, as_utc
 
 router = APIRouter(tags=["use cases"])
 
@@ -100,11 +100,37 @@ def _compliance_drivers(db: Session, ids: list[int]) -> list[ComplianceDriver]:
     return items
 
 
+def _check_unchanged(obj, data: dict[str, Any]) -> None:
+    """Refuse an edit that started from an older version, so two people working on the same use
+    case do not silently overwrite each other (the form sends every field)."""
+    expected = data.pop("expected_updated_at", None)
+    if expected is None or obj.updated_at is None:
+        return
+    if abs((as_utc(obj.updated_at) - as_utc(expected)).total_seconds()) > 0.001:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{obj.code} was changed by someone else after you opened it. Reload the page and "
+            "apply your changes again.",
+        )
+
+
 def _apply(obj, data: dict[str, Any], user: User) -> dict[str, Any]:
     """Set plain fields, return the audit diff. Verification date also records who verified."""
     before = {k: getattr(obj, k) for k in data}
+    new_status = data.pop("lifecycle_status", None)
+    if new_status is not None and new_status != obj.lifecycle_status:
+        problem = lifecycle.transition_error(obj.lifecycle_status if obj.id else None, new_status)
+        if problem:
+            raise HTTPException(422, problem)
+        lifecycle.apply_status(obj, new_status)
+        data = data | {"lifecycle_status": new_status}
+    elif new_status is not None:
+        data = data | {"lifecycle_status": new_status}
     for k, v in data.items():
-        setattr(obj, k, v)
+        if k != "lifecycle_status":
+            setattr(obj, k, v)
+    # also when only links changed (log sources, drivers): the next stale save must be noticed
+    obj.updated_at = datetime.now(UTC)
     if "last_verified_at" in data and data["last_verified_at"] != before["last_verified_at"]:
         obj.last_verified_by = user.username if data["last_verified_at"] else None
     return audit.diff(before, data)
@@ -128,6 +154,12 @@ def _status_change(db: Session, obj, old: Lifecycle | None, user: User) -> None:
     lifecycle.record_change(db, obj, old, new, user.username, override=bool(missing))
 
 
+def _issues(db: Session) -> dict[int, date]:
+    from app.api.scores import open_issues
+
+    return open_issues(db)
+
+
 # ---------------------------------------------------------------- serializers
 
 
@@ -144,6 +176,7 @@ def l2_out(l2: L2UseCase, l3_count: int | None = None) -> L2Out:
         onboarded_at=l2.onboarded_at,
         last_verified_at=l2.last_verified_at,
         last_verified_by=l2.last_verified_by,
+        updated_at=l2.updated_at,
         actors=sorted(a.name for a in l2.actors),
         business_drivers=sorted(b.code for b in l2.business_drivers),
         compliance_driver_ids=sorted(c.id for c in l2.compliance_drivers),
@@ -153,7 +186,10 @@ def l2_out(l2: L2UseCase, l3_count: int | None = None) -> L2Out:
 
 
 def l3_out(
-    l3: L3UseCase, default_interval: int = 180, targets: dict[int, float] | None = None
+    l3: L3UseCase,
+    default_interval: int = 180,
+    targets: dict[int, float] | None = None,
+    issues: dict[int, date] | None = None,
 ) -> L3Out:
     score = score_rule(
         RuleInput(
@@ -211,6 +247,7 @@ def l3_out(
         scored=score.scored,
         verification_due=score.verification_due,
         verification_overdue=score.verification_overdue,
+        issues_at=(issues or {}).get(l3.id),
     )
 
 
@@ -390,6 +427,7 @@ def create_l2(body: L2Create, user: Editor, db: DB) -> L2Out:
 def update_l2(code: str, body: L2Update, user: Editor, db: DB) -> L2Out:
     l2 = _by_code(db, L2UseCase, code, "L2 use case")
     data = body.model_dump(exclude_unset=True)
+    _check_unchanged(l2, data)
     old = l2.lifecycle_status
     changes = _set_l2_relations(db, l2, data) | _apply(l2, data, user)
     _status_change(db, l2, old, user)
@@ -455,13 +493,14 @@ def list_l3(
     if status_:
         q = q.where(L3UseCase.lifecycle_status == status_)
     targets = settings.risk_target_map
-    return [l3_out(x, settings.default_verification_days, targets) for x in db.scalars(q)]
+    issues = _issues(db)
+    return [l3_out(x, settings.default_verification_days, targets, issues) for x in db.scalars(q)]
 
 
 @router.get("/l3/{code}", response_model=L3Out)
 def get_l3(code: str, _: Reader, db: DB, settings: SettingsDep) -> L3Out:
     l3 = _by_code(db, L3UseCase, code, "L3 rule")
-    return l3_out(l3, settings.default_verification_days, settings.risk_target_map)
+    return l3_out(l3, settings.default_verification_days, settings.risk_target_map, _issues(db))
 
 
 @router.post("/l3", response_model=L3Out, status_code=201)
@@ -479,19 +518,20 @@ def create_l3(body: L3Create, user: Editor, db: DB, settings: SettingsDep) -> L3
     _status_change(db, l3, None, user)
     audit.record(db, user, "create", "l3", l3.code, body.model_dump())
     db.commit()
-    return l3_out(l3, settings.default_verification_days, settings.risk_target_map)
+    return l3_out(l3, settings.default_verification_days, settings.risk_target_map, _issues(db))
 
 
 @router.patch("/l3/{code}", response_model=L3Out)
 def update_l3(code: str, body: L3Update, user: Editor, db: DB, settings: SettingsDep) -> L3Out:
     l3 = _by_code(db, L3UseCase, code, "L3 rule")
     data = body.model_dump(exclude_unset=True)
+    _check_unchanged(l3, data)
     old = l3.lifecycle_status
     changes = _set_l3_refs(db, l3, data) | _apply(l3, data, user)
     _status_change(db, l3, old, user)
     audit.record(db, user, "update", "l3", code, changes)
     db.commit()
-    return l3_out(l3, settings.default_verification_days, settings.risk_target_map)
+    return l3_out(l3, settings.default_verification_days, settings.risk_target_map, _issues(db))
 
 
 @router.delete("/l3/{code}", status_code=204)

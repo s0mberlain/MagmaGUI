@@ -45,7 +45,7 @@ def test_verify_now_and_history(admin, make_user):
     assert not rule["verification_overdue"]
     hist = auditor.get("/api/l3/AO-CRE-01/verifications").json()
     assert [h["result"] for h in hist] == ["ok", "issues"]
-    future = (date.today() + timedelta(days=1)).isoformat()
+    future = (date.today() + timedelta(days=2)).isoformat()
     assert admin.post("/api/l3/AO-CRE-01/verify", json={"verified_at": future}).status_code == 422
 
 

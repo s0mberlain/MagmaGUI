@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
-import { api, setUnauthorizedHandler, type Role, type User } from "./api";
+import { api, setLeavingSession, setUnauthorizedHandler, type Role, type User } from "./api";
 import { setLang, t } from "./i18n";
 
 interface AuthState {
@@ -32,12 +32,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setUnauthorizedHandler(() => {
       setUser(null);
-      navigate("/login", { replace: true });
+      // remember the page, so signing in again brings the person back to it
+      const from = window.location.pathname + window.location.search;
+      navigate("/login", { replace: true, state: { from, expired: true } });
     });
   }, [navigate]);
 
   const login = useCallback(async (username: string, password: string, otp?: string) => {
     const u = await api.login(username, password, otp);
+    setLeavingSession(false);
     if (!setLang(u.locale)) setUser(u);
   }, []);
 
@@ -46,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    setLeavingSession(true);
     await api.logout().catch(() => undefined);
     setUser(null);
     navigate("/login", { replace: true });
@@ -66,7 +70,7 @@ export function RequireAuth({ children, roles }: { children: ReactNode; roles?: 
   const { user, loading } = useAuth();
   const location = useLocation();
   if (loading) return null;
-  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   if (roles && !roles.includes(user.role)) {
     return (
       <div className="empty">

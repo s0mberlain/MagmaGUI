@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api, type GitStatus, type ImportReport } from "../api";
 import { useAuth } from "../auth";
-import { ErrorNote, useLoad } from "../components/ui";
+import { confirmDialog, ErrorNote, useLoad } from "../components/ui";
 import { fmtTime } from "../lib/format";
 import { t } from "../i18n";
 
@@ -100,7 +100,11 @@ export default function ImportExport() {
     if (
       !dryRun &&
       mode === "replace" &&
-      !window.confirm(t("Replace removes everything that is not in the file. Continue?"))
+      !(await confirmDialog(t("Replace removes everything that is not in the file. Continue?"), {
+        title: t("Replace the catalogue"),
+        confirmLabel: t("Replace"),
+        danger: true,
+      }))
     )
       return;
     setBusy(true);
@@ -128,15 +132,15 @@ export default function ImportExport() {
         <h2 id="exp-h">{t("Export")}</h2>
         <p className="muted" style={{ margin: 0 }}>
           {t(
-            "The Excel file has the classic sheets (L1 UC, L2 UC, L3 UC, Drivers, References) with the original formulas, so it still works as the classic tool. Fields the classic tool does not know, such as lifecycle status and verification dates, are in extra columns on the right. The JSON backup also contains verifications and the full YAML configuration history.",
+            "The Excel file has the classic sheets (L1 UC, L2 UC, L3 UC, Drivers, References) with the original formulas, so it still works as the classic tool. Fields the classic tool does not know, such as lifecycle status and verification dates, are in extra columns on the right. The JSON export also contains verifications, status changes, output metrics and the full YAML configuration history. It is meant for other tools and cannot be imported again: back up the database to be able to restore.",
           )}
         </p>
         <div className="row-actions start">
           <a className="btn btn-primary" href="/api/export/excel" download>
             {t("Download Excel (.xlsx)")}
           </a>
-          <a className="btn" href="/api/export/json" download="magma-ucf-backup.json">
-            {t("Download JSON backup")}
+          <a className="btn" href="/api/export/json" download="magma-ucf-export.json">
+            {t("Download JSON export")}
           </a>
         </div>
       </section>
@@ -198,6 +202,7 @@ export default function ImportExport() {
       )}
 
       {can("admin") && <GitCard />}
+      {can("admin") && <DemoCard />}
     </>
   );
 }
@@ -320,6 +325,85 @@ function GitCard() {
             </button>
           </div>
         </>
+      )}
+    </section>
+  );
+}
+
+/** Generated demo data (admin). Only offered where the installation allows it, because loading
+ *  it deletes real history. */
+function DemoCard() {
+  const allowed = useLoad(() => api.demoDataAllowed());
+  const [seed, setSeed] = useState(42);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    const ok = await confirmDialog(t("Load demo data and overwrite the use case data?"), {
+      title: t("Load demo data"),
+      confirmLabel: t("Delete history and load demo data"),
+      danger: true,
+      body: (
+        <ul className="confirm-list">
+          <li>{t("All verifications are deleted.")}</li>
+          <li>{t("All status changes (lifecycle log) are deleted.")}</li>
+          <li>{t("The whole YAML configuration history is deleted.")}</li>
+          <li>{t("Metrics, statuses, data sources and dates of every rule are overwritten.")}</li>
+        </ul>
+      ),
+    });
+    if (!ok) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.demoData(seed);
+      setNotice(t("Demo data applied (seed {seed}). Open the dashboard to see the scores.", { seed }));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card stack" aria-labelledby="demo-h">
+      <h2 id="demo-h">{t("Demo data")}</h2>
+      <p className="muted" style={{ margin: 0 }}>
+        {t(
+          "Fills the catalogue with random but reproducible metrics, statuses, data sources, dates and verification history, and adds sample rules to empty L2 use cases. Existing values of these fields are overwritten.",
+        )}
+      </p>
+      <ErrorNote error={error ?? allowed.error} />
+      {notice && (
+        <p className="form-notice" role="status">
+          {notice}
+        </p>
+      )}
+      {allowed.data && !allowed.data.allowed && (
+        <p className="form-notice">
+          {t(
+            "Switched off on this installation, because loading demo data deletes the verification, status and configuration history. Set ALLOW_DEMO_DATA=true to allow it.",
+          )}
+        </p>
+      )}
+      {allowed.data?.allowed && (
+        <div className="inline-form-plain">
+          <label className="field">
+            {t("Seed")}
+            <input
+              className="input input-sm"
+              type="number"
+              value={seed}
+              onChange={(e) => setSeed(Number(e.target.value))}
+              style={{ width: 120 }}
+            />
+          </label>
+          <button type="button" className="btn btn-sm btn-danger" disabled={busy} onClick={() => void load()}>
+            {busy ? t("Loading…") : t("Load demo data")}
+          </button>
+        </div>
       )}
     </section>
   );

@@ -58,13 +58,15 @@ class LifecycleOut(BaseModel):
     status: Lifecycle
     dod: list[DodState]
     dod_complete: bool
+    # statuses the use case may change to from here
+    allowed: list[Lifecycle] = []
     events: list[EventOut]
 
 
 class ChangeIn(BaseModel):
     to_status: Lifecycle
-    driver_type: str = "unspecified"
-    driver: str = ""
+    driver_type: Annotated[str, Field(max_length=32)] = "unspecified"
+    driver: Annotated[str, Field(max_length=64)] = ""
     note: Annotated[str, Field(max_length=2000)] = ""
     override: bool = False
 
@@ -115,6 +117,7 @@ def _state(db: Session, level: str, obj) -> LifecycleOut:
             for k in lifecycle.DOD_KEYS
         ],
         dod_complete=not lifecycle.dod_missing(obj),
+        allowed=lifecycle.allowed_targets(obj.lifecycle_status),
         events=[event_out(db, e, obj) for e in events],
     )
 
@@ -161,6 +164,9 @@ for _level in ("l2", "l3"):
                 body.driver_type, body.driver
             ):
                 raise HTTPException(422, "Unknown change driver")
+            problem = lifecycle.transition_error(obj.lifecycle_status, body.to_status)
+            if problem:
+                raise HTTPException(422, problem)
             missing = lifecycle.dod_missing(obj) if body.to_status == Lifecycle.operational else []
             if missing and not body.override:
                 raise HTTPException(
@@ -171,7 +177,7 @@ for _level in ("l2", "l3"):
             if missing and user.role != Role.admin:
                 raise HTTPException(403, "Only admins can skip the definition of done")
             old = obj.lifecycle_status
-            obj.lifecycle_status = body.to_status
+            lifecycle.apply_status(obj, body.to_status)
             if body.to_status == Lifecycle.operational and obj.onboarded_at is None:
                 obj.onboarded_at = date.today()
             lifecycle.record_change(

@@ -20,10 +20,12 @@ import Users from "./pages/Users";
 import Verification from "./pages/Verification";
 import { NAV_ITEMS } from "./nav";
 import { t } from "./i18n";
+import { ConfirmHost } from "./components/ui";
 
 export default function App() {
   return (
     <AuthProvider>
+      <ConfirmHost />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route

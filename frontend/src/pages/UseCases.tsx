@@ -14,7 +14,18 @@ import { useAuth } from "../auth";
 import ConfigPanel from "../components/ConfigPanel";
 import { BusinessChips, ComplianceChips, DriverBlock, DriverPickers, EditDriversDialog } from "../components/Drivers";
 import LifecyclePanel from "../components/LifecyclePanel";
-import { Chips, ErrorNote, GapBadge, Modal, MultiSelect, StatusPill, useLoad } from "../components/ui";
+import {
+  Chips,
+  confirmDialog,
+  ErrorNote,
+  GapBadge,
+  Modal,
+  MultiSelect,
+  ShowMore,
+  StatusPill,
+  useLoad,
+  useShowMore,
+} from "../components/ui";
 import { fmtDate, num, pct, STATUS_LABEL } from "../lib/format";
 import { t } from "../i18n";
 
@@ -47,7 +58,8 @@ export default function UseCases() {
   const [params, setParams] = useSearchParams();
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [dialog, setDialog] = useState<null | "editL2" | "newL2" | "newL3" | "verifyL2">(null);
+  const [dialog, setDialog] = useState<null | "editL2" | "newL2" | "newL3" | "verifyL2" | "newL1">(null);
+  const [editL1, setEditL1] = useState<L1 | null>(null);
   const [driversOf, setDriversOf] = useState<L2 | null>(null);
 
   const cat = useLoad<Catalogue>(async () => {
@@ -94,8 +106,23 @@ export default function UseCases() {
   );
 
   const q = query.trim().toLowerCase();
+  // The search also looks into the rules (id, name, ATT&CK technique, SIEM rule id); they are
+  // loaded once, when the first search starts.
+  const searching = q.length > 0;
+  const allRules = useLoad<L3[] | null>(() => (searching ? api.l3s() : Promise.resolve(null)), [searching]);
+  const ruleHits = useMemo(() => {
+    const hits = new Map<string, L3[]>();
+    if (!q) return hits;
+    for (const r of allRules.data ?? []) {
+      const text = [r.code, r.name, ...r.attack_techniques, ...(r.siem_rule_ids ?? [])].join(" ").toLowerCase();
+      if (!text.includes(q)) continue;
+      hits.set(r.l2_code, [...(hits.get(r.l2_code) ?? []), r]);
+    }
+    return hits;
+  }, [allRules.data, q]);
   const matches = (l2: L2) =>
-    (!q || l2.code.toLowerCase().includes(q) || l2.name.toLowerCase().includes(q)) && matchesDrivers(l2, filter);
+    (!q || l2.code.toLowerCase().includes(q) || l2.name.toLowerCase().includes(q) || ruleHits.has(l2.code)) &&
+    matchesDrivers(l2, filter);
 
   const refresh = () => {
     void cat.reload();
@@ -115,6 +142,9 @@ export default function UseCases() {
         </div>
         {editor && (
           <div className="row-actions">
+            <button type="button" className="btn" onClick={() => setDialog("newL1")}>
+              {t("+ L1 use case")}
+            </button>
             <button type="button" className="btn" onClick={() => setDialog("newL2")}>
               {t("+ L2 use case")}
             </button>
@@ -224,16 +254,18 @@ export default function UseCases() {
           <input
             id="uc-search"
             className="input input-sm"
-            placeholder={t("Search ID or name")}
+            placeholder={t("Search use cases, rules, ATT&CK IDs")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
           {cat.data?.l1s.map((l1) => {
             const children = cat.data!.l2s.filter((x) => x.l1_code === l1.code && matches(x));
-            if ((q || filtering) && !children.length) return null;
+            const l1Hit = !!q && (l1.code.toLowerCase().includes(q) || l1.name.toLowerCase().includes(q));
+            if ((q || filtering) && !children.length && !l1Hit) return null;
             const open = q || filtering || !collapsed.has(l1.code);
             return (
               <div key={l1.code} className="tree-group">
+                <div className="tree-l1-row">
                 <button
                   type="button"
                   className="tree-l1"
@@ -252,16 +284,28 @@ export default function UseCases() {
                   </span>
                   <span className="code-tag">{l1.code}</span>
                   <span className="grow">{l1.name}</span>
-                  <span className="small muted">{l1.applicable ? l1.l2_count : "n/a"}</span>
+                  <span className="small muted">{l1.applicable ? l1.l2_count : t("n/a")}</span>
                 </button>
+                {editor && (
+                  <button
+                    type="button"
+                    className="link-btn small tree-edit"
+                    aria-label={t("Edit {code}", { code: l1.code })}
+                    onClick={() => setEditL1(l1)}
+                  >
+                    {t("Edit")}
+                  </button>
+                )}
+                </div>
                 {open &&
                   children.map((l2) => {
                     const sc = l2Score.get(l2.code);
                     const gap = !sc || sc.scored_rules === 0;
+                    const hits = ruleHits.get(l2.code) ?? [];
                     return (
+                      <div key={l2.code} className="tree-l2-wrap">
                       <button
                         type="button"
-                        key={l2.code}
                         className={"tree-l2" + (l2.code === selectedCode ? " active" : "")}
                         aria-current={l2.code === selectedCode ? "true" : undefined}
                         onClick={() => setParam({ l2: l2.code })}
@@ -272,6 +316,16 @@ export default function UseCases() {
                           {l2.l3_count}
                         </span>
                       </button>
+                      {hits.slice(0, 6).map((r) => (
+                        <Link key={r.code} to={`/usecases/l3/${r.code}`} className="tree-rule">
+                          <span className="mono small muted">{r.code}</span>
+                          <span className="grow">{r.name}</span>
+                        </Link>
+                      ))}
+                      {hits.length > 6 && (
+                        <span className="tree-rule muted small">{t("and {n} more rules", { n: hits.length - 6 })}</span>
+                      )}
+                      </div>
                     );
                   })}
               </div>
@@ -341,6 +395,17 @@ export default function UseCases() {
             void cat.reload();
             setParam({ view: null, l2: code });
           }}
+        />
+      )}
+      {(dialog === "newL1" || editL1) && cat.data && (
+        <L1Dialog
+          l1={editL1}
+          count={cat.data.l1s.length}
+          onClose={() => {
+            setDialog(null);
+            setEditL1(null);
+          }}
+          onSaved={refresh}
         />
       )}
       {dialog === "newL3" && selected && (
@@ -449,6 +514,10 @@ function UseCaseTable({
   onOpen: (code: string) => void;
 }) {
   const shown = cat.l2s.filter(visible);
+  // in the order of the table (L1 by L1), so "show more" continues where the list stopped
+  const ordered = cat.l1s.flatMap((l1) => shown.filter((x) => x.l1_code === l1.code));
+  const page = useShowMore(ordered, 25);
+  const onPage = new Set(page.shown.map((x) => x.code));
   return (
     <section className="card table-card" aria-label={t("Use case table")}>
       <div className="scroll-x">
@@ -466,7 +535,7 @@ function UseCaseTable({
           </thead>
           <tbody>
             {cat.l1s.map((l1) => {
-              const rows = shown.filter((x) => x.l1_code === l1.code);
+              const rows = shown.filter((x) => x.l1_code === l1.code && onPage.has(x.code));
               if (!rows.length) return null;
               return [
                 <tr key={l1.code} className="l1-row">
@@ -519,6 +588,7 @@ function UseCaseTable({
           </tbody>
         </table>
       </div>
+      <ShowMore {...page} />
       {!shown.length && <p className="muted empty-flat">{t("No L2 use case matches the filters.")}</p>}
       <p className="muted small" style={{ padding: "0 16px 12px" }}>
         {t("{n} L2 use cases. L3 rules and L1 use cases inherit the drivers of their L2.", { n: shown.length })}
@@ -593,15 +663,30 @@ function RuleTable({ rules, heads }: { rules: L3[]; heads: Record<string, Config
 
 export function VerifiedCell({ rule }: { rule: L3 }) {
   const scoredState = rule.lifecycle_status === "operational" || rule.lifecycle_status === "maintenance";
+  const issues = rule.issues_at ? (
+    <span className="badge-gap" title={t("The last check on {date} found issues", { date: fmtDate(rule.issues_at) })}>
+      {t("Issues")}
+    </span>
+  ) : null;
   if (!rule.last_verified_at)
-    return scoredState ? <span className="badge-gap">{t("Never")}</span> : <span className="muted">–</span>;
+    return scoredState ? (
+      <span className="chips">
+        <span className="badge-gap">{t("Never")}</span>
+        {issues}
+      </span>
+    ) : (
+      (issues ?? <span className="muted">–</span>)
+    );
   return (
-    <span
-      className={rule.verification_overdue ? "badge-gap" : ""}
-      title={t("Due {date}", { date: fmtDate(rule.verification_due) })}
-    >
-      {fmtDate(rule.last_verified_at)}
-      {rule.verification_overdue && t(" · overdue")}
+    <span className="chips">
+      <span
+        className={rule.verification_overdue ? "badge-gap" : ""}
+        title={t("Due {date}", { date: fmtDate(rule.verification_due) })}
+      >
+        {fmtDate(rule.last_verified_at)}
+        {rule.verification_overdue && t(" · overdue")}
+      </span>
+      {issues}
     </span>
   );
 }
@@ -629,6 +714,7 @@ function EditL2Dialog({ l2, onClose, onSaved }: { l2: L2; onClose: () => void; o
   });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const admin = useAuth().can("admin");
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
 
   async function submit(e: FormEvent) {
@@ -645,7 +731,28 @@ function EditL2Dialog({ l2, onClose, onSaved }: { l2: L2; onClose: () => void; o
         actors: form.actors,
         business_drivers: form.business_drivers,
         compliance_driver_ids: form.compliance_driver_ids.map(Number),
+        expected_updated_at: l2.updated_at,
       });
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    const ok = await confirmDialog(
+      t("Delete the use case {code}? Its verifications, status changes and configuration history are deleted with it. This cannot be undone.", {
+        code: l2.code,
+      }),
+      { title: t("Delete use case"), confirmLabel: t("Delete"), danger: true },
+    );
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await api.deleteL2(l2.code);
       onSaved();
       onClose();
     } catch (err) {
@@ -722,11 +829,161 @@ function EditL2Dialog({ l2, onClose, onSaved }: { l2: L2; onClose: () => void; o
           </div>
         )}
         <div className="row-actions">
+          {admin && (
+            <button
+              type="button"
+              className="btn btn-danger push-left"
+              disabled={busy || l2.l3_count > 0}
+              title={l2.l3_count > 0 ? t("Delete or move its L3 rules first") : undefined}
+              onClick={() => void remove()}
+            >
+              {t("Delete use case")}
+            </button>
+          )}
           <button type="button" className="btn" onClick={onClose}>
             {t("Cancel")}
           </button>
           <button type="submit" className="btn btn-primary" disabled={busy}>
             {t("Save")}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** Create or edit an L1 use case (a threat category). "Applicable" decides whether it counts. */
+function L1Dialog({
+  l1,
+  count,
+  onClose,
+  onSaved,
+}: {
+  l1: L1 | null;
+  count: number;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const admin = useAuth().can("admin");
+  const [form, setForm] = useState({
+    code: l1?.code ?? "",
+    name: l1?.name ?? "",
+    threat_category: l1?.threat_category ?? "",
+    purpose: l1?.purpose ?? "",
+    stakeholders: l1?.stakeholders ?? "",
+    description: l1?.description ?? "",
+    applicable: l1?.applicable ?? true,
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
+
+  async function run(fn: () => Promise<unknown>) {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    const { code, ...rest } = form;
+    void run(() => (l1 ? api.updateL1(l1.code, rest) : api.createL1({ code, ...rest, sort_order: (count + 1) * 10 })));
+  }
+
+  async function remove() {
+    if (!l1) return;
+    const ok = await confirmDialog(t("Delete the L1 use case {code}? This cannot be undone.", { code: l1.code }), {
+      title: t("Delete L1 use case"),
+      confirmLabel: t("Delete"),
+      danger: true,
+    });
+    if (ok) void run(() => api.deleteL1(l1.code));
+  }
+
+  return (
+    <Modal title={l1 ? t("Edit {code}", { code: l1.code }) : t("New L1 use case")} open onClose={onClose} wide>
+      <form className="stack" onSubmit={submit}>
+        <ErrorNote error={error} />
+        <div className="form-grid">
+          {!l1 && (
+            <label className="field">
+              {t("Identifier (two letters)")}
+              <input
+                className="input mono"
+                required
+                pattern="[A-Z]{2}"
+                maxLength={2}
+                placeholder="XX"
+                value={form.code}
+                onChange={(e) => set({ code: e.target.value.toUpperCase() })}
+              />
+            </label>
+          )}
+          <label className="field">
+            {t("Name")}
+            <input className="input" required maxLength={255} value={form.name} onChange={(e) => set({ name: e.target.value })} />
+          </label>
+          <label className="field">
+            {t("Threat category")}
+            <input
+              className="input"
+              maxLength={255}
+              value={form.threat_category}
+              onChange={(e) => set({ threat_category: e.target.value })}
+            />
+          </label>
+        </div>
+        <label className="check">
+          <input type="checkbox" checked={form.applicable} onChange={(e) => set({ applicable: e.target.checked })} />
+          {t("Applicable to this organisation")}
+        </label>
+        {!form.applicable && (
+          <p className="form-notice">
+            {t("A use case that is not applicable is left out of every score, with all its L2 use cases and rules.")}
+          </p>
+        )}
+        <label className="field">
+          {t("Purpose")}
+          <textarea className="input textarea" rows={2} value={form.purpose} onChange={(e) => set({ purpose: e.target.value })} />
+        </label>
+        <label className="field">
+          {t("Stakeholders")}
+          <input className="input" value={form.stakeholders} onChange={(e) => set({ stakeholders: e.target.value })} />
+        </label>
+        <label className="field">
+          {t("Description")}
+          <textarea
+            className="input textarea"
+            rows={3}
+            value={form.description}
+            onChange={(e) => set({ description: e.target.value })}
+          />
+        </label>
+        <div className="row-actions">
+          {l1 && admin && (
+            <button
+              type="button"
+              className="btn btn-danger push-left"
+              disabled={busy || l1.l2_count > 0}
+              title={l1.l2_count > 0 ? t("Delete or move its L2 use cases first") : undefined}
+              onClick={() => void remove()}
+            >
+              {t("Delete")}
+            </button>
+          )}
+          <button type="button" className="btn" onClick={onClose}>
+            {t("Cancel")}
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            {busy ? t("Saving…") : t("Save")}
           </button>
         </div>
       </form>

@@ -35,7 +35,8 @@ export default function Login() {
   const { user, loading, login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = (location.state as { from?: string } | null)?.from ?? "/";
+  const state = location.state as { from?: string; expired?: boolean } | null;
+  const from = state?.from ?? "/";
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
@@ -97,6 +98,11 @@ export default function Login() {
         <LanguageSelect className="lang-corner" />
         <form className="login-form" onSubmit={submit}>
           <h2 style={{ fontSize: 24 }}>{t("Sign in")}</h2>
+          {state?.expired && !error && (
+            <p className="form-notice" role="status">
+              {t("Your session has ended. Sign in again to go back to where you were.")}
+            </p>
+          )}
           {ssoError && (
             <p className="form-error" role="alert">
               {ssoErrorText(ssoError)}

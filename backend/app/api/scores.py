@@ -1,15 +1,17 @@
 """Scores, KPIs and verification (docs/PLAN.md sections 2.5 and 6a)."""
 
 from datetime import date, timedelta
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import audit, configs
 from app.api.deps import DB, SettingsDep
 from app.models import L1UseCase, L2UseCase, L3UseCase, Verification, VerificationResult
+from app.schemas import NOTE_MAX, not_in_future
 from app.scoring import SCORED_STATES, L1Input, L2Input, Result, RuleInput, compute
 from app.security import Editor, Reader
 
@@ -76,11 +78,13 @@ class DueOut(BaseModel):
     due: date | None
     overdue: bool
     days_left: int | None
+    # date of the latest check when it found issues (the rule stays due until a check is OK)
+    issues_at: date | None = None
 
 
 class VerifyIn(BaseModel):
     result: VerificationResult = VerificationResult.ok
-    note: str = ""
+    note: Annotated[str, Field(max_length=NOTE_MAX)] = ""
     verified_at: date | None = None
 
 
@@ -91,6 +95,20 @@ class VerificationOut(BaseModel):
     result: VerificationResult
     note: str
     config_tag: str | None = None
+
+
+def open_issues(db: Session, level: str = "l3") -> dict[int, date]:
+    """Use case id -> date of its latest verification, where that one found issues."""
+    col = Verification.l3_id if level == "l3" else Verification.l2_id
+    latest: dict[int, Verification] = {}
+    q = (
+        select(Verification)
+        .where(col.is_not(None))
+        .order_by(Verification.verified_at, Verification.id)
+    )
+    for v in db.scalars(q):
+        latest[getattr(v, f"{level}_id")] = v
+    return {k: v.verified_at for k, v in latest.items() if v.result == VerificationResult.issues}
 
 
 def compute_scores(
@@ -169,11 +187,12 @@ def verification_due(
     today = date.today()
     horizon = today + timedelta(days=within_days)
     out = []
+    issues = open_issues(db)
     for x in l3s:
         if x.lifecycle_status not in SCORED_STATES:
             continue
         s = res.rules[x.code]
-        if s.verification_due is None or s.verification_due <= horizon:
+        if s.verification_due is None or s.verification_due <= horizon or x.id in issues:
             out.append(
                 DueOut(
                     code=x.code,
@@ -185,6 +204,7 @@ def verification_due(
                     due=s.verification_due,
                     overdue=s.verification_overdue,
                     days_left=(s.verification_due - today).days if s.verification_due else None,
+                    issues_at=issues.get(x.id),
                 )
             )
     out.sort(key=lambda d: (d.due is not None, d.due or today, d.code))
@@ -212,18 +232,24 @@ for _level in ("l2", "l3"):
         def verify(code: str, body: VerifyIn, user: Editor, db: DB) -> Verification:
             obj = _target(db, level, code)
             when = body.verified_at or date.today()
-            if when > date.today():
-                raise HTTPException(422, "Verification date cannot be in the future")
+            try:
+                not_in_future(when)
+            except ValueError:
+                raise HTTPException(422, "Verification date cannot be in the future") from None
             v = Verification(
                 verified_at=when, username=user.username, result=body.result, note=body.note
             )
             setattr(v, f"{level}_id", obj.id)
             db.add(v)
-            if obj.last_verified_at is None or when >= obj.last_verified_at:
-                obj.last_verified_at = when
-                obj.last_verified_by = user.username
-            # Tag the configuration version that was verified (PLAN 4a)
-            tag = configs.tag_verified(db, obj, when, user.username)
+            # Only a check without issues counts as verified: a failed check must not clear the
+            # overdue flag, raise verification health or tag the config as verified.
+            tag = None
+            if body.result == VerificationResult.ok:
+                if obj.last_verified_at is None or when >= obj.last_verified_at:
+                    obj.last_verified_at = when
+                    obj.last_verified_by = user.username
+                # Tag the configuration version that was verified (PLAN 4a)
+                tag = configs.tag_verified(db, obj, when, user.username)
             audit.record(
                 db,
                 user,

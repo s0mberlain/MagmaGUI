@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Annotated, ClassVar
 
 from pydantic import (
@@ -36,15 +36,28 @@ class Patch(BaseModel):
     @model_validator(mode="after")
     def _no_nulls(self):
         bad = sorted(
-            k for k in self.model_fields_set if getattr(self, k) is None and k not in self.nullable
+            k
+            for k in self.model_fields_set
+            if getattr(self, k) is None and k not in self.nullable and k != "expected_updated_at"
         )
         if bad:
             raise ValueError(f"cannot be empty: {', '.join(bad)}")
         return self
 
 
+# Limits for free text, so one request cannot store megabytes (and again in the audit log).
+TEXT_MAX = 20_000
+NOTE_MAX = 2_000
+LongText = Annotated[str, StringConstraints(max_length=TEXT_MAX)]
+ShortText = Annotated[str, StringConstraints(max_length=255)]
+DisplayName = Annotated[str, StringConstraints(strip_whitespace=True, max_length=128)]
+Password = Annotated[str, StringConstraints(max_length=1024)]
+
+
 def not_in_future(v: date | None) -> date | None:
-    if v is not None and v > date.today():
+    # The server counts in UTC; a browser east of it is up to a day ahead, so "today" there
+    # must not be refused as a future date.
+    if v is not None and v > date.today() + timedelta(days=1):
         raise ValueError("date is in the future")
     return v
 
@@ -53,10 +66,10 @@ def not_in_future(v: date | None) -> date | None:
 
 
 class LoginIn(BaseModel):
-    username: str
-    password: str
+    username: Annotated[str, StringConstraints(max_length=255)]
+    password: Password
     # authenticator code or a recovery code, for accounts with two-factor login
-    otp: str | None = None
+    otp: Annotated[str, StringConstraints(max_length=64)] | None = None
 
 
 class UserOut(ORM):
@@ -75,23 +88,23 @@ class UserOut(ORM):
 
 class UserCreate(BaseModel):
     username: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9._@-]{2,64}$")]
-    display_name: str = ""
+    display_name: DisplayName = ""
     email: EmailStr | None = None
     role: Role
-    password: str
+    password: Password
 
 
 class UserUpdate(BaseModel):
-    display_name: str | None = None
+    display_name: DisplayName | None = None
     email: EmailStr | None = None
     role: Role | None = None
     active: bool | None = None
-    password: str | None = None
+    password: Password | None = None
 
 
 class PasswordChange(BaseModel):
-    current_password: str
-    new_password: str
+    current_password: Password
+    new_password: Password
 
 
 class AuthConfigOut(BaseModel):
@@ -105,7 +118,7 @@ class AuthConfigOut(BaseModel):
 
 class RefItemIn(BaseModel):
     name: Name
-    description: str = ""
+    description: LongText = ""
 
 
 class RefItemOut(ORM):
@@ -118,7 +131,7 @@ class RefItemOut(ORM):
 class BusinessDriverIn(BaseModel):
     code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=32)]
     name: Name
-    description: str = ""
+    description: LongText = ""
 
 
 class BusinessDriverOut(ORM):
@@ -130,8 +143,8 @@ class BusinessDriverOut(ORM):
 
 class ComplianceDriverIn(BaseModel):
     ref: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
-    name: str = ""
-    description: str = ""
+    name: ShortText = ""
+    description: LongText = ""
 
 
 class ComplianceDriverOut(ORM):
@@ -209,10 +222,10 @@ class DriverCoverageOut(BaseModel):
 
 class L1Base(BaseModel):
     name: Name
-    threat_category: str = ""
-    purpose: str = ""
-    stakeholders: str = ""
-    description: str = ""
+    threat_category: ShortText = ""
+    purpose: LongText = ""
+    stakeholders: LongText = ""
+    description: LongText = ""
     applicable: bool = True
     sort_order: int = 0
 
@@ -223,10 +236,10 @@ class L1Create(L1Base):
 
 class L1Update(Patch):
     name: Name | None = None
-    threat_category: str | None = None
-    purpose: str | None = None
-    stakeholders: str | None = None
-    description: str | None = None
+    threat_category: ShortText | None = None
+    purpose: LongText | None = None
+    stakeholders: LongText | None = None
+    description: LongText | None = None
     applicable: bool | None = None
     sort_order: int | None = None
 
@@ -260,7 +273,7 @@ class TrackingFields(BaseModel):
 class L2Create(TrackingFields):
     code: L2Code
     name: Name
-    description: str = ""
+    description: LongText = ""
     risk_level: Annotated[int, Field(ge=1, le=5)] | None = None
     target_implementation: Metric | None = None
     actors: list[str] = []
@@ -272,8 +285,10 @@ class L2Update(TrackingFields, Patch):
     nullable = frozenset(
         {"onboarded_at", "last_verified_at", "risk_level", "target_implementation"}
     )
+    # updated_at the edit started from; when someone saved in between the update is refused (409)
+    expected_updated_at: datetime | None = None
     name: Name | None = None
-    description: str | None = None
+    description: LongText | None = None
     risk_level: Annotated[int, Field(ge=1, le=5)] | None = None
     target_implementation: Metric | None = None
     actors: list[str] | None = None
@@ -293,6 +308,7 @@ class L2Out(BaseModel):
     onboarded_at: date | None
     last_verified_at: date | None
     last_verified_by: str | None
+    updated_at: datetime | None = None
     actors: list[str]
     business_drivers: list[str]
     compliance_driver_ids: list[int]
@@ -309,11 +325,11 @@ SiemRuleIds = Annotated[
 class L3Create(TrackingFields):
     code: L3Code
     name: Name
-    description: str = ""
+    description: LongText = ""
     effectiveness: Metric | None = None
     implementation: Metric | None = None
     coverage: Metric | None = None
-    comments: str = ""
+    comments: LongText = ""
     attack_techniques: list[AttackId] = []
     siem_rule_ids: SiemRuleIds = []
     verification_interval_days: Annotated[int, Field(ge=1, le=3650)] | None = None
@@ -337,12 +353,14 @@ class L3Update(TrackingFields, Patch):
             "verification_interval_days",
         }
     )
+    # updated_at the edit started from; when someone saved in between the update is refused (409)
+    expected_updated_at: datetime | None = None
     name: Name | None = None
-    description: str | None = None
+    description: LongText | None = None
     effectiveness: Metric | None = None
     implementation: Metric | None = None
     coverage: Metric | None = None
-    comments: str | None = None
+    comments: LongText | None = None
     attack_techniques: list[AttackId] | None = None
     siem_rule_ids: SiemRuleIds | None = None
     verification_interval_days: Annotated[int, Field(ge=1, le=3650)] | None = None
@@ -394,6 +412,8 @@ class L3Out(BaseModel):
     scored: bool = False
     verification_due: date | None = None
     verification_overdue: bool = False
+    # date of the latest check when it found issues (it does not count as verified)
+    issues_at: date | None = None
 
 
 class CatalogueSummary(BaseModel):

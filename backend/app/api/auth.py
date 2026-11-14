@@ -1,3 +1,4 @@
+import threading
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
@@ -43,6 +44,7 @@ def _locked(user: User) -> bool:
 
 
 LOCKED = "Account temporarily locked, try again later"
+_recovery_lock = threading.Lock()
 
 
 def _count_failure(db, user: User, settings) -> None:
@@ -85,15 +87,20 @@ def login(
         verify_password(_DUMMY_HASH, body.password)
         limiter.failed(ip)
         raise invalid
+    password_ok = verify_password(user.password_hash, body.password)
     if _locked(user):
-        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, LOCKED)
+        # only someone who knows the password learns that the account exists and is locked
+        if password_ok and user.active:
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, LOCKED)
+        limiter.failed(ip)
+        raise invalid
 
     def fail(exc: HTTPException) -> HTTPException:
         limiter.failed(ip)
         _count_failure(db, user, settings)
         return exc
 
-    if not verify_password(user.password_hash, body.password) or not user.active:
+    if not password_ok or not user.active:
         raise fail(invalid)
     if user.totp_enabled:
         if not body.otp:
@@ -194,10 +201,17 @@ def _check_second_factor(db, user: User, code: str, settings) -> str | None:
             user.totp_last_step = step
             return "totp"
     h = totp.hash_code(code)
-    if h in (user.recovery_codes or []):
+    # One at a time, and on the row as it is in the database now: two sign-ins sending the same
+    # recovery code at the same moment must not both pass. The use is committed before the lock
+    # is released (the row lock covers other replicas on PostgreSQL).
+    with _recovery_lock:
+        db.refresh(user, with_for_update=True)
+        if h not in (user.recovery_codes or []):
+            db.commit()
+            return None
         user.recovery_codes = [c for c in user.recovery_codes if c != h]
-        return "recovery"
-    return None
+        db.commit()
+    return "recovery"
 
 
 class TotpPassword(BaseModel):

@@ -92,3 +92,36 @@ def test_user_locale(admin, make_user):
     auditor = make_user("auditor")
     assert auditor.put("/api/auth/me/locale", json={"locale": "nl"}).json()["locale"] == "nl"
     assert admin.put("/api/auth/me/locale", json={"locale": None}).json()["locale"] is None
+
+
+def test_cli_reset_password(app, settings, admin, monkeypatch, capsys):
+    """ADMIN_PASSWORD only seeds the first admin; `magma reset-password` is the way back in."""
+    from fastapi.testclient import TestClient
+
+    from app import cli, config
+    from tests.conftest import ADMIN_PW, login
+
+    monkeypatch.setattr(config, "get_settings", lambda: settings)
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    other = login(TestClient(app), "admin", ADMIN_PW)
+    for _ in range(5):  # lock the account
+        TestClient(app).post("/api/auth/login", json={"username": "admin", "password": "x" * 12})
+
+    settings.admin_password = "short"
+    assert cli.main(["reset-password", "--from-env"]) == 1
+    assert "at least 12" in capsys.readouterr().err
+
+    settings.admin_password = "the-new-admin-password"
+    assert cli.main(["reset-password", "--from-env"]) == 0
+    assert "unlocked" in capsys.readouterr().out
+    assert other.get("/api/auth/me").status_code == 401  # signed out everywhere
+    login(TestClient(app), "admin", "the-new-admin-password")
+
+    pw = iter(["typed-password-123", "typed-password-123"])
+    monkeypatch.setattr("getpass.getpass", lambda _: next(pw))
+    assert cli.main(["reset-password", "admin", "--disable-totp"]) == 0
+    fresh = login(TestClient(app), "admin", "typed-password-123")
+    assert cli.main(["reset-password", "nobody", "--from-env"]) == 1
+    assert "Local users: admin" in capsys.readouterr().err
+    entries = fresh.get("/api/audit?entity=user").json()
+    assert any(e["action"] == "password_reset_cli" for e in entries)

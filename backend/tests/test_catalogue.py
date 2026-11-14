@@ -109,3 +109,30 @@ def test_references_and_drivers_crud(admin):
     cd = r.json()["id"]
     r = admin.patch("/api/l2/AO-CRE", json={"compliance_driver_ids": [cd]})
     assert r.json()["compliance_driver_ids"] == [cd]
+
+
+def test_reference_usage(admin, make_user):
+    """Each reference entry lists what uses it: L3 rules, or L2 use cases for threat actors."""
+    before = {i["name"]: i["used_by"] for i in admin.get("/api/references/log_source").json()}
+    admin.patch("/api/l3/AO-CRE-01", json={"log_sources": ["OS logging", "Network traffic"]})
+    auditor = make_user("auditor")
+    items = {i["name"]: i for i in auditor.get("/api/references/log_source").json()}
+    assert "AO-CRE-01" in items["OS logging"]["used_by"]
+    assert "AO-CRE-01" in items["Network traffic"]["used_by"]
+    assert items["OS logging"]["used_by"] == sorted(items["OS logging"]["used_by"])
+    # removing the entry from the rule lowers the count again
+    admin.patch("/api/l3/AO-CRE-01", json={"log_sources": ["Network traffic"]})
+    items = {i["name"]: i for i in admin.get("/api/references/log_source").json()}
+    assert "AO-CRE-01" not in items["OS logging"]["used_by"]
+    assert len(items["OS logging"]["used_by"]) == len(
+        [c for c in before["OS logging"] if c != "AO-CRE-01"]
+    )
+    # a new entry is unused
+    admin.post("/api/references/scope", json={"name": "Lab"})
+    lab = [i for i in admin.get("/api/references/scope").json() if i["name"] == "Lab"][0]
+    assert lab["used_by"] == []
+    # threat actors count L2 use cases, not rules
+    admin.patch("/api/l2/AO-CRE", json={"actors": ["Professional Criminals"]})
+    actors = {i["name"]: i for i in admin.get("/api/references/threat_actor").json()}
+    assert "AO-CRE" in actors["Professional Criminals"]["used_by"]
+    assert all(c.count("-") == 1 for c in actors["Professional Criminals"]["used_by"])

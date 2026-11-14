@@ -8,6 +8,7 @@ import {
   type L1,
   type L2,
   type L3,
+  type RefKind,
   type Scores,
 } from "../api";
 import { useAuth } from "../auth";
@@ -26,7 +27,16 @@ import {
   useLoad,
   useShowMore,
 } from "../components/ui";
-import { fmtDate, num, pct, STATUS_LABEL } from "../lib/format";
+import {
+  fmtDate,
+  isRefKind,
+  num,
+  pct,
+  REF_KIND_ONE,
+  REF_KIND_PARAM,
+  REF_PARAM,
+  STATUS_LABEL,
+} from "../lib/format";
 import { t } from "../i18n";
 
 interface Catalogue {
@@ -51,6 +61,16 @@ function matchesDrivers(l2: L2, f: DriverFilter): boolean {
   return true;
 }
 
+/** Names of a rule's entries of one reference list (threat actors are on L2, not on rules). */
+function ruleRefs(r: L3, kind: Exclude<RefKind, "threat_actor">): string[] {
+  if (kind === "log_source") return r.log_sources;
+  if (kind === "detection_technology") return r.detection_technologies;
+  return r.scopes;
+}
+
+/** Builds the link that sets the reference filter and keeps the other parameters. */
+type RefLink = (kind: RefKind, name: string) => string;
+
 export default function UseCases() {
   const { can } = useAuth();
   const editor = can("admin", "analyst");
@@ -73,7 +93,31 @@ export default function UseCases() {
     return { l1s, l2s, scores, drivers, sources };
   });
   const filter: DriverFilter = { bd: params.get("bd") ?? "", src: params.get("src") ?? "", cd: params.get("cd") ?? "" };
-  const filtering = !!(filter.bd || filter.src || filter.cd);
+
+  // Reference filter: one entry of a reference list (?ref_kind=log_source&ref=Windows%20Security).
+  // Threat actors filter L2 use cases, the other kinds filter L3 rules.
+  const refKindParam = params.get(REF_KIND_PARAM);
+  const refName = params.get(REF_PARAM) ?? "";
+  const refActive = !!(refKindParam || refName);
+  const refKind = isRefKind(refKindParam) && refName ? refKindParam : null;
+  const ruleKind = refKind && refKind !== "threat_actor" ? refKind : null;
+  const refList = useLoad(() => (refKind ? api.refs(refKind) : Promise.resolve(null)), [refKind]);
+  const refMissing =
+    refActive && (!refKind || (refList.data !== null && !refList.data.some((i) => i.name === refName)));
+  const refRules = useLoad<L3[] | null>(() => (ruleKind ? api.l3s() : Promise.resolve(null)), [ruleKind]);
+  const ruleMatches = (r: L3) => !ruleKind || ruleRefs(r, ruleKind).includes(refName);
+  const refL2s = useMemo(
+    () => new Set((refRules.data ?? []).filter(ruleMatches).map((r) => r.l2_code)),
+    [refRules.data, ruleKind, refName],
+  );
+  const matchesRef = (l2: L2) => {
+    if (!refActive) return true;
+    if (refMissing || !refKind) return false;
+    if (refKind === "threat_actor") return l2.actors.includes(refName);
+    return refL2s.has(l2.code);
+  };
+  const matchesFilters = (l2: L2) => matchesDrivers(l2, filter) && matchesRef(l2);
+  const filtering = !!(filter.bd || filter.src || filter.cd || refActive);
   const view = params.get("view") === "table" ? "table" : "tree";
   /** Change some URL parameters and keep the others (filters, view, selection). */
   const setParam = (patch: Record<string, string | null>) => {
@@ -91,10 +135,10 @@ export default function UseCases() {
     const d = cat.data;
     if (!d) return null;
     const p = params.get("l2");
-    if (p && d.l2s.some((x) => x.code === p)) return p;
+    if (p && d.l2s.some((x) => x.code === p && matchesFilters(x))) return p;
     const l1 = params.get("l1");
-    return d.l2s.find((x) => (!l1 || x.l1_code === l1) && matchesDrivers(x, filter))?.code ?? null;
-  }, [cat.data, params]);
+    return d.l2s.find((x) => (!l1 || x.l1_code === l1) && matchesFilters(x))?.code ?? null;
+  }, [cat.data, params, refL2s, refMissing]);
   const selected = cat.data?.l2s.find((x) => x.code === selectedCode) ?? null;
   const rules = useLoad<L3[]>(
     () => (selectedCode ? api.l3s({ l2: selectedCode }) : Promise.resolve([])),
@@ -115,14 +159,38 @@ export default function UseCases() {
     if (!q) return hits;
     for (const r of allRules.data ?? []) {
       const text = [r.code, r.name, ...r.attack_techniques, ...(r.siem_rule_ids ?? [])].join(" ").toLowerCase();
-      if (!text.includes(q)) continue;
+      if (!text.includes(q) || !ruleMatches(r)) continue;
       hits.set(r.l2_code, [...(hits.get(r.l2_code) ?? []), r]);
     }
     return hits;
-  }, [allRules.data, q]);
+  }, [allRules.data, q, ruleKind, refName]);
   const matches = (l2: L2) =>
     (!q || l2.code.toLowerCase().includes(q) || l2.name.toLowerCase().includes(q) || ruleHits.has(l2.code)) &&
-    matchesDrivers(l2, filter);
+    matchesFilters(l2);
+
+  /** Link that sets the reference filter and keeps view, drivers and selection. */
+  const refLink: RefLink = (kind, name) => {
+    const next = new URLSearchParams(params);
+    next.set(REF_KIND_PARAM, kind);
+    next.set(REF_PARAM, name);
+    return `/usecases?${next}`;
+  };
+  const clearRef = { [REF_KIND_PARAM]: null, [REF_PARAM]: null };
+  const shownRules = rules.data?.filter(ruleMatches) ?? null;
+  // Table view with a rule filter lists the matching rules of all L2 use cases.
+  const ruleTable = view === "table" && !!ruleKind;
+  const allHeads = useLoad(
+    () => (ruleTable ? api.configHeads("l3", "") : Promise.resolve({})),
+    [ruleTable],
+  );
+  const tableRules = useMemo(() => {
+    if (!ruleTable || !cat.data) return [];
+    const l2s = new Map(cat.data.l2s.map((x) => [x.code, x]));
+    return (refRules.data ?? []).filter((r) => {
+      const l2 = l2s.get(r.l2_code);
+      return ruleMatches(r) && !!l2 && matchesDrivers(l2, filter);
+    });
+  }, [ruleTable, cat.data, refRules.data, refName, params]);
 
   const refresh = () => {
     void cat.reload();
@@ -227,14 +295,55 @@ export default function UseCases() {
               </optgroup>
             ))}
         </select>
+        {refActive && (
+          <span className="ref-filter-chip">
+            <span>
+              {refKind ? REF_KIND_ONE[refKind] : t("Reference")}: <strong>{refName || "–"}</strong>
+            </span>
+            <button
+              type="button"
+              className="ref-filter-x"
+              aria-label={t("Remove filter {name}", { name: refName })}
+              onClick={() => setParam(clearRef)}
+            >
+              ×
+            </button>
+          </span>
+        )}
         {filtering && (
-          <button type="button" className="btn btn-sm" onClick={() => setParam({ bd: null, src: null, cd: null })}>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => setParam({ bd: null, src: null, cd: null, ...clearRef })}
+          >
             {t("Clear filters")}
           </button>
         )}
       </section>
 
-      {view === "table" && cat.data && (
+      {refMissing && (
+        <div className="note-box ref-missing" role="status">
+          <span>{t("This reference entry no longer exists: {name}", { name: refName || "–" })}</span>
+          <button type="button" className="btn btn-sm" onClick={() => setParam(clearRef)}>
+            {t("Clear filter")}
+          </button>
+        </div>
+      )}
+
+      {ruleTable && cat.data && !refMissing && (
+        <section className="stack">
+          <ErrorNote error={refRules.error} />
+          {tableRules.length > 0 && (
+            <RuleTable rules={tableRules} heads={allHeads.data ?? {}} refLink={refLink} />
+          )}
+          {refRules.data && !tableRules.length && (
+            <p className="muted empty-flat">{t("No L3 rule matches the filters.")}</p>
+          )}
+          <p className="muted small">{t("{n} L3 rules", { n: tableRules.length })}</p>
+        </section>
+      )}
+
+      {view === "table" && !ruleTable && cat.data && (
         <UseCaseTable
           cat={cat.data}
           visible={matches}
@@ -334,7 +443,7 @@ export default function UseCases() {
         </section>
 
         <section className="split-wide stack-lg" aria-labelledby="l2title">
-          {cat.data && filtering && !cat.data.l2s.some(matches) && (
+          {cat.data && filtering && !refMissing && !cat.data.l2s.some(matches) && (
             <p className="muted">{t("No L2 use case matches the filters.")}</p>
           )}
           {selected && (
@@ -346,10 +455,18 @@ export default function UseCases() {
               onEdit={() => setDialog("editL2")}
               onEditDrivers={() => setDriversOf(selected)}
               onVerify={() => setDialog("verifyL2")}
+              refLink={refLink}
             />
           )}
           <ErrorNote error={rules.error} />
-          {selected && rules.data && rules.data.length > 0 && <RuleTable rules={rules.data} heads={heads.data ?? {}} />}
+          {selected && ruleKind && rules.data && rules.data.length > 0 && (
+            <p className="muted small" role="status">
+              {t("{a} of {b} rules shown", { a: shownRules!.length, b: rules.data.length })}
+            </p>
+          )}
+          {selected && shownRules && shownRules.length > 0 && (
+            <RuleTable rules={shownRules} heads={heads.data ?? {}} refLink={refLink} />
+          )}
           {selected && rules.data && rules.data.length === 0 && (
             <div className="empty">
               <GapBadge />
@@ -427,6 +544,7 @@ function L2Header({
   onEdit,
   onEditDrivers,
   onVerify,
+  refLink,
 }: {
   l2: L2;
   score?: Scores["l2"][number];
@@ -435,6 +553,7 @@ function L2Header({
   onEdit: () => void;
   onEditDrivers: () => void;
   onVerify: () => void;
+  refLink: RefLink;
 }) {
   const stats = [
     { label: t("Status"), value: STATUS_LABEL[l2.lifecycle_status] },
@@ -456,9 +575,14 @@ function L2Header({
         {l2.description && <p className="lead">{l2.description}</p>}
         <div className="chips">
           {l2.actors.map((a) => (
-            <span key={a} className="chip chip-neutral">
+            <Link
+              key={a}
+              to={refLink("threat_actor", a)}
+              className="chip chip-neutral chip-link"
+              title={t("Show all L2 use cases with threat actor {name}", { name: a })}
+            >
               {a}
-            </span>
+            </Link>
           ))}
           {l2.risk_level && (
             <span className="chip chip-neutral">
@@ -597,7 +721,15 @@ function UseCaseTable({
   );
 }
 
-function RuleTable({ rules, heads }: { rules: L3[]; heads: Record<string, ConfigCommit> }) {
+function RuleTable({
+  rules,
+  heads,
+  refLink,
+}: {
+  rules: L3[];
+  heads: Record<string, ConfigCommit>;
+  refLink: RefLink;
+}) {
   return (
     <div className="card table-card">
       <table className="table">
@@ -636,7 +768,11 @@ function RuleTable({ rules, heads }: { rules: L3[]; heads: Record<string, Config
                 {r.assessed ? num(r.weight) : <span className="muted">{t("not assessed")}</span>}
               </td>
               <td>
-                <Chips items={r.log_sources} />
+                <Chips
+                  items={r.log_sources}
+                  href={(s) => refLink("log_source", s)}
+                  title={(s) => t("Show all rules with log source {name}", { name: s })}
+                />
               </td>
               <td>
                 <VerifiedCell rule={r} />

@@ -1,5 +1,5 @@
 import { locale, t } from "../i18n";
-import type { Lifecycle } from "../api";
+import type { Lifecycle, RefKind } from "../api";
 
 /** 0..1 → "62 %"; null → "–". */
 export function pct(v: number | null | undefined, digits = 0): string {
@@ -55,3 +55,29 @@ export const REF_KINDS = [
   { kind: "log_source", label: t("Log sources"), hint: t("Data sources a rule reads. A rule can use several.") },
   { kind: "scope", label: t("Scopes"), hint: t("Parts of the estate a rule covers.") },
 ] as const;
+
+/** One entry of a reference list, e.g. "Log source". */
+export const REF_KIND_ONE: Record<RefKind, string> = {
+  threat_actor: t("Threat actor"),
+  detection_technology: t("Detection technology"),
+  log_source: t("Log source"),
+  scope: t("Scope"),
+};
+
+export const isRefKind = (v: string | null): v is RefKind =>
+  v === "threat_actor" || v === "detection_technology" || v === "log_source" || v === "scope";
+
+/** URL parameters of the reference filter on the Use cases page. */
+export const REF_KIND_PARAM = "ref_kind";
+export const REF_PARAM = "ref";
+
+/** Use cases page filtered to what uses one reference entry (L2 for threat actors, else L3 rules). */
+export function refHref(kind: RefKind, name: string): string {
+  return `/usecases?${new URLSearchParams({ [REF_KIND_PARAM]: kind, [REF_PARAM]: name })}`;
+}
+
+/** Codes for a tooltip: the first `max`, then "and N more". */
+export function codeList(codes: string[], max = 20): string {
+  if (codes.length <= max) return codes.join(", ");
+  return t("{codes} and {n} more", { codes: codes.slice(0, max).join(", "), n: codes.length - max });
+}

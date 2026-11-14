@@ -128,6 +128,11 @@ class RefItemOut(ORM):
     description: str
 
 
+class RefItemUsageOut(RefItemOut):
+    # Codes of what uses the entry: L2 use cases for threat actors, L3 rules for the other kinds.
+    used_by: list[str] = []
+
+
 class BusinessDriverIn(BaseModel):
     code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=32)]
     name: Name

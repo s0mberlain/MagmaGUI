@@ -1,7 +1,9 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { ROLE_LABEL, useAuth } from "../auth";
 import { NAV_ITEMS } from "../nav";
+import LanguageSelect from "./LanguageSelect";
 import Logo from "./Logo";
+import { t } from "../i18n";
 
 function initials(name: string): string {
   return (
@@ -20,10 +22,10 @@ export default function Layout() {
 
   return (
     <div className="shell">
-      <nav className="sidebar" aria-label="Main">
+      <nav className="sidebar" aria-label={t("Main")}>
         <div className="brand">
           <Logo />
-          <span className="brand-name">Magma UCF</span>
+          <span className="brand-name">{t("Magma UCF")}</span>
         </div>
         {NAV_ITEMS.filter((item) => !item.roles || can(...item.roles)).map((item) => (
           <NavLink
@@ -36,19 +38,20 @@ export default function Layout() {
           </NavLink>
         ))}
         <div className="nav-spacer" />
+        <LanguageSelect save className="lang-dark" />
         {user && (
           <div className="user-box">
             <div className="avatar" aria-hidden="true">
               {initials(name)}
             </div>
-            <NavLink className="user-meta" to="/account" title="Account and two-factor login">
+            <NavLink className="user-meta" to="/account" title={t("Account and two-factor login")}>
               <span>{name}</span>
               <span>
-                {ROLE_LABEL[user.role]} · {user.auth_source === "sso" ? "SSO" : "Local"}
+                {ROLE_LABEL[user.role]} · {user.auth_source === "sso" ? "SSO" : t("Local")}
               </span>
             </NavLink>
             <button type="button" className="signout" onClick={() => void logout()}>
-              Sign out
+              {t("Sign out")}
             </button>
           </div>
         )}

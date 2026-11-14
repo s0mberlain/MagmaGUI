@@ -19,6 +19,7 @@ import UseCases from "./pages/UseCases";
 import Users from "./pages/Users";
 import Verification from "./pages/Verification";
 import { NAV_ITEMS } from "./nav";
+import { t } from "./i18n";
 
 export default function App() {
   return (
@@ -68,7 +69,7 @@ export default function App() {
               element={<Placeholder title={n.label} milestone={n.milestone} />}
             />
           ))}
-          <Route path="*" element={<Placeholder title="Page not found" />} />
+          <Route path="*" element={<Placeholder title={t("Page not found")} />} />
         </Route>
       </Routes>
     </AuthProvider>

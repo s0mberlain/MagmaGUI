@@ -1,3 +1,4 @@
+import type { Lang } from "./i18n";
 export type Role = "admin" | "analyst" | "auditor";
 
 export interface User {
@@ -9,6 +10,7 @@ export interface User {
   auth_source: "local" | "sso";
   active: boolean;
   totp_enabled: boolean;
+  locale: Lang | null;
   last_login_at: string | null;
   created_at: string;
 }
@@ -580,6 +582,7 @@ export const api = {
     request<User>("POST", "/api/auth/login", { username, password, ...(otp ? { otp } : {}) }),
   logout: () => request<void>("POST", "/api/auth/logout"),
   me: () => request<User>("GET", "/api/auth/me"),
+  setLocale: (locale: Lang | null) => request<User>("PUT", "/api/auth/me/locale", { locale }),
   changePassword: (current_password: string, new_password: string) =>
     request<void>("POST", "/api/auth/me/password", { current_password, new_password }),
   summary: () => request<CatalogueSummary>("GET", "/api/catalogue/summary"),

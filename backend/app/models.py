@@ -94,6 +94,8 @@ class User(Base):
     # TOTP second factor for local accounts (app/totp.py). The secret is encrypted with SECRET_KEY.
     totp_secret: Mapped[str | None] = mapped_column(String(255))
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # UI language (en, de, nl); None = follow the browser
+    locale: Mapped[str | None] = mapped_column(String(8))
     totp_last_step: Mapped[int | None] = mapped_column(Integer)
     # sha256 hashes of unused one-time recovery codes
     recovery_codes: Mapped[list[str]] = mapped_column(JSON, default=list)

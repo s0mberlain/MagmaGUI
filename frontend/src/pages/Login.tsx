@@ -3,6 +3,8 @@ import { api, type AuthConfig } from "../api";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
 import Logo from "../components/Logo";
+import { t } from "../i18n";
+import LanguageSelect from "../components/LanguageSelect";
 
 export default function Login() {
   const { user, loading, login } = useAuth();
@@ -39,7 +41,7 @@ export default function Login() {
         setNeedOtp(true);
         return;
       }
-      setError(err instanceof Error ? err.message : "Sign in failed");
+      setError(err instanceof Error ? err.message : t("Sign in failed"));
     } finally {
       setBusy(false);
     }
@@ -51,21 +53,25 @@ export default function Login() {
         <div className="brand">
           <Logo size={36} />
           <span className="brand-name" style={{ fontSize: 22 }}>
-            Magma UCF
+            {t("Magma UCF")}
           </span>
         </div>
         <div>
-          <h1>Manage your SOC use cases with the MaGMa framework.</h1>
+          <h1>{t("Manage your SOC use cases with the MaGMa framework.")}</h1>
           <p>
-            Business drivers, threats and detection rules in one place, with scores, verification dates and versioned
-            rule configs.
+            {t(
+              "Business drivers, threats and detection rules in one place, with scores, verification dates and versioned rule configs.",
+            )}
           </p>
         </div>
-        <span style={{ fontSize: 13, color: "var(--c-nav-muted)" }}>Based on the FI-ISAC MaGMa Use Case Framework</span>
+        <span style={{ fontSize: 13, color: "var(--c-nav-muted)" }}>
+          {t("Based on the FI-ISAC MaGMa Use Case Framework")}
+        </span>
       </div>
       <div className="login-panel">
+        <LanguageSelect className="lang-corner" />
         <form className="login-form" onSubmit={submit}>
-          <h2 style={{ fontSize: 24 }}>Sign in</h2>
+          <h2 style={{ fontSize: 24 }}>{t("Sign in")}</h2>
           {ssoError && (
             <p className="form-error" role="alert">
               {ssoError}
@@ -76,14 +82,14 @@ export default function Login() {
               {cfg.sso_label}
             </a>
           )}
-          {cfg?.sso_enabled && cfg.local_login_enabled && <div className="divider">or with a local account</div>}
+          {cfg?.sso_enabled && cfg.local_login_enabled && <div className="divider">{t("or with a local account")}</div>}
           {cfg && !cfg.local_login_enabled && !cfg.sso_enabled && (
-            <p className="form-error">No sign-in method is enabled. Ask your administrator.</p>
+            <p className="form-error">{t("No sign-in method is enabled. Ask your administrator.")}</p>
           )}
           {cfg?.local_login_enabled !== false && (
             <>
               <label className="field">
-                Username
+                {t("Username")}
                 <input
                   className="input"
                   type="text"
@@ -98,7 +104,7 @@ export default function Login() {
                 />
               </label>
               <label className="field">
-                Password
+                {t("Password")}
                 <input
                   className="input"
                   type="password"
@@ -110,19 +116,19 @@ export default function Login() {
               </label>
               {needOtp && (
                 <label className="field">
-                  Authentication code
+                  {t("Authentication code")}
                   <input
                     className="input mono"
                     inputMode="numeric"
                     autoComplete="one-time-code"
-                    placeholder="123456 or a recovery code"
+                    placeholder={t("123456 or a recovery code")}
                     value={otp}
                     onChange={(e) => setOtp(e.target.value)}
                     required
                     autoFocus
                   />
                   <span className="small muted">
-                    From your authenticator app. Lost your phone? Use a recovery code.
+                    {t("From your authenticator app. Lost your phone? Use a recovery code.")}
                   </span>
                 </label>
               )}
@@ -132,12 +138,12 @@ export default function Login() {
                 </p>
               )}
               <button type="submit" className="btn btn-primary" disabled={busy}>
-                {busy ? "Signing in…" : "Sign in"}
+                {busy ? t("Signing in…") : t("Sign in")}
               </button>
             </>
           )}
           <p className="muted" style={{ margin: 0, fontSize: 12, lineHeight: 1.5 }}>
-            Your role (admin, analyst or auditor) is set by your administrator.
+            {t("Your role (admin, analyst or auditor) is set by your administrator.")}
           </p>
         </form>
       </div>

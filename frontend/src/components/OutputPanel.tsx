@@ -3,6 +3,7 @@ import { api, type OutputMetric, type OutputMetricInput } from "../api";
 import { pct } from "../lib/format";
 import OutputChart, { OutputLegend, lastMonths, monthLabel } from "./OutputChart";
 import { ErrorNote, useLoad } from "./ui";
+import { t } from "../i18n";
 
 type Draft = {
   period: string;
@@ -65,7 +66,7 @@ export default function OutputPanel({ code, editor }: { code: string; editor: bo
       note: draft.note,
     };
     if (body.false_positives > body.alerts) {
-      setError("False positives cannot be more than alerts.");
+      setError(t("False positives cannot be more than alerts."));
       return;
     }
     setBusy(true);
@@ -115,9 +116,9 @@ export default function OutputPanel({ code, editor }: { code: string; editor: bo
   return (
     <section className="card stack" aria-labelledby="oh">
       <div className="section-head">
-        <h2 id="oh">Output metrics</h2>
+        <h2 id="oh">{t("Output metrics")}</h2>
         <span className="small muted">
-          Last 12 months: {total.alerts} alerts · {total.inc} incidents · FP rate{" "}
+          {t("Last 12 months:")} {total.alerts} {t("alerts ·")} {total.inc} {t("incidents · FP rate")}{" "}
           {pct(total.alerts ? total.fp / total.alerts : null)}
         </span>
       </div>
@@ -128,14 +129,14 @@ export default function OutputPanel({ code, editor }: { code: string; editor: bo
         <table className="table table-plain out-table">
           <thead>
             <tr>
-              <th>Month</th>
-              <th className="num">Alerts</th>
-              <th className="num">Incidents</th>
-              <th className="num">False pos.</th>
-              <th className="num">False neg.</th>
-              <th className="num">FP rate</th>
-              <th>Note</th>
-              {editor && <th aria-label="Actions" />}
+              <th>{t("Month")}</th>
+              <th className="num">{t("Alerts")}</th>
+              <th className="num">{t("Incidents")}</th>
+              <th className="num">{t("False pos.")}</th>
+              <th className="num">{t("False neg.")}</th>
+              <th className="num">{t("FP rate")}</th>
+              <th>{t("Note")}</th>
+              {editor && <th aria-label={t("Actions")} />}
             </tr>
           </thead>
           <tbody>
@@ -150,14 +151,14 @@ export default function OutputPanel({ code, editor }: { code: string; editor: bo
                       <td colSpan={editor ? 8 : 7}>
                         <div className="out-form">
                           <strong>{monthLabel(p, true)}</strong>
-                          {field("alerts", "Alerts")}
-                          {field("incidents", "Incidents")}
-                          {field("false_positives", "False positives")}
-                          {field("false_negatives", "False negatives")}
-                          {field("note", "Note", true)}
+                          {field("alerts", t("Alerts"))}
+                          {field("incidents", t("Incidents"))}
+                          {field("false_positives", t("False positives"))}
+                          {field("false_negatives", t("False negatives"))}
+                          {field("note", t("Note"), true)}
                           <div className="row-actions start">
                             <button type="button" className="btn btn-sm" onClick={() => setDraft(null)}>
-                              Cancel
+                              {t("Cancel")}
                             </button>
                             {m && (
                               <button
@@ -166,7 +167,7 @@ export default function OutputPanel({ code, editor }: { code: string; editor: bo
                                 disabled={busy}
                                 onClick={() => void remove(p)}
                               >
-                                Delete
+                                {t("Delete")}
                               </button>
                             )}
                             <button
@@ -175,7 +176,7 @@ export default function OutputPanel({ code, editor }: { code: string; editor: bo
                               disabled={busy}
                               onClick={() => void save()}
                             >
-                              Save month
+                              {t("Save month")}
                             </button>
                           </div>
                         </div>
@@ -197,7 +198,7 @@ export default function OutputPanel({ code, editor }: { code: string; editor: bo
                     {editor && (
                       <td className="num">
                         <button type="button" className="link-btn" onClick={() => edit(p)}>
-                          {m ? "Edit" : "Add"}
+                          {m ? t("Edit") : t("Add")}
                         </button>
                       </td>
                     )}

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { api, setUnauthorizedHandler, type Role, type User } from "./api";
+import { setLang, t } from "./i18n";
 
 interface AuthState {
   user: User | null;
@@ -21,7 +22,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     api
       .me()
-      .then(setUser)
+      .then((u) => {
+        if (!setLang(u.locale)) setUser(u);
+      })
       .catch(() => setUser(null))
       .finally(() => setLoading(false));
   }, []);
@@ -34,7 +37,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [navigate]);
 
   const login = useCallback(async (username: string, password: string, otp?: string) => {
-    setUser(await api.login(username, password, otp));
+    const u = await api.login(username, password, otp);
+    if (!setLang(u.locale)) setUser(u);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -66,8 +70,8 @@ export function RequireAuth({ children, roles }: { children: ReactNode; roles?: 
   if (roles && !roles.includes(user.role)) {
     return (
       <div className="empty">
-        <h3>No access</h3>
-        <p>Your role ({user.role}) cannot open this page.</p>
+        <h3>{t("No access")}</h3>
+        <p>{t("Your role ({role}) cannot open this page.", { role: user.role })}</p>
       </div>
     );
   }
@@ -75,7 +79,7 @@ export function RequireAuth({ children, roles }: { children: ReactNode; roles?: 
 }
 
 export const ROLE_LABEL: Record<Role, string> = {
-  admin: "Admin",
-  analyst: "Analyst",
-  auditor: "Auditor (read-only)",
+  admin: t("Admin"),
+  analyst: t("Analyst"),
+  auditor: t("Auditor (read-only)"),
 };

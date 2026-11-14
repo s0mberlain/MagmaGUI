@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useId, useState } from "react";
 
 export interface TrendDatum {
@@ -30,7 +31,7 @@ export default function TrendChart({
   const id = useId();
   const [hover, setHover] = useState<number | null>(null);
   const vals = data.map((d) => d.value).filter((v): v is number => v !== null);
-  if (vals.length === 0) return <p className="muted small chart-empty">No data yet</p>;
+  if (vals.length === 0) return <p className="muted small chart-empty">{t("No data yet")}</p>;
 
   let lo = unit === "pct" ? 0 : Math.min(...vals);
   let hi = unit === "pct" ? Math.max(0.25, Math.min(1, Math.ceil(Math.max(...vals) * 4) / 4)) : Math.max(...vals);
@@ -85,7 +86,7 @@ export default function TrendChart({
           {shortDate(data[0].at)}
         </text>
         <text className="axis" x={W - PAD.r} y={H - 4} textAnchor="end">
-          {data[data.length - 1].live ? "Now" : shortDate(data[data.length - 1].at)}
+          {data[data.length - 1].live ? t("Now") : shortDate(data[data.length - 1].at)}
         </text>
         {hover !== null && <line className="crosshair" x1={x(hover)} x2={x(hover)} y1={PAD.t} y2={H - PAD.b} />}
         <path className="line" d={path} />
@@ -109,7 +110,7 @@ export default function TrendChart({
             transform: `translateX(${hover > data.length / 2 ? "-100%" : "0"})`,
           }}
         >
-          <span className="small muted">{h.live ? "Now" : h.label}</span>
+          <span className="small muted">{h.live ? t("Now") : h.label}</span>
           <strong>{fmt(h.value)}</strong>
         </div>
       )}

@@ -1,3 +1,4 @@
+import { locale, t } from "../i18n";
 import type { Lifecycle } from "../api";
 
 /** 0..1 → "62 %"; null → "–". */
@@ -10,7 +11,7 @@ export function num(v: number | null | undefined, digits = 2): string {
   return v === null || v === undefined ? "–" : v.toFixed(digits);
 }
 
-const DATE_FMT = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" });
+const DATE_FMT = new Intl.DateTimeFormat(locale(), { year: "numeric", month: "short", day: "numeric" });
 
 export function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "–";
@@ -30,16 +31,20 @@ export function daysSince(iso: string | null | undefined): number | null {
 }
 
 export const STATUS_LABEL: Record<Lifecycle, string> = {
-  onboarding: "Onboarding",
-  operational: "Operational",
-  maintenance: "Maintenance",
-  offloading: "Offloading",
-  retired: "Retired",
+  onboarding: t("Onboarding"),
+  operational: t("Operational"),
+  maintenance: t("Maintenance"),
+  offloading: t("Offloading"),
+  retired: t("Retired"),
 };
 
 export const REF_KINDS = [
-  { kind: "threat_actor", label: "Threat actors", hint: "Who the L2 use cases defend against." },
-  { kind: "detection_technology", label: "Detection technologies", hint: "Tools that raise the alerts of an L3 rule." },
-  { kind: "log_source", label: "Log sources", hint: "Data sources a rule reads. A rule can use several." },
-  { kind: "scope", label: "Scopes", hint: "Parts of the estate a rule covers." },
+  { kind: "threat_actor", label: t("Threat actors"), hint: t("Who the L2 use cases defend against.") },
+  {
+    kind: "detection_technology",
+    label: t("Detection technologies"),
+    hint: t("Tools that raise the alerts of an L3 rule."),
+  },
+  { kind: "log_source", label: t("Log sources"), hint: t("Data sources a rule reads. A rule can use several.") },
+  { kind: "scope", label: t("Scopes"), hint: t("Parts of the estate a rule covers.") },
 ] as const;

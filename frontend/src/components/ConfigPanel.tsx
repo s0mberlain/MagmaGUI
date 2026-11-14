@@ -10,6 +10,7 @@ import {
 } from "../api";
 import { fmtDate } from "../lib/format";
 import { ErrorNote, useLoad } from "./ui";
+import { t } from "../i18n";
 
 type Tab = "editor" | "history" | "diff";
 
@@ -18,10 +19,10 @@ function when(iso: string) {
   return `${fmtDate(iso)} ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
 }
 
-export function DiffView({ lines, empty = "No differences." }: { lines: DiffLine[]; empty?: string }) {
+export function DiffView({ lines, empty = t("No differences.") }: { lines: DiffLine[]; empty?: string }) {
   if (!lines.length) return <p className="muted small">{empty}</p>;
   return (
-    <div className="diff" role="table" aria-label="Changes">
+    <div className="diff" role="table" aria-label={t("Changes")}>
       {lines.map((l, i) =>
         l.kind === "hunk" ? (
           <div key={i} className="diff-hunk" role="row">
@@ -85,11 +86,11 @@ function CodeEditor({
         onKeyDown={(e) => {
           if (e.key === "Tab" && !readOnly) {
             e.preventDefault();
-            const t = e.currentTarget;
-            const { selectionStart: a, selectionEnd: b } = t;
+            const tt = e.currentTarget;
+            const { selectionStart: a, selectionEnd: b } = tt;
             const next = value.slice(0, a) + "  " + value.slice(b);
             onChange(next);
-            requestAnimationFrame(() => t.setSelectionRange(a + 2, a + 2));
+            requestAnimationFrame(() => tt.setSelectionRange(a + 2, a + 2));
           }
         }}
       />
@@ -135,13 +136,13 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
   // debounced YAML check while typing
   useEffect(() => {
     if (!editor) return;
-    const t = setTimeout(() => {
+    const tt = setTimeout(() => {
       api
         .validateYaml(text)
         .then(setCheck)
         .catch(() => setCheck(null));
     }, 350);
-    return () => clearTimeout(t);
+    return () => clearTimeout(tt);
   }, [text, editor]);
 
   const reload = () => {
@@ -156,12 +157,12 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
     try {
       const c = await api.saveConfig(level, code, {
         content: text,
-        message: message.trim() || (head ? "Update configuration" : "Initial configuration"),
+        message: message.trim() || (head ? t("Update configuration") : t("Initial configuration")),
         base_sha: base,
       });
       setMessage("");
       setConflict(null);
-      setNotice(`Committed r${c.rev} (${c.short}).`);
+      setNotice(t("Committed r{rev} ({short}).", { rev: c.rev, short: c.short }));
       reload();
     } catch (e) {
       if (e instanceof ConflictError) setConflict(e);
@@ -172,11 +173,12 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
   }
 
   async function restore(c: ConfigCommit) {
-    if (!window.confirm(`Restore r${c.rev}? This adds a new commit with the content of r${c.rev}.`)) return;
+    if (!window.confirm(t("Restore r{rev}? This adds a new commit with the content of r{rev}.", { rev: c.rev })))
+      return;
     setError(null);
     try {
       const n = await api.restoreConfig(level, code, c.sha);
-      setNotice(`Restored r${c.rev} as r${n.rev}.`);
+      setNotice(t("Restored r{rev} as r{new}.", { rev: c.rev, new: n.rev }));
       setTab("editor");
       reload();
     } catch (e) {
@@ -185,7 +187,7 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
   }
 
   async function tag(c: ConfigCommit) {
-    const name = window.prompt(`Tag for r${c.rev} (e.g. prod or reviewed-2026-11)`);
+    const name = window.prompt(t("Tag for r{rev} (e.g. prod or reviewed-2026-11)", { rev: c.rev }));
     if (!name) return;
     try {
       await api.tagConfig(level, code, name.trim(), c.sha);
@@ -197,15 +199,15 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
   }
 
   function upload(file: File) {
-    file.text().then((t) => {
-      setText(t);
-      setMessage(`Upload ${file.name}`);
+    file.text().then((tt) => {
+      setText(tt);
+      setMessage(t("Upload {name}", { name: file.name }));
       setTab("editor");
     });
   }
 
   const tagsLine = useMemo(() => {
-    const tags = (hist.data ?? []).flatMap((c) => c.tags.map((t) => `${t.name} on r${c.rev}`));
+    const tags = (hist.data ?? []).flatMap((c) => c.tags.map((tt) => `${tt.name} on r${c.rev}`));
     return tags.slice(0, 2).join(" · ");
   }, [hist.data]);
 
@@ -213,23 +215,23 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
     <section className="card config" aria-labelledby={`cfg-${code}`}>
       <div className="config-head">
         <div className="stack-xs">
-          <h2 id={`cfg-${code}`}>Configuration (YAML)</h2>
+          <h2 id={`cfg-${code}`}>{t("Configuration (YAML)")}</h2>
           <span className="small muted">
             {head
-              ? `HEAD r${head.rev} · ${head.short} · ${head.author}, ${when(head.created_at)}${tagsLine ? ` · tag ${tagsLine}` : ""}`
-              : "No configuration committed yet"}
+              ? `HEAD r${head.rev} · ${head.short} · ${head.author}, ${when(head.created_at)}${tagsLine ? ` · ${t("tag")} ${tagsLine}` : ""}`
+              : t("No configuration committed yet")}
           </span>
         </div>
         <div className="row-actions">
           {head && (
             <a className="btn btn-sm" href={api.configDownloadUrl(level, code)} download>
-              Download .yaml
+              {t("Download .yaml")}
             </a>
           )}
           {editor && (
             <>
               <button type="button" className="btn btn-sm" onClick={() => fileInput.current?.click()}>
-                Upload
+                {t("Upload")}
               </button>
               <input
                 ref={fileInput}
@@ -247,26 +249,26 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
         </div>
       </div>
 
-      <div role="tablist" aria-label="Configuration views" className="tabs config-tabs">
-        {(["editor", "history", "diff"] as Tab[]).map((t) => (
+      <div role="tablist" aria-label={t("Configuration views")} className="tabs config-tabs">
+        {(["editor", "history", "diff"] as Tab[]).map((tt) => (
           <button
-            key={t}
+            key={tt}
             type="button"
             role="tab"
-            aria-selected={tab === t}
-            className={"tab" + (tab === t ? " active" : "")}
+            aria-selected={tab === tt}
+            className={"tab" + (tab === tt ? " active" : "")}
             onClick={() => {
-              setTab(t);
+              setTab(tt);
               setNotice(null);
             }}
           >
-            {t === "editor"
+            {tt === "editor"
               ? editor
-                ? "Editor"
-                : "Current"
-              : t === "history"
-                ? `History (${hist.data?.length ?? 0})`
-                : "Diff"}
+                ? t("Editor")
+                : t("Current")
+              : tt === "history"
+                ? t("History ({n})", { n: hist.data?.length ?? 0 })
+                : t("Diff")}
           </button>
         ))}
       </div>
@@ -284,7 +286,7 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
             {conflict && (
               <div className="conflict" role="alert">
                 <p className="form-error">{conflict.message}</p>
-                <span className="small muted">Changes between the latest version (−) and your text (+):</span>
+                <span className="small muted">{t("Changes between the latest version (−) and your text (+):")}</span>
                 <DiffView lines={conflict.diff.lines} />
                 <div className="row-actions start">
                   <button
@@ -295,7 +297,7 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
                       void state.reload();
                     }}
                   >
-                    Load latest (discard mine)
+                    {t("Load latest (discard mine)")}
                   </button>
                   <button
                     type="button"
@@ -306,45 +308,45 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
                       void hist.reload();
                     }}
                   >
-                    I merged by hand, commit mine on top
+                    {t("I merged by hand, commit mine on top")}
                   </button>
                 </div>
               </div>
             )}
             {!editor && !head ? (
-              <p className="muted">No configuration has been committed for this use case.</p>
+              <p className="muted">{t("No configuration has been committed for this use case.")}</p>
             ) : (
               <CodeEditor
                 value={text}
                 onChange={setText}
                 readOnly={!editor}
                 errorLine={check && !check.valid ? check.line : null}
-                label={`YAML configuration of ${code}`}
+                label={t("YAML configuration of {code}", { code })}
               />
             )}
             {editor && (
               <div className="commit-row">
                 <span className={"small " + (check && !check.valid ? "text-err" : "text-ok")}>
                   {check === null
-                    ? "Checking…"
+                    ? t("Checking…")
                     : check.valid
-                      ? `✓ Valid YAML${head ? ` · based on r${head.rev} (${head.short})` : ""}`
-                      : `✗ ${check.line ? `Line ${check.line}: ` : ""}${check.error}`}
+                      ? `✓ ${t("Valid YAML")}${head ? ` · ${t("based on r{rev} ({short})", { rev: head.rev, short: head.short })}` : ""}`
+                      : `✗ ${check.line ? `${t("Line {n}", { n: check.line })}: ` : ""}${check.error}`}
                 </span>
                 <label className="sr-only" htmlFor={`msg-${code}`}>
-                  Commit message
+                  {t("Commit message")}
                 </label>
                 <input
                   id={`msg-${code}`}
                   className="input input-sm grow"
-                  placeholder={head ? "Commit message, e.g. Lower threshold" : "Initial configuration"}
+                  placeholder={head ? t("Commit message, e.g. Lower threshold") : t("Initial configuration")}
                   value={message}
                   maxLength={500}
                   onChange={(e) => setMessage(e.target.value)}
                 />
                 {dirty && head && (
                   <button type="button" className="btn btn-sm" onClick={() => setText(original)}>
-                    Discard
+                    {t("Discard")}
                   </button>
                 )}
                 <button
@@ -353,7 +355,8 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
                   disabled={busy || !check?.valid || (!!head && !dirty)}
                   onClick={commit}
                 >
-                  Commit r{(head?.rev ?? 0) + 1}
+                  {t("Commit r")}
+                  {(head?.rev ?? 0) + 1}
                 </button>
               </div>
             )}
@@ -370,14 +373,19 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
                   <span className="strong-500">{c.message}</span>
                   <span className="small muted">
                     {c.author} · {when(c.created_at)}
-                    {c.git_sha && <span title={`git ${c.git_sha}`}> · in git {c.git_sha.slice(0, 7)}</span>}
-                    {c.restored_from && ` · restored from ${c.restored_from.slice(0, 7)}`}
+                    {c.git_sha && (
+                      <span title={`git ${c.git_sha}`}>
+                        {" "}
+                        {t("· in git")} {c.git_sha.slice(0, 7)}
+                      </span>
+                    )}
+                    {c.restored_from && ` · ${t("restored from {sha}", { sha: c.restored_from.slice(0, 7) })}`}
                   </span>
                 </span>
                 <span className="chips">
-                  {c.tags.map((t) => (
-                    <span key={t.name} className="chip chip-tag" title={`by ${t.created_by}`}>
-                      {t.name}
+                  {c.tags.map((tt) => (
+                    <span key={tt.name} className="chip chip-tag" title={t("by {user}", { user: tt.created_by })}>
+                      {tt.name}
                     </span>
                   ))}
                 </span>
@@ -391,20 +399,20 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
                         setTab("diff");
                       }}
                     >
-                      Diff
+                      {t("Diff")}
                     </button>
                   )}
                   <a className="btn btn-sm" href={api.configDownloadUrl(level, code, c.sha)} download>
-                    .yaml
+                    {t(".yaml")}
                   </a>
                   {editor && (
                     <>
                       <button type="button" className="btn btn-sm" onClick={() => tag(c)}>
-                        Tag
+                        {t("Tag")}
                       </button>
                       {c.sha !== head?.sha && (
                         <button type="button" className="btn btn-sm" onClick={() => restore(c)}>
-                          Restore
+                          {t("Restore")}
                         </button>
                       )}
                     </>
@@ -412,7 +420,7 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
                 </span>
               </li>
             ))}
-            {hist.data && !hist.data.length && <li className="muted">No commits yet.</li>}
+            {hist.data && !hist.data.length && <li className="muted">{t("No commits yet.")}</li>}
           </ul>
         )}
 
@@ -454,7 +462,7 @@ function DiffTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [level, code, current?.from, current?.to]);
 
-  if (!current) return <p className="muted">Nothing to compare yet.</p>;
+  if (!current) return <p className="muted">{t("Nothing to compare yet.")}</p>;
   const opt = (c: ConfigCommit) => (
     <option key={c.sha} value={`r${c.rev}`}>
       r{c.rev} · {c.short} · {c.message.slice(0, 40)}
@@ -464,19 +472,19 @@ function DiffTab({
     <div className="stack">
       <div className="diff-pick">
         <label className="field">
-          From
+          {t("From")}
           <select
             className="input input-sm"
             value={current.from}
             onChange={(e) => onSel({ ...current, from: e.target.value })}
           >
-            <option value="">(empty)</option>
+            <option value="">{t("(empty)")}</option>
             {commits.map(opt)}
           </select>
         </label>
         <span aria-hidden="true">→</span>
         <label className="field">
-          To
+          {t("To")}
           <select
             className="input input-sm"
             value={current.to}

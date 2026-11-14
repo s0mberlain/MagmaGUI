@@ -185,6 +185,18 @@ one-time recovery codes. The secret is stored encrypted with `SECRET_KEY` (chang
 turns existing second factors unusable; an admin can then reset them under *Users*). SSO
 accounts use the second factor of the identity provider.
 
+## Languages
+
+The interface is available in English, German and Dutch. Pick the language at the bottom of the
+sidebar (or on the sign-in page); it is saved on your account and follows you to other browsers.
+Without a choice the browser language is used. The data itself (use case names, descriptions, the
+ATT&CK catalogue) stays as entered; the Excel export keeps the classic English sheet layout.
+
+Texts live in `frontend/src/locales/{de,nl}.json`, keyed by the English text used in
+`t("...")`. `npm run i18n:check` (also in CI) fails when a text has no German or Dutch entry or a
+`{placeholder}` got lost. Labels sent by the API (definition of done, change drivers, CMMI levels,
+trend metrics) are listed in `frontend/src/serverTexts.ts` so they are translated too.
+
 ## Roles
 
 | Role | Can |

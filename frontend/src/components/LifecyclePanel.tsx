@@ -3,6 +3,7 @@ import { api, LIFECYCLES, type Level, type Lifecycle, type LifecycleMeta, type L
 import { useAuth } from "../auth";
 import { fmtDate, STATUS_LABEL } from "../lib/format";
 import { ErrorNote, Modal, StatusPill, useLoad } from "./ui";
+import { t } from "../i18n";
 
 let metaCache: Promise<LifecycleMeta> | null = null;
 export function loadMeta(): Promise<LifecycleMeta> {
@@ -14,16 +15,16 @@ export function loadMeta(): Promise<LifecycleMeta> {
 }
 
 export const DRIVER_TYPE_LABEL: Record<string, string> = {
-  environmental: "Environmental",
-  operational: "Operational",
-  other: "Other",
-  unspecified: "Not given",
+  environmental: t("Environmental"),
+  operational: t("Operational"),
+  other: t("Other"),
+  unspecified: t("Not given"),
 };
 
 export function driverLabel(meta: LifecycleMeta | null, type: string, key: string): string {
-  if (type === "unspecified") return "No driver given";
+  if (type === "unspecified") return t("No driver given");
   const d = meta?.drivers[type]?.find((x) => x.key === key);
-  return `${DRIVER_TYPE_LABEL[type] ?? type} · ${d?.label ?? key}`;
+  return `${DRIVER_TYPE_LABEL[type] ?? type} · ${d ? t(d.label) : key}`;
 }
 
 /** Lifecycle status, "Operational" definition of done and the change log of one use case. */
@@ -62,12 +63,12 @@ export default function LifecyclePanel({
   return (
     <section className="card stack" aria-labelledby={`lc-${code}`}>
       <div className="section-head">
-        <h2 id={`lc-${code}`}>Lifecycle</h2>
+        <h2 id={`lc-${code}`}>{t("Lifecycle")}</h2>
         <div className="row-actions lc-actions">
           {s && <StatusPill status={s.status} />}
           {editor && s && (
             <button type="button" className="btn btn-sm" onClick={() => setDialog(true)}>
-              Change status
+              {t("Change status")}
             </button>
           )}
         </div>
@@ -76,9 +77,9 @@ export default function LifecyclePanel({
 
       <div className="stack-sm">
         <div className="section-head">
-          <h3 className="h-sm">Definition of done</h3>
+          <h3 className="h-sm">{t("Definition of done")}</h3>
           <span className={doneCount === 5 ? "pill pill-ok" : "pill pill-warn"}>
-            {doneCount} of {s?.dod.length ?? 5}
+            {doneCount} {t("of")} {s?.dod.length ?? 5}
           </span>
         </div>
         <ul className="dod">
@@ -95,8 +96,10 @@ export default function LifecyclePanel({
                       onChange={(e) => void tick(item.key, e.target.checked)}
                     />
                     <span className="stack-xs">
-                      <span className="strong-500">{item.label}</span>
-                      <span className="small muted">{st?.done ? `Done ${fmtDate(st.at)} · ${st.by}` : item.hint}</span>
+                      <span className="strong-500">{t(item.label)}</span>
+                      <span className="small muted">
+                        {st?.done ? `${t("Done {date}", { date: fmtDate(st.at) })} · ${st.by}` : t(item.hint)}
+                      </span>
                     </span>
                   </label>
                 </li>
@@ -106,16 +109,16 @@ export default function LifecyclePanel({
       </div>
 
       <div className="stack-sm">
-        <h3 className="h-sm">Change log</h3>
-        {s && !s.events.length && <p className="muted small">No status changes recorded.</p>}
+        <h3 className="h-sm">{t("Change log")}</h3>
+        {s && !s.events.length && <p className="muted small">{t("No status changes recorded.")}</p>}
         <ul className="history">
           {events.map((ev) => (
             <li key={ev.id}>
               <StatusPill status={ev.to_status} />
               <span className="stack-xs">
                 <span className="strong-500">
-                  {ev.from_status ? `${STATUS_LABEL[ev.from_status]} → ${STATUS_LABEL[ev.to_status]}` : "Created"}
-                  {ev.dod_override && <span className="badge-gap lc-override">DoD skipped</span>}
+                  {ev.from_status ? `${STATUS_LABEL[ev.from_status]} → ${STATUS_LABEL[ev.to_status]}` : t("Created")}
+                  {ev.dod_override && <span className="badge-gap lc-override">{t("DoD skipped")}</span>}
                 </span>
                 <span className="small ink-2">{driverLabel(m, ev.driver_type, ev.driver)}</span>
                 {ev.note && <span className="ink-2">{ev.note}</span>}
@@ -128,7 +131,7 @@ export default function LifecyclePanel({
         </ul>
         {s && s.events.length > 5 && (
           <button type="button" className="link-btn small" onClick={() => setShowAll((x) => !x)}>
-            {showAll ? "Show fewer" : `Show all ${s.events.length}`}
+            {showAll ? t("Show fewer") : t("Show all {n}", { n: s.events.length })}
           </button>
         )}
       </div>
@@ -204,16 +207,16 @@ function ChangeDialog({
   }
 
   return (
-    <Modal title={`Change status of ${code}`} open onClose={onClose}>
+    <Modal title={t("Change status of {code}", { code })} open onClose={onClose}>
       <form className="stack" onSubmit={submit}>
         <ErrorNote error={error} />
         <div className="form-grid">
           <label className="field">
-            From
+            {t("From")}
             <input className="input" disabled value={STATUS_LABEL[state.status]} />
           </label>
           <label className="field">
-            To
+            {t("To")}
             <select className="input" value={to} onChange={(e) => setTo(e.target.value as Lifecycle)}>
               {choices.map((x) => (
                 <option key={x} value={x}>
@@ -224,7 +227,7 @@ function ChangeDialog({
           </label>
         </div>
         <fieldset className="field fieldset">
-          <legend>Change driver</legend>
+          <legend>{t("Change driver")}</legend>
           <div className="radio-row">
             {Object.keys(meta.drivers).map((t) => (
               <label key={t}>
@@ -241,44 +244,46 @@ function ChangeDialog({
               </label>
             ))}
           </div>
-          <select className="input" aria-label="Driver" value={driver} onChange={(e) => setDriver(e.target.value)}>
+          <select className="input" aria-label={t("Driver")} value={driver} onChange={(e) => setDriver(e.target.value)}>
             {meta.drivers[driverType].map((d) => (
               <option key={d.key} value={d.key}>
-                {d.label}
+                {t(d.label)}
               </option>
             ))}
           </select>
         </fieldset>
         <label className="field">
-          Note
+          {t("Note")}
           <textarea
             className="input textarea"
             rows={3}
             value={note}
-            placeholder="What happened and why the status changes"
+            placeholder={t("What happened and why the status changes")}
             onChange={(e) => setNote(e.target.value)}
           />
         </label>
         {missing.length > 0 && (
           <div className="form-notice stack-xs">
-            <strong>The definition of done is not complete.</strong>
-            <span>Missing: {missing.map((x) => x.label).join(", ")}.</span>
+            <strong>{t("The definition of done is not complete.")}</strong>
+            <span>
+              {t("Missing:")} {missing.map((x) => t(x.label)).join(", ")}.
+            </span>
             {admin ? (
               <label className="check">
                 <input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} />
-                Make it operational anyway (recorded in the change log)
+                {t("Make it operational anyway (recorded in the change log)")}
               </label>
             ) : (
-              <span>Tick the checklist first, or ask an admin.</span>
+              <span>{t("Tick the checklist first, or ask an admin.")}</span>
             )}
           </div>
         )}
         <div className="row-actions">
           <button type="button" className="btn" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button type="submit" className="btn btn-primary" disabled={busy || blocked}>
-            {busy ? "Saving…" : `Set to ${STATUS_LABEL[to]}`}
+            {busy ? t("Saving…") : t("Set to {status}", { status: STATUS_LABEL[to] })}
           </button>
         </div>
       </form>

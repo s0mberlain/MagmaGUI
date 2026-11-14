@@ -6,19 +6,20 @@ import { driverLabel, DRIVER_TYPE_LABEL, loadMeta } from "../components/Lifecycl
 import TrendChart from "../components/TrendChart";
 import { ErrorNote, Modal, StatusPill, useLoad } from "../components/ui";
 import { fmtDate, pct, STATUS_LABEL } from "../lib/format";
+import { t } from "../i18n";
 
 const SCHEDULE_LABEL: Record<string, string> = {
-  off: "Automatic snapshots are off",
-  daily: "A snapshot is taken every day",
-  weekly: "A snapshot is taken every week",
-  monthly: "A snapshot is taken every month",
+  off: t("Automatic snapshots are off"),
+  daily: t("A snapshot is taken every day"),
+  weekly: t("A snapshot is taken every week"),
+  monthly: t("A snapshot is taken every month"),
 };
 
 const KIND_LABEL: Record<string, string> = {
-  manual: "Manual",
-  scheduled: "Scheduled",
-  demo: "Demo",
-  live: "Now",
+  manual: t("Manual"),
+  scheduled: t("Scheduled"),
+  demo: t("Demo"),
+  live: t("Now"),
 };
 
 function fmtMetric(v: number | null | undefined, unit: string) {
@@ -51,8 +52,8 @@ export default function History() {
   const [cmpBusy, setCmpBusy] = useState(false);
   const [showTable, setShowTable] = useState(false);
 
-  const t = trends.data;
-  const points = t?.points ?? [];
+  const tt = trends.data;
+  const points = tt?.points ?? [];
   const first = points[0];
   const last = points[points.length - 1];
   const options = snaps.data ?? [];
@@ -72,7 +73,7 @@ export default function History() {
   }
 
   async function remove(id: number, label: string) {
-    if (!window.confirm(`Delete snapshot “${label || id}”?`)) return;
+    if (!window.confirm(t("Delete snapshot “{name}”?", { name: label || id }))) return;
     try {
       await api.deleteSnapshot(id);
       void snaps.reload();
@@ -88,16 +89,19 @@ export default function History() {
     <>
       <header className="page-header">
         <div>
-          <h1>History &amp; trends</h1>
+          <h1>{t("History & trends")}</h1>
           <div className="subtitle">
-            {t ? (SCHEDULE_LABEL[t.schedule] ?? t.schedule) : "…"}
-            {first && last && points.length > 1 && ` · ${points.length - 1} snapshots since ${fmtDate(first.taken_at)}`}
+            {tt ? (SCHEDULE_LABEL[tt.schedule] ?? tt.schedule) : "…"}
+            {first &&
+              last &&
+              points.length > 1 &&
+              ` · ${t("{n} snapshots since {date}", { n: points.length - 1, date: fmtDate(first.taken_at) })}`}
           </div>
         </div>
         {editor && (
           <div className="row-actions">
             <button type="button" className="btn btn-primary" onClick={() => setTaking(true)}>
-              Take snapshot
+              {t("Take snapshot")}
             </button>
           </div>
         )}
@@ -107,25 +111,25 @@ export default function History() {
 
       <section aria-labelledby="th" className="stack">
         <div className="section-head">
-          <h2 id="th">Control metrics</h2>
+          <h2 id="th">{t("Control metrics")}</h2>
           <button type="button" className="link-btn small" onClick={() => setShowTable((x) => !x)}>
-            {showTable ? "Show charts" : "Show as table"}
+            {showTable ? t("Show charts") : t("Show as table")}
           </button>
         </div>
-        {t && points.length < 2 && (
-          <p className="muted">Only the current state exists. Take a snapshot to start the trend lines.</p>
+        {tt && points.length < 2 && (
+          <p className="muted">{t("Only the current state exists. Take a snapshot to start the trend lines.")}</p>
         )}
-        {t && !showTable && (
+        {tt && !showTable && (
           <div className="trend-grid">
-            {t.metrics.map((m) => (
+            {tt.metrics.map((m) => (
               <div className="card trend-card" key={m.key}>
                 <div className="trend-head">
-                  <span className="kpi-label">{m.label}</span>
+                  <span className="kpi-label">{t(m.label)}</span>
                   <Delta a={first?.kpis[m.key]} b={last?.kpis[m.key]} unit={m.unit} />
                 </div>
                 <span className="trend-value">{fmtMetric(last?.kpis[m.key], m.unit)}</span>
                 <TrendChart
-                  title={m.label}
+                  title={t(m.label)}
                   unit={m.unit}
                   data={points.map((p) => ({
                     label: p.label || fmtDate(p.taken_at),
@@ -138,54 +142,60 @@ export default function History() {
             ))}
             <div className="card trend-card">
               <div className="trend-head">
-                <span className="kpi-label">Framework changes per period</span>
+                <span className="kpi-label">{t("Framework changes per period")}</span>
               </div>
               <div className="legend">
                 <span>
                   <i className="d1" />
-                  Status changes
+                  {t("Status changes")}
                 </span>
                 <span>
                   <i className="d3" />
-                  Config commits
+                  {t("Config commits")}
                 </span>
               </div>
-              <div className="change-bars" role="img" aria-label="Status changes and config commits per period">
+              <div className="change-bars" role="img" aria-label={t("Status changes and config commits per period")}>
                 {points.slice(1).map((p) => (
                   <div
                     key={p.taken_at}
                     className="change-bar"
-                    title={`${p.label}: ${p.lifecycle_changes} status changes, ${p.config_commits} config commits`}
+                    title={t("{label}: {a} status changes, {b} config commits", {
+                      label: p.label,
+                      a: p.lifecycle_changes,
+                      b: p.config_commits,
+                    })}
                   >
                     <div className="seg d3" style={{ height: `${(p.config_commits / changeMax) * 100}%` }} />
                     <div className="seg d1" style={{ height: `${(p.lifecycle_changes / changeMax) * 100}%` }} />
                   </div>
                 ))}
               </div>
-              <span className="small muted">First period left out: it holds everything before the first snapshot.</span>
+              <span className="small muted">
+                {t("First period left out: it holds everything before the first snapshot.")}
+              </span>
             </div>
           </div>
         )}
-        {t && showTable && (
+        {tt && showTable && (
           <div className="card table-card scroll-x">
             <table className="table table-plain">
               <thead>
                 <tr>
-                  <th>Snapshot</th>
-                  {t.metrics.map((m) => (
+                  <th>{t("Snapshot")}</th>
+                  {tt.metrics.map((m) => (
                     <th key={m.key} className="num">
-                      {m.label}
+                      {t(m.label)}
                     </th>
                   ))}
-                  <th className="num">Status changes</th>
-                  <th className="num">Config commits</th>
+                  <th className="num">{t("Status changes")}</th>
+                  <th className="num">{t("Config commits")}</th>
                 </tr>
               </thead>
               <tbody>
                 {points.map((p) => (
                   <tr key={p.taken_at}>
-                    <td className="nowrap">{p.kind === "live" ? "Now" : `${fmtDate(p.taken_at)}`}</td>
-                    {t.metrics.map((m) => (
+                    <td className="nowrap">{p.kind === "live" ? t("Now") : `${fmtDate(p.taken_at)}`}</td>
+                    {tt.metrics.map((m) => (
                       <td key={m.key} className="num">
                         {fmtMetric(p.kpis[m.key], m.unit)}
                       </td>
@@ -202,12 +212,12 @@ export default function History() {
 
       <div className="split">
         <section className="card split-main stack" aria-labelledby="sh">
-          <h2 id="sh">Snapshots</h2>
+          <h2 id="sh">{t("Snapshots")}</h2>
           <form className="inline-form" onSubmit={compare}>
             <label className="field">
-              Compare
+              {t("Compare")}
               <select className="input" value={a} onChange={(e) => setA(e.target.value)} required>
-                <option value="">Choose a snapshot</option>
+                <option value="">{t("Choose a snapshot")}</option>
                 {options.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.label || fmtDate(s.taken_at)} ({fmtDate(s.taken_at)})
@@ -216,9 +226,9 @@ export default function History() {
               </select>
             </label>
             <label className="field">
-              with
+              {t("with")}
               <select className="input" value={b} onChange={(e) => setB(e.target.value)}>
-                <option value="live">Now</option>
+                <option value="live">{t("Now")}</option>
                 {options.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.label || fmtDate(s.taken_at)} ({fmtDate(s.taken_at)})
@@ -227,19 +237,19 @@ export default function History() {
               </select>
             </label>
             <button type="submit" className="btn" disabled={!a || cmpBusy}>
-              {cmpBusy ? "Comparing…" : "Compare"}
+              {cmpBusy ? t("Comparing…") : t("Compare")}
             </button>
           </form>
-          {snaps.data && !snaps.data.length && <p className="muted">No snapshots yet.</p>}
+          {snaps.data && !snaps.data.length && <p className="muted">{t("No snapshots yet.")}</p>}
           <div className="scroll-x">
             <table className="table table-plain">
               <thead>
                 <tr>
-                  <th>Snapshot</th>
-                  <th>Type</th>
-                  <th>Taken</th>
-                  <th className="num">SOC score</th>
-                  <th className="num">Rules</th>
+                  <th>{t("Snapshot")}</th>
+                  <th>{t("Type")}</th>
+                  <th>{t("Taken")}</th>
+                  <th className="num">{t("SOC score")}</th>
+                  <th className="num">{t("Rules")}</th>
                   <th />
                 </tr>
               </thead>
@@ -266,7 +276,7 @@ export default function History() {
                           void compare(undefined, String(s.id), "live");
                         }}
                       >
-                        Compare with now
+                        {t("Compare with now")}
                       </button>
                       {can("admin") && (
                         <button
@@ -275,7 +285,7 @@ export default function History() {
                           style={{ marginLeft: 12 }}
                           onClick={() => void remove(s.id, s.label)}
                         >
-                          Delete
+                          {t("Delete")}
                         </button>
                       )}
                     </td>
@@ -284,19 +294,23 @@ export default function History() {
               </tbody>
             </table>
           </div>
-          {options.length > 15 && <p className="small muted">{options.length - 15} older snapshots not shown.</p>}
+          {options.length > 15 && (
+            <p className="small muted">
+              {options.length - 15} {t("older snapshots not shown.")}
+            </p>
+          )}
         </section>
 
         <section className="card split-side stack-sm" aria-labelledby="clh">
           <div className="section-head">
-            <h2 id="clh">Change log</h2>
+            <h2 id="clh">{t("Change log")}</h2>
             <select
               className="input input-sm"
-              aria-label="Filter by driver"
+              aria-label={t("Filter by driver")}
               value={driverType}
               onChange={(e) => setDriverType(e.target.value)}
             >
-              <option value="">All drivers</option>
+              <option value="">{t("All drivers")}</option>
               {Object.entries(DRIVER_TYPE_LABEL).map(([k, v]) => (
                 <option key={k} value={k}>
                   {v}
@@ -305,7 +319,7 @@ export default function History() {
             </select>
           </div>
           <ErrorNote error={changes.error} />
-          {changes.data && !changes.data.length && <p className="muted small">No status changes.</p>}
+          {changes.data && !changes.data.length && <p className="muted small">{t("No status changes.")}</p>}
           <ul className="history change-log">
             {changes.data?.map((ev) => (
               <li key={ev.id}>
@@ -318,9 +332,9 @@ export default function History() {
                     <span className="mono small">{ev.code}</span> {ev.name}
                   </Link>
                   <span className="small ink-2">
-                    {ev.from_status ? `${STATUS_LABEL[ev.from_status]} → ${STATUS_LABEL[ev.to_status]}` : "Created"} ·{" "}
-                    {driverLabel(meta.data, ev.driver_type, ev.driver)}
-                    {ev.dod_override && " · DoD skipped"}
+                    {ev.from_status ? `${STATUS_LABEL[ev.from_status]} → ${STATUS_LABEL[ev.to_status]}` : t("Created")}{" "}
+                    · {driverLabel(meta.data, ev.driver_type, ev.driver)}
+                    {ev.dod_override && t(" · DoD skipped")}
                   </span>
                   {ev.note && <span className="small ink-2">{ev.note}</span>}
                   <span className="small muted">
@@ -333,7 +347,7 @@ export default function History() {
         </section>
       </div>
 
-      {cmp && t && <CompareDialog cmp={cmp} metrics={t.metrics} onClose={() => setCmp(null)} />}
+      {cmp && tt && <CompareDialog cmp={cmp} metrics={tt.metrics} onClose={() => setCmp(null)} />}
       {taking && (
         <SnapshotDialog
           onClose={() => setTaking(false)}
@@ -365,28 +379,28 @@ function SnapshotDialog({ onClose, onSaved }: { onClose: () => void; onSaved: ()
     }
   }
   return (
-    <Modal title="Take snapshot" open onClose={onClose}>
+    <Modal title={t("Take snapshot")} open onClose={onClose}>
       <form className="stack" onSubmit={submit}>
         <ErrorNote error={error} />
         <p className="muted" style={{ margin: 0 }}>
-          Freezes all scores, statuses and counts as they are now, for trends and later comparison.
+          {t("Freezes all scores, statuses and counts as they are now, for trends and later comparison.")}
         </p>
         <label className="field">
-          Label
+          {t("Label")}
           <input
             className="input"
             value={label}
             maxLength={200}
-            placeholder="e.g. Before Q4 purple team"
+            placeholder={t("e.g. Before Q4 purple team")}
             onChange={(e) => setLabel(e.target.value)}
           />
         </label>
         <div className="row-actions">
           <button type="button" className="btn" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button type="submit" className="btn btn-primary" disabled={busy}>
-            {busy ? "Saving…" : "Take snapshot"}
+            {busy ? t("Saving…") : t("Take snapshot")}
           </button>
         </div>
       </form>
@@ -403,7 +417,7 @@ function CompareDialog({
   metrics: Trends["metrics"];
   onClose: () => void;
 }) {
-  const name = (s: SnapshotCompare["a"]) => (s.kind === "live" ? "Now" : s.label || fmtDate(s.taken_at));
+  const name = (s: SnapshotCompare["a"]) => (s.kind === "live" ? t("Now") : s.label || fmtDate(s.taken_at));
   const w = (x: Record<string, unknown> | null) => (x ? (x.weight as number | null) : null);
   return (
     <Modal title={`${name(cmp.a)} → ${name(cmp.b)}`} open onClose={onClose} wide>
@@ -411,16 +425,16 @@ function CompareDialog({
         <table className="table table-plain">
           <thead>
             <tr>
-              <th>Metric</th>
+              <th>{t("Metric")}</th>
               <th className="num">{name(cmp.a)}</th>
               <th className="num">{name(cmp.b)}</th>
-              <th className="num">Change</th>
+              <th className="num">{t("Change")}</th>
             </tr>
           </thead>
           <tbody>
             {metrics.map((m) => (
               <tr key={m.key}>
-                <td>{m.label}</td>
+                <td>{t(m.label)}</td>
                 <td className="num">{fmtMetric(cmp.kpis[m.key]?.a, m.unit)}</td>
                 <td className="num">{fmtMetric(cmp.kpis[m.key]?.b, m.unit)}</td>
                 <td className="num">
@@ -434,7 +448,9 @@ function CompareDialog({
         {(["l1", "l2"] as const).map((lvl) =>
           cmp[lvl].length ? (
             <div key={lvl} className="stack-sm">
-              <h3 className="h-sm">{lvl.toUpperCase()} use cases with a different weight</h3>
+              <h3 className="h-sm">
+                {lvl.toUpperCase()} {t("use cases with a different weight")}
+              </h3>
               <table className="table table-plain">
                 <tbody>
                   {cmp[lvl].map((g) => (
@@ -456,8 +472,11 @@ function CompareDialog({
         )}
 
         <div className="stack-sm">
-          <h3 className="h-sm">Rules that changed ({cmp.rules.length})</h3>
-          {!cmp.rules.length && <p className="muted small">No rule changed.</p>}
+          <h3 className="h-sm">
+            {t("Rules that changed (")}
+            {cmp.rules.length})
+          </h3>
+          {!cmp.rules.length && <p className="muted small">{t("No rule changed.")}</p>}
           <ul className="history">
             {cmp.rules.slice(0, 60).map((r) => {
               const sa = r.a?.status as keyof typeof STATUS_LABEL | undefined;
@@ -471,13 +490,13 @@ function CompareDialog({
                     <span className="strong-500">{r.name}</span>
                     <span className="small ink-2">
                       {r.change === "added"
-                        ? "New rule"
+                        ? t("New rule")
                         : r.change === "removed"
-                          ? "Removed"
+                          ? t("Removed")
                           : sa !== sb
                             ? `${STATUS_LABEL[sa!]} → ${STATUS_LABEL[sb!]}`
-                            : "Metrics changed"}
-                      {" · weight "}
+                            : t("Metrics changed")}
+                      {t(" · weight ")}
                       {pct(w(r.a), 1)} → {pct(w(r.b), 1)}
                     </span>
                   </span>
@@ -485,7 +504,11 @@ function CompareDialog({
               );
             })}
           </ul>
-          {cmp.rules.length > 60 && <p className="small muted">{cmp.rules.length - 60} more not shown.</p>}
+          {cmp.rules.length > 60 && (
+            <p className="small muted">
+              {cmp.rules.length - 60} {t("more not shown.")}
+            </p>
+          )}
         </div>
       </div>
     </Modal>

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel
@@ -107,6 +108,18 @@ def logout(request: Request, response: Response, db: DB) -> None:
 
 @router.get("/me", response_model=UserOut)
 def me(user: CurrentUser) -> User:
+    return user
+
+
+class LocaleIn(BaseModel):
+    locale: Literal["en", "de", "nl"] | None
+
+
+@router.put("/me/locale", response_model=UserOut)
+def set_locale(body: LocaleIn, user: CurrentUser, db: DB) -> User:
+    """UI language of the signed-in user (also allowed for auditors: it is a preference)."""
+    user.locale = body.locale
+    db.commit()
     return user
 
 

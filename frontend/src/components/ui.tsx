@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { Lifecycle } from "../api";
 import { STATUS_LABEL } from "../lib/format";
+import { t } from "../i18n";
 
 /** Load data on mount and when deps change; `reload` refetches. */
 export function useLoad<T>(fn: () => Promise<T>, deps: unknown[] = []) {
@@ -50,9 +51,9 @@ export function MetricBars({ e, i, c }: { e: number | null; i: number | null; c:
   );
   return (
     <div className="metric-bars">
-      {bar(e, "d1", "Effectiveness")}
-      {bar(i, "d2", "Implementation")}
-      {bar(c, "d3", "Coverage")}
+      {bar(e, "d1", t("Effectiveness"))}
+      {bar(i, "d2", t("Implementation"))}
+      {bar(c, "d3", t("Coverage"))}
     </div>
   );
 }
@@ -62,21 +63,21 @@ export function MetricLegend() {
     <div className="legend">
       <span>
         <i className="d1" />
-        Effectiveness
+        {t("Effectiveness")}
       </span>
       <span>
         <i className="d2" />
-        Implementation
+        {t("Implementation")}
       </span>
       <span>
         <i className="d3" />
-        Coverage
+        {t("Coverage")}
       </span>
     </div>
   );
 }
 
-export function GapBadge({ children = "Detection gap" }: { children?: ReactNode }) {
+export function GapBadge({ children = t("Detection gap") }: { children?: ReactNode }) {
   return <span className="badge-gap">{children}</span>;
 }
 
@@ -114,7 +115,7 @@ export function Modal({
         <>
           <div className="modal-head">
             <h2 id={id}>{title}</h2>
-            <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>
+            <button type="button" className="icon-btn" aria-label={t("Close")} onClick={onClose}>
               ×
             </button>
           </div>
@@ -156,7 +157,7 @@ export function MultiSelect({
               ))}
             </span>
           ) : (
-            <span className="muted">None</span>
+            <span className="muted">{t("None")}</span>
           )}
         </summary>
         {!disabled && (
@@ -167,7 +168,7 @@ export function MultiSelect({
                 {o.label}
               </label>
             ))}
-            {!options.length && <span className="muted">The reference list is empty.</span>}
+            {!options.length && <span className="muted">{t("The reference list is empty.")}</span>}
           </fieldset>
         )}
       </details>

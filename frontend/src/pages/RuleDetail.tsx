@@ -8,12 +8,17 @@ import OutputPanel from "../components/OutputPanel";
 import { ErrorNote, MultiSelect, StatusPill, useLoad } from "../components/ui";
 import { fmtDate, num, pct } from "../lib/format";
 import { VerifiedCell, VerifyDialog } from "./UseCases";
+import { t } from "../i18n";
 
 type Metric = "effectiveness" | "implementation" | "coverage";
 const METRICS: { key: Metric; label: string; hint: string }[] = [
-  { key: "effectiveness", label: "Effectiveness", hint: "How well the rule detects the threat if it runs everywhere." },
-  { key: "implementation", label: "Implementation", hint: "How far the rule is built, tuned and running." },
-  { key: "coverage", label: "Coverage", hint: "Share of the in-scope estate whose logs the rule sees." },
+  {
+    key: "effectiveness",
+    label: t("Effectiveness"),
+    hint: t("How well the rule detects the threat if it runs everywhere."),
+  },
+  { key: "implementation", label: t("Implementation"), hint: t("How far the rule is built, tuned and running.") },
+  { key: "coverage", label: t("Coverage"), hint: t("Share of the in-scope estate whose logs the rule sees.") },
 ];
 
 interface Form {
@@ -80,7 +85,7 @@ export default function RuleDetail() {
   }, [rule.data]);
 
   if (rule.error) return <ErrorNote error={rule.error} />;
-  if (!rule.data || !form) return <p className="muted">Loading…</p>;
+  if (!rule.data || !form) return <p className="muted">{t("Loading…")}</p>;
   const r = rule.data;
   const set = (patch: Partial<Form>) => {
     setSaved(null);
@@ -112,7 +117,7 @@ export default function RuleDetail() {
         scopes: form.scopes,
         attack_techniques: form.attack
           .split(/[\s,;]+/)
-          .map((t) => t.trim().toUpperCase())
+          .map((tt) => tt.trim().toUpperCase())
           .filter(Boolean),
         onboarded_at: form.onboarded_at || null,
         verification_interval_days: form.interval ? Number(form.interval) : null,
@@ -121,7 +126,7 @@ export default function RuleDetail() {
         comments: form.comments,
       });
       rule.setData(updated);
-      setSaved("Saved.");
+      setSaved(t("Saved."));
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -130,7 +135,7 @@ export default function RuleDetail() {
   }
 
   async function remove() {
-    if (!window.confirm(`Delete rule ${code}? This cannot be undone.`)) return;
+    if (!window.confirm(t("Delete rule {code}? This cannot be undone.", { code }))) return;
     try {
       await api.deleteL3(code);
       navigate(`/usecases?l2=${r.l2_code}`);
@@ -144,8 +149,8 @@ export default function RuleDetail() {
   return (
     <>
       <form onSubmit={save} className="stack-lg">
-        <nav aria-label="Breadcrumb" className="crumbs">
-          <Link to="/usecases">Use cases</Link>
+        <nav aria-label={t("Breadcrumb")} className="crumbs">
+          <Link to="/usecases">{t("Use cases")}</Link>
           <span aria-hidden="true">/</span>
           <Link to={`/usecases?l1=${r.l1_code}`}>{r.l1_code}</Link>
           <span aria-hidden="true">/</span>
@@ -159,16 +164,16 @@ export default function RuleDetail() {
             <div className="chips">
               <span className="code-tag">{r.code}</span>
               <StatusPill status={r.lifecycle_status} />
-              {r.attack_techniques.map((t) => (
-                <span key={t} className="chip chip-neutral">
-                  ATT&CK {t}
+              {r.attack_techniques.map((tt) => (
+                <span key={tt} className="chip chip-neutral">
+                  {t("ATT&CK")} {tt}
                 </span>
               ))}
             </div>
             {editor ? (
               <>
                 <label className="sr-only" htmlFor="rule-name">
-                  Rule name
+                  {t("Rule name")}
                 </label>
                 <input
                   id="rule-name"
@@ -186,19 +191,19 @@ export default function RuleDetail() {
             <div className="row-actions">
               {can("admin") && (
                 <button type="button" className="btn" onClick={remove}>
-                  Delete
+                  {t("Delete")}
                 </button>
               )}
               <button type="button" className="btn btn-dark" onClick={() => setVerifying(true)}>
-                Verify now
+                {t("Verify now")}
               </button>
               <button type="submit" className="btn btn-primary" disabled={busy || !dirty}>
-                {dirty ? "Save changes" : "Saved"}
+                {dirty ? t("Save changes") : t("Saved")}
               </button>
             </div>
           )}
         </header>
-        {!editor && <p className="form-notice">Read-only: your role cannot change rules.</p>}
+        {!editor && <p className="form-notice">{t("Read-only: your role cannot change rules.")}</p>}
         <ErrorNote error={error} />
         {saved && (
           <p className="form-notice" role="status">
@@ -209,14 +214,14 @@ export default function RuleDetail() {
         <div className="split">
           <div className="split-side stack-lg">
             <section className="card stack" aria-labelledby="mh">
-              <h2 id="mh">Metrics</h2>
+              <h2 id="mh">{t("Metrics")}</h2>
               {METRICS.map((m) => {
                 const v = form[m.key];
                 return (
                   <div key={m.key} className="slider">
                     <div className="slider-head">
                       <label htmlFor={m.key}>{m.label}</label>
-                      <span className="strong">{v === null ? "not set" : `${Math.round(v * 100)} %`}</span>
+                      <span className="strong">{v === null ? t("not set") : `${Math.round(v * 100)} %`}</span>
                     </div>
                     <input
                       id={m.key}
@@ -239,7 +244,7 @@ export default function RuleDetail() {
                             className="link-btn"
                             onClick={() => set({ [m.key]: null } as Partial<Form>)}
                           >
-                            Clear
+                            {t("Clear")}
                           </button>
                         </>
                       )}
@@ -249,48 +254,58 @@ export default function RuleDetail() {
               })}
               <div className="metric-results">
                 <div>
-                  <span className="small muted">Weight (eff × impl × cov)</span>
+                  <span className="small muted">{t("Weight (eff × impl × cov)")}</span>
                   <span className="big accent">{num(weight)}</span>
                 </div>
                 <div>
-                  <span className="small muted">Potential (eff − weight)</span>
+                  <span className="small muted">{t("Potential (eff − weight)")}</span>
                   <span className="big data1">{num(potential)}</span>
                 </div>
               </div>
               {r.effective_target !== null && (
                 <p className="small target-line">
-                  Target implementation {pct(r.effective_target)}
+                  {t("Target implementation")} {pct(r.effective_target)}
                   {r.implementation_gap ? (
-                    <span className="text-err"> · {pct(r.implementation_gap)} to go</span>
+                    <span className="text-err">
+                      {" "}
+                      · {pct(r.implementation_gap)} {t("to go")}
+                    </span>
                   ) : (
-                    <span className="text-ok"> · reached</span>
+                    <span className="text-ok"> {t("· reached")}</span>
                   )}
-                  {r.priority !== null && <span className="muted"> · priority {num(r.priority)}</span>}
+                  {r.priority !== null && (
+                    <span className="muted">
+                      {" "}
+                      {t("· priority")} {num(r.priority)}
+                    </span>
+                  )}
                 </p>
               )}
-              {!assessed && <p className="small muted">Set all three metrics to score the rule.</p>}
+              {!assessed && <p className="small muted">{t("Set all three metrics to score the rule.")}</p>}
               {assessed && !["operational", "maintenance"].includes(r.lifecycle_status) && (
-                <p className="small muted">Only operational and maintenance rules count towards the scores.</p>
+                <p className="small muted">{t("Only operational and maintenance rules count towards the scores.")}</p>
               )}
             </section>
 
             <section className="card stack" aria-labelledby="vh">
               <div className="section-head">
-                <h2 id="vh">Verification</h2>
+                <h2 id="vh">{t("Verification")}</h2>
                 <VerifiedCell rule={r} />
               </div>
               <p className="small muted" style={{ margin: 0 }}>
-                Next due {fmtDate(r.verification_due)}
-                {r.verification_interval_days ? ` · every ${r.verification_interval_days} days` : " · default interval"}
-                {r.last_verified_by && ` · last by ${r.last_verified_by}`}
+                {t("Next due")} {fmtDate(r.verification_due)}
+                {r.verification_interval_days
+                  ? ` · ${t("every {n} days", { n: r.verification_interval_days })}`
+                  : t(" · default interval")}
+                {r.last_verified_by && ` · ${t("last by {user}", { user: r.last_verified_by })}`}
               </p>
               <ErrorNote error={history.error} />
-              {history.data && !history.data.length && <p className="muted small">No verifications recorded.</p>}
+              {history.data && !history.data.length && <p className="muted small">{t("No verifications recorded.")}</p>}
               <ul className="history">
                 {history.data?.map((v) => (
                   <li key={v.id}>
                     <span className={v.result === "ok" ? "pill pill-ok" : "badge-gap"}>
-                      {v.result === "ok" ? "OK" : "Issues"}
+                      {v.result === "ok" ? "OK" : t("Issues")}
                     </span>
                     <span className="stack-xs">
                       <span className="strong-500">
@@ -308,10 +323,10 @@ export default function RuleDetail() {
 
           <div className="split-wide stack-lg">
             <section className="card stack" aria-labelledby="dh">
-              <h2 id="dh">Details</h2>
+              <h2 id="dh">{t("Details")}</h2>
               <div className="form-grid">
                 <label className="field">
-                  Onboarded on
+                  {t("Onboarded on")}
                   <input
                     className="input"
                     type="date"
@@ -321,20 +336,20 @@ export default function RuleDetail() {
                   />
                 </label>
                 <label className="field">
-                  Verify every (days)
+                  {t("Verify every (days)")}
                   <input
                     className="input"
                     type="number"
                     min={1}
                     max={3650}
-                    placeholder="Default"
+                    placeholder={t("Default")}
                     disabled={!editor}
                     value={form.interval}
                     onChange={(ev) => set({ interval: ev.target.value })}
                   />
                 </label>
                 <label className="field">
-                  Risk level
+                  {t("Risk level")}
                   <select
                     className="input"
                     disabled={!editor}
@@ -342,7 +357,9 @@ export default function RuleDetail() {
                     onChange={(ev) => set({ risk: ev.target.value })}
                   >
                     <option value="">
-                      {r.risk_source === "l2" ? `Same as L2 (${r.effective_risk})` : "Same as L2 (not set)"}
+                      {r.risk_source === "l2"
+                        ? t("Same as L2 ({risk})", { risk: r.effective_risk })
+                        : t("Same as L2 (not set)")}
                     </option>
                     {[1, 2, 3, 4, 5].map((n) => (
                       <option key={n} value={n}>
@@ -352,7 +369,7 @@ export default function RuleDetail() {
                   </select>
                 </label>
                 <label className="field">
-                  Target implementation (%)
+                  {t("Target implementation (%)")}
                   <input
                     className="input"
                     type="number"
@@ -361,15 +378,15 @@ export default function RuleDetail() {
                     disabled={!editor}
                     placeholder={
                       r.target_source && r.target_source !== "rule"
-                        ? `${Math.round((r.effective_target ?? 0) * 100)} (${r.target_source === "l2" ? "from L2" : "from risk"})`
-                        : "From L2 or risk level"
+                        ? `${Math.round((r.effective_target ?? 0) * 100)} (${r.target_source === "l2" ? t("from L2") : t("from risk")})`
+                        : t("From L2 or risk level")
                     }
                     value={form.target}
                     onChange={(ev) => set({ target: ev.target.value })}
                   />
                 </label>
                 <label className="field">
-                  ATT&CK techniques
+                  {t("ATT&CK techniques")}
                   <input
                     className="input mono"
                     placeholder="T1003, T1059.001"
@@ -381,21 +398,21 @@ export default function RuleDetail() {
               </div>
               <div className="form-grid">
                 <MultiSelect
-                  label="Log sources"
+                  label={t("Log sources")}
                   options={opts(lists.data?.log)}
                   value={form.log_sources}
                   disabled={!editor}
                   onChange={(v) => set({ log_sources: v })}
                 />
                 <MultiSelect
-                  label="Detection technologies"
+                  label={t("Detection technologies")}
                   options={opts(lists.data?.tech)}
                   value={form.detection_technologies}
                   disabled={!editor}
                   onChange={(v) => set({ detection_technologies: v })}
                 />
                 <MultiSelect
-                  label="Scopes"
+                  label={t("Scopes")}
                   options={opts(lists.data?.scope)}
                   value={form.scopes}
                   disabled={!editor}
@@ -403,7 +420,7 @@ export default function RuleDetail() {
                 />
               </div>
               <label className="field">
-                Description
+                {t("Description")}
                 <textarea
                   className="input textarea"
                   rows={3}
@@ -413,7 +430,7 @@ export default function RuleDetail() {
                 />
               </label>
               <label className="field">
-                Comments
+                {t("Comments")}
                 <textarea
                   className="input textarea"
                   rows={3}
@@ -423,7 +440,7 @@ export default function RuleDetail() {
                 />
               </label>
               <p className="small muted" style={{ margin: 0 }}>
-                Last changed {fmtDate(r.updated_at)}
+                {t("Last changed")} {fmtDate(r.updated_at)}
               </p>
             </section>
 

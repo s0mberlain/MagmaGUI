@@ -37,6 +37,7 @@ class UserOut(ORM):
     auth_source: AuthSource
     active: bool
     totp_enabled: bool = False
+    locale: str | None = None
     last_login_at: datetime | None
     created_at: datetime
 

@@ -521,22 +521,6 @@ export interface Gaps {
   driver_gaps: DriverCoverage[];
   driver_low_threshold: number;
 }
-export interface MaturityAssessment {
-  id: number;
-  level: number;
-  target_level: number | null;
-  aspects: Record<string, number>;
-  notes: string;
-  assessed_by: string;
-  assessed_at: string;
-  created_at: string;
-}
-export interface Maturity {
-  levels: { level: number; name: string; description: string }[];
-  aspects: Record<string, string>;
-  current: MaturityAssessment | null;
-  history: MaturityAssessment[];
-}
 export interface TotpSetup {
   secret: string;
   uri: string;
@@ -830,15 +814,6 @@ export const api = {
           .map(([k, v]) => [k, String(v)]),
       )}`,
     ),
-  maturity: () => request<Maturity>("GET", "/api/maturity"),
-  assessMaturity: (body: {
-    level: number;
-    target_level: number | null;
-    aspects: Record<string, number>;
-    notes: string;
-    assessed_at?: string;
-  }) => request<MaturityAssessment>("POST", "/api/maturity", body),
-  deleteMaturity: (id: number) => request<void>("DELETE", `/api/maturity/${id}`),
   totpSetup: (password: string) => request<TotpSetup>("POST", "/api/auth/me/totp/setup", { password }),
   totpEnable: (code: string) => request<{ recovery_codes: string[] }>("POST", "/api/auth/me/totp/enable", { code }),
   totpDisable: (password: string, code: string) =>

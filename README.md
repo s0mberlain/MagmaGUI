@@ -2,7 +2,7 @@
 
 Web application for the FI-ISAC **MaGMa Use Case Framework**: manage SIEM / SOC use cases across the business, threat (L1/L2) and implementation (L3) layers, score them, track verification and keep versioned YAML configs per use case.
 
-Status: **M7**: MVP (catalogue, scoring, verification, YAML configs with history, Excel import/export, local login and SSO) plus lifecycle change log, history and trends, optional git sync, risk-based priorities, maturity assessment, two-factor login, ATT&CK coverage, output metrics, PostgreSQL support, German and Dutch UI, two-way git sync and a SIEM push API. See [docs/PLAN.md](docs/PLAN.md) for the full plan and milestones, and [docs/design/](docs/design/) for the approved desktop design draft.
+Status: **M7**: MVP (catalogue, scoring, verification, YAML configs with history, Excel import/export, local login and SSO) plus lifecycle change log, history and trends, optional git sync, risk-based priorities, two-factor login, ATT&CK coverage, output metrics, PostgreSQL support, German and Dutch UI, two-way git sync and a SIEM push API. See [docs/PLAN.md](docs/PLAN.md) for the full plan and milestones, and [docs/design/](docs/design/) for the approved desktop design draft.
 
 ## Run with Docker
 
@@ -150,7 +150,7 @@ metrics over time from snapshots (taken manually or by `SNAPSHOT_SCHEDULE`, mont
 compares any two snapshots, and lists all status changes. Demo data includes twelve monthly
 snapshots and a matching change log.
 
-## Priorities and maturity
+## Priorities
 
 Every L2 use case has a risk level (1–5) and an optional target implementation; a rule follows
 its L2 unless it sets its own. Without an explicit target the risk level gives one
@@ -173,10 +173,6 @@ counts as 0. A driver without any linked use case is a gap; one below `DRIVER_LO
 (default 30 %) has low coverage. *Business drivers*, the dashboard, *Priorities* and the PDF
 report show the coverage. Each linked driver raises the priority of the L2's rules by 10 %, at
 most 50 %. Deleting a linked driver asks first and lists the use cases that lose the link.
-
-*Maturity* records self-assessments on the CMMI scale (1 Initial … 5 Optimizing) with an
-optional target level, a level per aspect (people, process, technology) and notes. The level is
-kept in every snapshot, so it shows up on *History & trends*.
 
 ## ATT&CK coverage
 

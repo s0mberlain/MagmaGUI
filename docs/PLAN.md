@@ -133,7 +133,7 @@ Optional later: a configurable "risk weight" per L2 so averages can be risk-weig
 9. **Lifecycle status** per use case (Onboarding / Operational / Maintenance / Offloading / Retired) with the "Operational" definition-of-done checklist, and a change log with driver type.
 10. **History & control metrics**: automatic snapshots (on demand and scheduled), trend charts for #use cases, avg weight, avg potential, scope changes; compare two snapshots.
 11. **Risk-based prioritisation**: risk level and target implementation per L2/L3; "gap to target" view sorted by gap to target × risk (see README, Priorities).
-12. **Maturity self-assessment** (CMMI 1–5) with notes and history.
+12. ~~**Maturity self-assessment** (CMMI 1–5) with notes and history.~~ Built in M5, removed again on 2026-11-14 (migration 0012 drops the table).
 13. **Output metrics** per L3: alerts, incidents, false positives, false negatives per period (manual entry first, CSV/API import later).
 14. **MITRE ATT&CK view**: parse technique IDs from the old wiki URLs, map to current ATT&CK (techniques were renumbered/split into sub-techniques since 2017), heatmap of coverage per tactic/technique, export as ATT&CK Navigator layer JSON.
 15. **Audit trail** on every change (who, when, old → new), visible to admin and auditor.
@@ -190,7 +190,7 @@ lifecycle_event      (id, use_case_level, use_case_id, from_status, to_status,
                       driver_type, driver, note, user_id, at)
 output_metric        (id, l3_id, period_start, period_end, alerts, incidents,
                       false_positives, false_negatives)
-maturity_assessment  (id, workspace_id, level 1..5, notes, assessed_by, at)
+maturity_assessment  (id, workspace_id, level 1..5, notes, assessed_by, at) -- removed 2026-11-14
 snapshot             (id, workspace_id, label, taken_at, data JSONB)  -- full computed results
 audit_log            (id, user_id, entity, entity_id, action, diff JSONB, at)
 user                 (id, username, email, display_name, role 'admin'|'analyst'|'auditor',
@@ -324,7 +324,7 @@ Tests: unit tests of the scoring rules in 2.5 with small hand-made cases (includ
 | M2 | Scoring, core UI, demo data | Scoring module (2.5) with tests, demo data generator, use case tree and editable L3 table (multi data sources), onboarded / verified fields and "Verify now", drivers and reference list screens | Editing a metric updates L2/L1/overall; demo data looks realistic |
 | M3 | Dashboard, Excel I/O, SSO, YAML configs | KPIs incl. completeness and verification health, L1 charts, overdue-verification list, Excel import with preview + export, OIDC login with group → role mapping, user admin screen, YAML editor with commit / history / diff / restore / tags and `.yaml` download/upload; demo data includes sample configs with a few commits each | **MVP release v1.0** |
 | M4 | Lifecycle, history, git | Lifecycle status, change log with drivers, definition-of-done checklist, snapshots, control-metric trends, optional git repository connection for YAML configs (compose profile `gitea` for local testing) | Trend charts; configs show up in a connected git repo |
-| M5 | Growth | Risk level / target implementation, gap-to-target view, maturity assessment, TOTP for local accounts | v1.1 |
+| M5 | Growth | Risk level / target implementation, gap-to-target view, maturity assessment (removed 2026-11-14), TOTP for local accounts | v1.1 |
 | M6 | ATT&CK & output metrics | ATT&CK remapping and heatmap, Navigator export, output metrics entry/CSV import, PDF report | v1.2 |
 | M7 | Optional | Postgres hardening, two-way git sync, SIEM integrations, i18n (DE/NL/EN) | as needed (done: SIEM as push API + API tokens) |
 

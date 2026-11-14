@@ -7,7 +7,6 @@ import Dashboard from "./pages/Dashboard";
 import Drivers from "./pages/Drivers";
 import Account from "./pages/Account";
 import History from "./pages/History";
-import MaturityPage from "./pages/MaturityPage";
 import Priorities from "./pages/Priorities";
 import ImportExport from "./pages/ImportExport";
 import Login from "./pages/Login";
@@ -43,7 +42,6 @@ export default function App() {
           <Route path="import-export" element={<ImportExport />} />
           <Route path="history" element={<History />} />
           <Route path="priorities" element={<Priorities />} />
-          <Route path="maturity" element={<MaturityPage />} />
           <Route path="attack" element={<AttackPage />} />
           <Route path="output" element={<OutputPage />} />
           <Route path="integrations" element={<Integrations />} />

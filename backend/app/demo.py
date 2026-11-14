@@ -26,7 +26,6 @@ from app.models import (
     L3UseCase,
     Lifecycle,
     LifecycleEvent,
-    MaturityAssessment,
     OutputMetric,
     ReferenceItem,
     RefKind,
@@ -233,54 +232,6 @@ def _demo_lifecycle(db: Session, rnd: random.Random, l2s, rules, users, today: d
     return n
 
 
-MATURITY_HISTORY = [
-    # days ago, level, target, aspects, notes
-    (
-        400,
-        2,
-        3,
-        {"people": 2, "process": 1, "technology": 2},
-        "Use cases live in a spreadsheet; no review cycle yet.",
-    ),
-    (
-        230,
-        2,
-        3,
-        {"people": 2, "process": 2, "technology": 3},
-        "Use case template agreed, onboarding follows a checklist.",
-    ),
-    (
-        110,
-        3,
-        4,
-        {"people": 3, "process": 3, "technology": 3},
-        "Definition of done enforced, verification every 180 days.",
-    ),
-    (
-        20,
-        3,
-        4,
-        {"people": 3, "process": 3, "technology": 4},
-        "Monthly trend review started; next step is steering with metrics.",
-    ),
-]
-
-
-def _demo_maturity(db: Session, today: date) -> int:
-    for days, level, target, aspects, notes in MATURITY_HISTORY:
-        db.add(
-            MaturityAssessment(
-                level=level,
-                target_level=target,
-                aspects=aspects,
-                notes=notes,
-                assessed_by="jana",
-                assessed_at=today - timedelta(days=days),
-            )
-        )
-    return len(MATURITY_HISTORY)
-
-
 def _demo_output(db: Session, rnd: random.Random, rules, today: date) -> int:
     """Monthly alert counts for live rules. Less effective rules raise more false positives;
     a few noisy rules stand out so the summary has something to show."""
@@ -396,7 +347,6 @@ def apply_demo_data(
     db.execute(delete(Verification))
     db.execute(delete(ConfigCommit))
     db.execute(delete(LifecycleEvent))
-    db.execute(delete(MaturityAssessment))
     db.execute(delete(OutputMetric).where(OutputMetric.source == "demo"))
     db.execute(delete(Snapshot).where(Snapshot.kind == "demo"))
 
@@ -518,7 +468,6 @@ def apply_demo_data(
 
     counts["config_commits"] = _demo_configs(db, rnd, rules, users, today)
     counts["lifecycle_events"] = _demo_lifecycle(db, rnd, l2s, rules, users, today)
-    counts["maturity_assessments"] = _demo_maturity(db, today)
     counts["output_metrics"] = _demo_output(db, rnd, rules, today)
     db.flush()
     counts["snapshots"] = _demo_snapshots(db, rules, today, default_interval)

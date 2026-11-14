@@ -39,8 +39,9 @@ Or point `DATABASE_URL` at your own server (`postgresql+psycopg://user:pw@host:5
 - CI runs the full test suite on SQLite and on PostgreSQL 16, and checks that the migrations
   match the models on both.
 
-**Moving from SQLite to PostgreSQL.** Start the Postgres stack once so the database exists, then
-copy everything (users, history, configs, snapshots …) from the old volume:
+**Moving from SQLite to PostgreSQL.** Start the Postgres stack once so the database exists, stop the
+app (`docker compose … stop magma`), then copy everything (users, history, configs, snapshots …)
+from the old volume:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.postgres.yml run --rm magma \
@@ -49,7 +50,8 @@ docker compose -f docker-compose.yml -f docker-compose.postgres.yml run --rm mag
 ```
 
 `--replace` is needed because the first start already seeded the catalogue and the first admin.
-Ids are kept and the sequences are moved past them. Other commands: `magma migrate` and
+Ids are kept and the sequences are moved past them. An empty or
+mistyped source is refused, so `--replace` cannot wipe the target by accident. Other commands: `magma migrate` and
 `magma demo-data --seed 42`.
 
 ## Develop

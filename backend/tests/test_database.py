@@ -130,3 +130,10 @@ def test_config_revision_is_unique_per_use_case(db_url):
             else:
                 db.flush()
     engine.dispose()
+
+
+def test_copy_refuses_empty_source(tmp_path, db_url):
+    import pytest
+
+    with pytest.raises(CopyError, match="empty"):
+        copy_database(f"sqlite:///{tmp_path}/typo.db", db_url, replace=True)

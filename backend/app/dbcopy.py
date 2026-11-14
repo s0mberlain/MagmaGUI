@@ -50,6 +50,9 @@ def copy_database(source_url: str, target_url: str, replace: bool = False) -> Co
         migrate(src)
         migrate(dst)
         tables = Base.metadata.sorted_tables
+        if not any(_count(src, t) for t in tables if t.name in ("users", "l1_use_cases")):
+            # e.g. a wrong path, which SQLite would silently create as a new empty file
+            raise CopyError("Source database is empty; check the --source URL")
         filled = [t.name for t in tables if _count(dst, t)]
         if filled and not replace:
             raise CopyError(

@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import Settings
+from app.db import try_job_lock
 from app.models import ConfigCommit, ConfigTag, GitSyncState, L2UseCase, L3UseCase
 
 log = logging.getLogger(__name__)
@@ -259,6 +260,8 @@ def run(factory: sessionmaker, settings: Settings) -> Result | None:
         _running.set()
         try:
             with factory() as db:
+                if not try_job_lock(db, "gitsync"):
+                    return None  # another replica is syncing
                 st = state(db)
                 st.last_attempt_at = datetime.now(UTC)
                 try:

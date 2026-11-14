@@ -11,6 +11,13 @@ class Settings(BaseSettings):
 
     app_name: str = "Magma UCF"
     database_url: str = "sqlite:////data/magma.db"
+    # PostgreSQL connection pool and limits (ignored for SQLite).
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
+    db_pool_recycle: int = 1800
+    db_statement_timeout_ms: int = 0
+    # How long startup waits for the database to accept connections.
+    db_wait_seconds: int = 60
     secret_key: str = "change-me"
     base_url: str = "http://localhost:8080"
     # Directory with the built frontend (index.html + assets). Empty or missing = API only.

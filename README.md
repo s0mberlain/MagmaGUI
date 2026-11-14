@@ -15,6 +15,43 @@ Open http://localhost:8080 and sign in as `admin`. Set `ADMIN_PASSWORD` in `.env
 
 On first start the database is created, migrated and filled with the default MaGMa catalogue (12 L1 + Weaponization (not applicable), 62 L2, 169 L3, reference lists, business drivers). Data is stored in the `magma-data` volume (`/data` in the container). API docs: http://localhost:8080/api/docs
 
+## PostgreSQL
+
+SQLite (one file in the volume) is fine for a small team. For more users or several app
+replicas, use PostgreSQL:
+
+```bash
+echo "POSTGRES_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')" >> .env
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --build
+```
+
+Or point `DATABASE_URL` at your own server (`postgresql+psycopg://user:pw@host:5432/db`;
+`postgres://` URLs work too). What the app does on PostgreSQL:
+
+- Waits up to `DB_WAIT_SECONDS` (60) for the database on startup, then migrates.
+- Several replicas can share one database: migrations and seeding run under an advisory lock,
+  and the scheduled snapshot and the git sync run on one replica at a time.
+- Connection pool with health checks (`DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, `DB_POOL_RECYCLE`), all
+  sessions in UTC, optional `DB_STATEMENT_TIMEOUT_MS`.
+- Two saves of the same YAML config at the same moment cannot get the same revision; the loser
+  gets a 409 and reloads.
+- `GET /api/ready` checks the database (503 when it is down), `GET /api/health` only the process.
+- CI runs the full test suite on SQLite and on PostgreSQL 16, and checks that the migrations
+  match the models on both.
+
+**Moving from SQLite to PostgreSQL.** Start the Postgres stack once so the database exists, then
+copy everything (users, history, configs, snapshots …) from the old volume:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml run --rm magma \
+  magma db-copy --source sqlite:////data/magma.db \
+  --target "postgresql+psycopg://magma:$POSTGRES_PASSWORD@postgres:5432/magma" --replace
+```
+
+`--replace` is needed because the first start already seeded the catalogue and the first admin.
+Ids are kept and the sequences are moved past them. Other commands: `magma migrate` and
+`magma demo-data --seed 42`.
+
 ## Develop
 
 Backend (Python 3.12+, FastAPI):
@@ -25,6 +62,8 @@ python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 uvicorn app.main:app --reload --port 8000
 pytest && ruff check . && ruff format --check .
+# the same tests on PostgreSQL (the database is emptied before each test):
+TEST_DATABASE_URL=postgresql+psycopg://user:pw@localhost/magma_test pytest
 ```
 
 Frontend (Node 22, React + Vite + TypeScript), proxies `/api` to port 8000:

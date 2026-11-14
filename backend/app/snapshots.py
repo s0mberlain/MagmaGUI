@@ -7,6 +7,7 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.db import try_job_lock
 from app.models import (
     ConfigCommit,
     L1UseCase,
@@ -192,6 +193,8 @@ def due(db: Session, schedule: str, now: datetime | None = None) -> bool:
 
 def run_scheduled(factory: sessionmaker, schedule: str, default_interval: int) -> bool:
     with factory() as db:
+        if not try_job_lock(db, "snapshots"):
+            return False  # another replica is taking it
         if not db.scalar(select(func.count()).select_from(L1UseCase)) or not due(db, schedule):
             return False
         take(

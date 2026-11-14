@@ -319,6 +319,11 @@ class ConfigCommit(Base):
     """
 
     __tablename__ = "config_commits"
+    # one revision number per use case, also when two people save at the same moment
+    __table_args__ = (
+        UniqueConstraint("l2_id", "rev", name="uq_config_commits_l2_rev"),
+        UniqueConstraint("l3_id", "rev", name="uq_config_commits_l3_rev"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     l2_id: Mapped[int | None] = mapped_column(

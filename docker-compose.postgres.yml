@@ -1,0 +1,32 @@
+# PostgreSQL instead of the SQLite file, for multi-user production:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
+#
+# Set POSTGRES_PASSWORD in .env. To move an existing SQLite database over, see README
+# ("Moving from SQLite to PostgreSQL").
+services:
+  magma:
+    environment:
+      DATABASE_URL: postgresql+psycopg://magma:${POSTGRES_PASSWORD:-magma-dev-password}@postgres:5432/magma
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: magma-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: magma
+      POSTGRES_USER: magma
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-magma-dev-password}
+    volumes:
+      - magma-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U magma -d magma"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  magma-pg:

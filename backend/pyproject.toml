@@ -25,6 +25,8 @@ dependencies = [
   "cryptography>=42",
   "segno>=1.6",
   "fpdf2>=2.8",
+  # Swagger UI files for /api/docs, served by the app instead of a CDN
+  "swagger-ui-bundle>=1.1",
   "psycopg[binary]>=3.2,<4",
 ]
 

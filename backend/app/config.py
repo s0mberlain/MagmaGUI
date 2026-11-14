@@ -43,6 +43,9 @@ class Settings(BaseSettings):
 
     local_login_enabled: bool = True
     session_hours: int = 12
+    # SSO sessions are shorter: the app only learns at the next sign-in that someone lost access
+    # at the identity provider.
+    sso_session_hours: int = 8
     max_failed_logins: int = 5
     lockout_minutes: int = 15
     min_password_length: int = 12
@@ -63,6 +66,9 @@ class Settings(BaseSettings):
     # Fill the catalogue with generated demo data on first start (see app/demo.py).
     demo_data: bool = False
     demo_seed: int = 42
+    # "Load demo data" (admin, Import / Export page) replaces metrics and deletes the verification,
+    # lifecycle and config history, so it is refused unless this or DEMO_DATA is on.
+    allow_demo_data: bool = False
 
     # Automatic snapshots for trend charts: off | daily | weekly | monthly (app/snapshots.py).
     snapshot_schedule: str = "monthly"
@@ -97,6 +103,13 @@ class Settings(BaseSettings):
     oidc_default_role: str | None = None
     oidc_username_claim: str = "preferred_username"
     oidc_button_label: str = "Sign in with SSO"
+
+    # Largest request body (uploads are capped at 20 MB on their own).
+    max_body_mb: int = 25
+
+    @property
+    def demo_data_allowed(self) -> bool:
+        return self.demo_data or self.allow_demo_data
 
     @property
     def sso_enabled(self) -> bool:

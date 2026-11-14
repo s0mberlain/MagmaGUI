@@ -157,8 +157,8 @@ def test_import_rejects_other_files(admin):
     assert upload(admin, buf.getvalue()).status_code == 422
 
 
-def test_json_backup(admin):
+def test_json_export(admin):
     admin.post("/api/admin/demo-data", json={"seed": 2})
     b = admin.get("/api/export/json").json()
-    assert b["format"] == "magma-ucf-backup" and len(b["l3"]) > 169
+    assert b["format"] == "magma-ucf-export" and len(b["l3"]) > 169
     assert b["config_commits"] and b["verifications"]

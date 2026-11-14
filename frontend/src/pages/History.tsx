@@ -4,7 +4,7 @@ import { api, type LifecycleEvent, type SnapshotCompare, type Trends } from "../
 import { useAuth } from "../auth";
 import { driverLabel, DRIVER_TYPE_LABEL, loadMeta } from "../components/LifecyclePanel";
 import TrendChart from "../components/TrendChart";
-import { ErrorNote, Modal, StatusPill, useLoad } from "../components/ui";
+import { confirmDialog, ErrorNote, Modal, StatusPill, useLoad } from "../components/ui";
 import { fmtDate, pct, STATUS_LABEL } from "../lib/format";
 import { t } from "../i18n";
 
@@ -73,7 +73,12 @@ export default function History() {
   }
 
   async function remove(id: number, label: string) {
-    if (!window.confirm(t("Delete snapshot “{name}”?", { name: label || id }))) return;
+    const ok = await confirmDialog(t("Delete snapshot “{name}”?", { name: label || id }), {
+      title: t("Delete snapshot"),
+      confirmLabel: t("Delete"),
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.deleteSnapshot(id);
       void snaps.reload();

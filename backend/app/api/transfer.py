@@ -17,6 +17,8 @@ from app.models import (
     L1UseCase,
     L2UseCase,
     L3UseCase,
+    LifecycleEvent,
+    OutputMetric,
     ReferenceItem,
     Role,
     Verification,
@@ -40,7 +42,9 @@ def export_excel(_: Reader, db: DB) -> Response:
 
 @router.get("/export/json")
 def export_json(_: Reader, db: DB) -> dict:
-    """Full backup of the catalogue, verifications and configuration history."""
+    """Export of the catalogue with its history (verifications, lifecycle changes, output
+    metrics, configurations) for other tools. It is not a backup: users, API tokens, snapshots
+    and the audit log are not in it and it cannot be imported; back up the database for that."""
 
     def rows(model, *fields):
         return [{f: getattr(x, f) for f in fields} for x in db.scalars(select(model))]
@@ -56,8 +60,8 @@ def export_json(_: Reader, db: DB) -> dict:
     l2_code = dict(db.execute(select(L2UseCase.id, L2UseCase.code)).all())
     l3_code = dict(db.execute(select(L3UseCase.id, L3UseCase.code)).all())
     return {
-        "format": "magma-ucf-backup",
-        "version": 1,
+        "format": "magma-ucf-export",
+        "version": 2,
         "exported_at": date.today().isoformat(),
         "references": rows(ReferenceItem, "kind", "name", "description"),
         "business_drivers": rows(BusinessDriver, "code", "name", "description"),
@@ -82,12 +86,14 @@ def export_json(_: Reader, db: DB) -> dict:
                     f: getattr(x, f)
                     for f in (
                         "code name description lifecycle_status risk_level target_implementation "
-                        "onboarded_at last_verified_at last_verified_by"
+                        "onboarded_at last_verified_at last_verified_by dod"
                     ).split()
                 },
                 "actors": [a.name for a in x.actors],
                 "business_drivers": [b.code for b in x.business_drivers],
-                "compliance_drivers": [c.ref for c in x.compliance_drivers],
+                "compliance_drivers": [
+                    {"source": c.source.name, "ref": c.ref} for c in x.compliance_drivers
+                ],
             }
             for x in l2
         ],
@@ -98,7 +104,8 @@ def export_json(_: Reader, db: DB) -> dict:
                     for f in (
                         "code name description effectiveness implementation coverage "
                         "lifecycle_status comments attack_techniques onboarded_at "
-                        "last_verified_at last_verified_by verification_interval_days"
+                        "last_verified_at last_verified_by verification_interval_days "
+                        "siem_rule_ids risk_level target_implementation dod"
                     ).split()
                 },
                 "references": [{"kind": r.kind, "name": r.name} for r in x.references],
@@ -114,6 +121,33 @@ def export_json(_: Reader, db: DB) -> dict:
                 "note": v.note,
             }
             for v in db.scalars(select(Verification))
+        ],
+        "lifecycle_events": [
+            {
+                "use_case": l3_code.get(e.l3_id) or l2_code.get(e.l2_id),
+                "from_status": e.from_status,
+                "to_status": e.to_status,
+                "driver_type": e.driver_type,
+                "driver": e.driver,
+                "note": e.note,
+                "dod_override": e.dod_override,
+                "username": e.username,
+                "at": e.at,
+            }
+            for e in db.scalars(select(LifecycleEvent).order_by(LifecycleEvent.id))
+        ],
+        "output_metrics": [
+            {
+                "rule": l3_code.get(m.l3_id),
+                "period": m.period,
+                "alerts": m.alerts,
+                "incidents": m.incidents,
+                "false_positives": m.false_positives,
+                "false_negatives": m.false_negatives,
+                "note": m.note,
+                "source": m.source,
+            }
+            for m in db.scalars(select(OutputMetric).order_by(OutputMetric.id))
         ],
         "config_commits": [
             {

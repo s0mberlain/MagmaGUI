@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import type { Lifecycle } from "../api";
+import { useBlocker } from "react-router-dom";
+import { isLeavingSession, type Lifecycle } from "../api";
 import { STATUS_LABEL } from "../lib/format";
 import { t } from "../i18n";
 
@@ -197,4 +198,113 @@ export function ErrorNote({ error }: { error: string | null }) {
       {error}
     </p>
   ) : null;
+}
+
+/* ------------------------------------------------------------------ confirm dialog */
+
+export interface ConfirmOptions {
+  title?: string;
+  /** extra content under the question, e.g. the list of what is affected */
+  body?: ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+}
+
+interface Pending extends ConfirmOptions {
+  message: string;
+  resolve: (ok: boolean) => void;
+}
+
+let ask: ((message: string, opts?: ConfirmOptions) => Promise<boolean>) | null = null;
+
+/** The app's own "are you sure" dialog (instead of the browser's confirm box). */
+export function confirmDialog(message: string, opts?: ConfirmOptions): Promise<boolean> {
+  return ask ? ask(message, opts) : Promise.resolve(window.confirm(message));
+}
+
+/** Rendered once at the top of the app; shows the dialogs opened with confirmDialog(). */
+export function ConfirmHost() {
+  const [pending, setPending] = useState<Pending | null>(null);
+  useEffect(() => {
+    ask = (message, opts) => new Promise<boolean>((resolve) => setPending({ message, ...opts, resolve }));
+    return () => {
+      ask = null;
+    };
+  }, []);
+  if (!pending) return null;
+  const answer = (ok: boolean) => {
+    pending.resolve(ok);
+    setPending(null);
+  };
+  return (
+    <Modal title={pending.title ?? t("Please confirm")} open onClose={() => answer(false)}>
+      <div className="stack">
+        <p className="confirm-text">{pending.message}</p>
+        {pending.body}
+        <div className="row-actions">
+          <button type="button" className="btn" onClick={() => answer(false)}>
+            {pending.cancelLabel ?? t("Cancel")}
+          </button>
+          <button
+            type="button"
+            className={"btn " + (pending.danger ? "btn-danger-solid" : "btn-primary")}
+            autoFocus
+            onClick={() => answer(true)}
+          >
+            {pending.confirmLabel ?? t("Continue")}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ------------------------------------------------------------------ unsaved changes */
+
+/** Ask before leaving a page (link, back button, reload, closing the tab) with unsaved changes. */
+export function useUnsavedGuard(dirty: boolean) {
+  const blocker = useBlocker(() => dirty && !isLeavingSession());
+  useEffect(() => {
+    if (blocker.state !== "blocked") return;
+    void confirmDialog(t("You have unsaved changes on this page. Leave and discard them?"), {
+      title: t("Unsaved changes"),
+      confirmLabel: t("Discard changes"),
+      cancelLabel: t("Stay on the page"),
+      danger: true,
+    }).then((ok) => (ok ? blocker.proceed() : blocker.reset()));
+  }, [blocker]);
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+}
+
+/* ------------------------------------------------------------------ long lists */
+
+/** Show a long list in steps: `shown` rows now, `more()` adds the next step. */
+export function useShowMore<T>(items: T[], step = 50) {
+  const [limit, setLimit] = useState(step);
+  return {
+    shown: items.slice(0, limit),
+    rest: Math.max(0, items.length - limit),
+    more: () => setLimit((n) => n + step),
+    all: () => setLimit(items.length),
+  };
+}
+
+export function ShowMore({ rest, more, all }: { rest: number; more: () => void; all: () => void }) {
+  if (!rest) return null;
+  return (
+    <div className="show-more">
+      <button type="button" className="btn btn-sm" onClick={more}>
+        {t("Show more")}
+      </button>
+      <button type="button" className="link-btn small" onClick={all}>
+        {t("Show all ({n} more)", { n: rest })}
+      </button>
+    </div>
+  );
 }

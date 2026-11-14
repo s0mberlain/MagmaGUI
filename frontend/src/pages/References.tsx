@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
-import { api, type RefItem, type RefKind } from "../api";
+import { api, ApiError, type RefItem, type RefKind } from "../api";
 import { useAuth } from "../auth";
-import { ErrorNote, useLoad } from "../components/ui";
+import { confirmDialog, ErrorNote, useLoad } from "../components/ui";
 import { REF_KINDS } from "../lib/format";
 import { t } from "../i18n";
 
@@ -59,6 +59,49 @@ function RefList({ kind }: { kind: RefKind }) {
       return false;
     }
   };
+
+  /** Delete an entry. One that is still in use is only removed after the list of use cases was
+   *  shown and confirmed. */
+  async function remove(item: RefItem) {
+    setError(null);
+    const sure = await confirmDialog(t('Delete "{name}"?', { name: item.name }), {
+      title: t("Delete entry"),
+      confirmLabel: t("Delete"),
+      danger: true,
+    });
+    if (!sure) return;
+    try {
+      await api.deleteRef(kind, item.id);
+    } catch (e) {
+      const used = e instanceof ApiError && e.status === 409 ? (e.data as { used_by?: string[] })?.used_by : null;
+      if (!used) {
+        setError((e as Error).message);
+        return;
+      }
+      const ok = await confirmDialog(
+        t('"{name}" is used by {n} use cases or rules. Deleting it removes it from all of them.', {
+          name: item.name,
+          n: used.length,
+        }),
+        {
+          title: t("Entry is in use"),
+          confirmLabel: t("Delete and remove everywhere"),
+          danger: true,
+          body: (
+            <ul className="confirm-list mono">
+              {used.map((c) => (
+                <li key={c}>{c}</li>
+              ))}
+            </ul>
+          ),
+        },
+      );
+      if (!ok) return;
+      await run(() => api.deleteRef(kind, item.id, true));
+      return;
+    }
+    await list.reload();
+  }
 
   async function add(e: FormEvent) {
     e.preventDefault();
@@ -156,14 +199,7 @@ function RefList({ kind }: { kind: RefKind }) {
                         <button
                           type="button"
                           className="btn btn-sm"
-                          onClick={() => {
-                            if (
-                              window.confirm(
-                                t('Delete "{name}"? It is removed from every use case.', { name: item.name }),
-                              )
-                            )
-                              void run(() => api.deleteRef(kind, item.id));
-                          }}
+                          onClick={() => void remove(item)}
                         >
                           {t("Delete")}
                         </button>

@@ -104,7 +104,19 @@ h2 { font-size: 18px; }
   flex-direction: column;
   gap: 24px;
 }
-@media (max-width: 800px) { .sidebar { flex: 1 1 100%; } }
+.nav-menu { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.nav-group { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.nav-group-head { padding: 6px 12px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--c-nav-muted); }
+.nav-toggle { display: none; margin-left: auto; min-height: 36px; padding: 0 12px; border-radius: var(--radius); border: 1px solid var(--c-nav-active); background: transparent; color: #fff; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+.nav-toggle:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+/* Narrow screens: only the brand bar with a menu button; the menu opens on demand */
+@media (max-width: 800px) {
+  .sidebar { flex: 1 1 100%; padding: 10px 14px; position: sticky; top: 0; z-index: 20; }
+  .brand { padding: 4px 6px; }
+  .nav-toggle { display: inline-flex; align-items: center; }
+  .nav-menu { display: none; padding-top: 10px; max-height: calc(100vh - 70px); overflow-y: auto; }
+  .sidebar.is-open .nav-menu { display: flex; }
+}
 @media (max-width: 640px) { .content { padding: 20px 16px 40px; } }
 
 .page-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
@@ -117,7 +129,7 @@ h2 { font-size: 18px; }
   border-radius: var(--radius-lg);
   padding: 20px 22px;
 }
-.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 16px; }
 .kpi { display: flex; flex-direction: column; gap: 8px; }
 .kpi-label { font-size: 13px; font-weight: 500; color: var(--c-muted); }
 .kpi-value { font-family: var(--font-head); font-size: 34px; font-weight: 600; line-height: 1; }
@@ -626,3 +638,38 @@ button.rule-link { text-align: left; text-decoration: none; }
 .two-col.even { grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
 .table.table-compact { min-width: 0; } .table-compact td:first-child { min-width: 0; }
 .table-compact .code-tag { white-space: nowrap; }
+
+/* Review 2: confirm dialog, unsaved changes bar, long lists */
+.confirm-text { margin: 0; font-size: 14px; line-height: 1.5; }
+.confirm-list { margin: 0; padding: 10px 12px; max-height: 180px; overflow-y: auto; border: 1px solid var(--c-border); border-radius: var(--radius); font-size: 13px; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.btn-danger-solid { background: #b91c1c; border-color: #b91c1c; color: #fff; }
+.btn-danger-solid:hover:not(:disabled) { background: #991b1b; }
+.unsaved-bar { position: sticky; bottom: 12px; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-radius: var(--radius-lg); background: var(--c-nav-bg); color: #fff; font-size: 14px; box-shadow: 0 10px 30px rgba(22, 24, 29, 0.25); }
+.unsaved-bar .btn { border-color: var(--c-nav-active); }
+.unsaved-bar .btn-ghost { background: transparent; color: #fff; }
+.saved-tick { color: var(--c-ok-ink, #166534); font-size: 12px; font-weight: 500; }
+.show-more { display: flex; align-items: center; gap: 14px; padding: 12px 16px; }
+.instant-note { margin: 0; font-size: 12px; color: var(--c-muted); }
+.tree-l1-row { display: flex; align-items: center; gap: 4px; }
+.tree-l1-row .tree-l1 { flex: 1; min-width: 0; }
+.tree-edit { padding: 4px 8px; flex-shrink: 0; }
+.tree-l2-wrap { display: flex; flex-direction: column; }
+.tree-rule { display: flex; gap: 10px; align-items: baseline; padding: 4px 10px 4px 34px; font-size: 13px; color: var(--c-ink-2); text-decoration: none; border-radius: var(--radius-sm); }
+a.tree-rule:hover { background: var(--c-subtle); color: var(--c-ink); }
+.push-left { margin-right: auto; }
+.kpi-good { font-size: 11px; font-weight: 500; color: var(--c-muted); margin-top: auto; }
+/* A table wider than its card scrolls sideways; a soft shadow at the edge shows there is more */
+.table-card, .scroll-x {
+  background:
+    linear-gradient(to right, var(--c-surface) 30%, rgba(255, 255, 255, 0)) left center,
+    linear-gradient(to left, var(--c-surface) 30%, rgba(255, 255, 255, 0)) right center,
+    radial-gradient(farthest-side at 0 50%, rgba(22, 24, 29, 0.16), rgba(22, 24, 29, 0)) left center,
+    radial-gradient(farthest-side at 100% 50%, rgba(22, 24, 29, 0.16), rgba(22, 24, 29, 0)) right center;
+  background-repeat: no-repeat;
+  background-size: 48px 100%, 48px 100%, 14px 100%, 14px 100%;
+  background-attachment: local, local, scroll, scroll;
+  background-color: var(--c-surface);
+}
+/* visually hidden cells are positioned absolutely: keep them inside the scrolling card, or they
+   widen the whole page on a phone */
+.table-card, .scroll-x { position: relative; }

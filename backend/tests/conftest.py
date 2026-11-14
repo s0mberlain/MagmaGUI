@@ -42,6 +42,7 @@ def settings(tmp_path, db_url) -> Settings:
         admin_user="admin",
         admin_password=ADMIN_PW,
         snapshot_schedule="off",
+        allow_demo_data=True,
     )
 
 

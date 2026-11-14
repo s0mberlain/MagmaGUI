@@ -44,6 +44,7 @@ export default function LifecyclePanel({
   const [dialog, setDialog] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [ticked, setTicked] = useState(false);
 
   const s = state.data;
   const m = meta.data;
@@ -51,8 +52,12 @@ export default function LifecyclePanel({
 
   async function tick(key: string, done: boolean) {
     setError(null);
+    setTicked(false);
     try {
-      state.setData(await api.setDod(level, code, { [key]: done }));
+      const next = await api.setDod(level, code, { [key]: done });
+      state.setData(next);
+      setTicked(true);
+      onChanged?.(next.status); // the use case changed: pages reload their copy of it
     } catch (e) {
       setError((e as Error).message);
     }
@@ -78,8 +83,15 @@ export default function LifecyclePanel({
       <div className="stack-sm">
         <div className="section-head">
           <h3 className="h-sm">{t("Definition of done")}</h3>
-          <span className={doneCount === 5 ? "pill pill-ok" : "pill pill-warn"}>
-            {doneCount} {t("of")} {s?.dod.length ?? 5}
+          <span className="chips">
+            {ticked && (
+              <span className="saved-tick" role="status">
+                {t("Saved")}
+              </span>
+            )}
+            <span className={s && doneCount === s.dod.length ? "pill pill-ok" : "pill pill-warn"}>
+              {doneCount} {t("of")} {s?.dod.length ?? 5}
+            </span>
           </span>
         </div>
         <ul className="dod">
@@ -170,9 +182,10 @@ function ChangeDialog({
 }) {
   const { can } = useAuth();
   const admin = can("admin");
-  const choices = LIFECYCLES.filter((x) => x !== state.status);
+  // the server says what may follow (a retired use case starts again with onboarding)
+  const choices = LIFECYCLES.filter((x) => x !== state.status && (state.allowed ?? LIFECYCLES).includes(x));
   const [to, setTo] = useState<Lifecycle>(
-    state.status === "onboarding" ? "operational" : state.status === "operational" ? "maintenance" : choices[0],
+    state.status === "onboarding" ? "operational" : state.status === "operational" ? "maintenance" : choices[0]!,
   );
   const [driverType, setDriverType] = useState("operational");
   const [driver, setDriver] = useState(meta.drivers.operational[0].key);
@@ -262,6 +275,11 @@ function ChangeDialog({
             onChange={(e) => setNote(e.target.value)}
           />
         </label>
+        {to === "onboarding" && state.dod.some((d) => d.done) && (
+          <p className="form-notice">
+            {t("Back to onboarding empties the definition of done: the way to Operational needs a fresh checklist.")}
+          </p>
+        )}
         {missing.length > 0 && (
           <div className="form-notice stack-xs">
             <strong>{t("The definition of done is not complete.")}</strong>

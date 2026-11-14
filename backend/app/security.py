@@ -43,7 +43,7 @@ def as_utc(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
-def create_session(db: Session, user: User, settings: Settings) -> str:
+def create_session(db: Session, user: User, settings: Settings, hours: int | None = None) -> str:
     token = secrets.token_urlsafe(32)
     now = datetime.now(UTC)
     db.execute(delete(UserSession).where(UserSession.expires_at < now))
@@ -51,7 +51,7 @@ def create_session(db: Session, user: User, settings: Settings) -> str:
         UserSession(
             token_hash=_token_hash(token),
             user_id=user.id,
-            expires_at=now + timedelta(hours=settings.session_hours),
+            expires_at=now + timedelta(hours=hours or settings.session_hours),
         )
     )
     return token

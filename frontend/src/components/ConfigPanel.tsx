@@ -9,7 +9,7 @@ import {
   type YamlCheck,
 } from "../api";
 import { fmtDate } from "../lib/format";
-import { ErrorNote, useLoad } from "./ui";
+import { confirmDialog, ErrorNote, useLoad } from "./ui";
 import { t } from "../i18n";
 
 type Tab = "editor" | "history" | "diff";
@@ -173,8 +173,11 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
   }
 
   async function restore(c: ConfigCommit) {
-    if (!window.confirm(t("Restore r{rev}? This adds a new commit with the content of r{rev}.", { rev: c.rev })))
-      return;
+    const ok = await confirmDialog(
+      t("Restore r{rev}? This adds a new commit with the content of r{rev}.", { rev: c.rev }),
+      { title: t("Restore configuration"), confirmLabel: t("Restore") },
+    );
+    if (!ok) return;
     setError(null);
     try {
       const n = await api.restoreConfig(level, code, c.sha);

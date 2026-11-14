@@ -200,7 +200,12 @@ def push_alerts(
         if it.get("false_negatives") is not None:
             acc["false_negatives"] = (acc["false_negatives"] or 0) + it["false_negatives"]
 
+    # Several SIEM rules can belong to one use case rule: add their counts up per rule and month
+    # first, otherwise "replace" would keep only the last one.
     matched, unmatched = set(), set()
+    per_rule: dict[tuple[int, date], dict] = {}
+    targets: dict[int, L3UseCase] = {}
+    labels: dict[tuple[int, date], list[str]] = {}
     for (rid, period), vals in sums.items():
         l3s = idx.get(rid.lower())
         if not l3s:
@@ -208,41 +213,50 @@ def push_alerts(
             continue
         matched.add(rid)
         for l3 in l3s:
-            m = db.scalar(
-                select(OutputMetric).where(
-                    OutputMetric.l3_id == l3.id, OutputMetric.period == period
-                )
+            targets[l3.id] = l3
+            labels.setdefault((l3.id, period), []).append(rid)
+            acc = per_rule.setdefault(
+                (l3.id, period),
+                {"alerts": 0, "incidents": 0, "false_positives": 0, "false_negatives": None},
             )
-            new = dict(vals)
-            if m is not None and mode == "add":
-                new["alerts"] += m.alerts
-                new["incidents"] += m.incidents
-                new["false_positives"] += m.false_positives
-                if m.false_negatives is not None or new["false_negatives"] is not None:
-                    new["false_negatives"] = (m.false_negatives or 0) + (
-                        new["false_negatives"] or 0
-                    )
-            if new["false_positives"] > new["alerts"]:
-                rep.errors.append(
-                    f"{rid} {period:%Y-%m}: false positives ({new['false_positives']}) "
-                    f"exceed alerts ({new['alerts']})"
-                )
+            for k in ("alerts", "incidents", "false_positives"):
+                acc[k] += vals[k]
+            if vals["false_negatives"] is not None:
+                acc["false_negatives"] = (acc["false_negatives"] or 0) + vals["false_negatives"]
+
+    for (l3_id, period), new in per_rule.items():
+        l3 = targets[l3_id]
+        rid = ", ".join(labels[(l3_id, period)])
+        m = db.scalar(
+            select(OutputMetric).where(OutputMetric.l3_id == l3.id, OutputMetric.period == period)
+        )
+        if m is not None and mode == "add":
+            new["alerts"] += m.alerts
+            new["incidents"] += m.incidents
+            new["false_positives"] += m.false_positives
+            if m.false_negatives is not None or new["false_negatives"] is not None:
+                new["false_negatives"] = (m.false_negatives or 0) + (new["false_negatives"] or 0)
+        if new["false_positives"] > new["alerts"]:
+            rep.errors.append(
+                f"{rid} {period:%Y-%m}: false positives ({new['false_positives']}) "
+                f"exceed alerts ({new['alerts']})"
+            )
+            continue
+        if m is None:
+            rep.created += 1
+            if dry_run:
                 continue
-            if m is None:
-                rep.created += 1
-                if dry_run:
-                    continue
-                m = OutputMetric(l3_id=l3.id, period=period, note="")
-                db.add(m)
-            else:
-                rep.updated += 1
-                if dry_run:
-                    continue
-            m.alerts, m.incidents = new["alerts"], new["incidents"]
-            m.false_positives, m.false_negatives = new["false_positives"], new["false_negatives"]
-            m.source, m.updated_by = "siem", user
-            if not m.note:
-                m.note = f"from {src.name}"
+            m = OutputMetric(l3_id=l3.id, period=period, note="")
+            db.add(m)
+        else:
+            rep.updated += 1
+            if dry_run:
+                continue
+        m.alerts, m.incidents = new["alerts"], new["incidents"]
+        m.false_positives, m.false_negatives = new["false_positives"], new["false_negatives"]
+        m.source, m.updated_by = "siem", user
+        if not m.note:
+            m.note = f"from {src.name}"
     rep.matched = sorted(matched)
     rep.unmatched = sorted(unmatched)
     if not dry_run:

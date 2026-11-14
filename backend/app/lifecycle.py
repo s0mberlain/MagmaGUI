@@ -39,6 +39,34 @@ DRIVERS = {
 DRIVER_TYPES = [*DRIVERS, "unspecified"]
 
 
+# A retired use case starts again with onboarding (and a fresh checklist); everything else may
+# follow anything, because real life does not keep to a neat order.
+BLOCKED_TRANSITIONS = {
+    Lifecycle.retired: frozenset(
+        {Lifecycle.operational, Lifecycle.maintenance, Lifecycle.offloading}
+    )
+}
+
+
+def allowed_targets(current: Lifecycle | None) -> list[Lifecycle]:
+    blocked = BLOCKED_TRANSITIONS.get(current, frozenset())
+    return [s for s in Lifecycle if s != current and s not in blocked]
+
+
+def transition_error(old: Lifecycle | None, new: Lifecycle) -> str | None:
+    if new in BLOCKED_TRANSITIONS.get(old, frozenset()):
+        return f"A {old.value} use case goes back to onboarding first, not straight to {new.value}"
+    return None
+
+
+def apply_status(obj: L2UseCase | L3UseCase, new: Lifecycle) -> None:
+    """Set the status. Going back to onboarding empties the definition of done, so the way to
+    Operational needs a fresh checklist."""
+    if new == Lifecycle.onboarding and obj.lifecycle_status != Lifecycle.onboarding and obj.dod:
+        obj.dod = {}
+    obj.lifecycle_status = new
+
+
 def dod_missing(obj: L2UseCase | L3UseCase) -> list[str]:
     done = obj.dod or {}
     return [k for k in DOD_KEYS if k not in done]

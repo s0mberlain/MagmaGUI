@@ -58,6 +58,12 @@ def update_user(user_id: int, body: UserUpdate, admin: Admin, db: DB) -> User:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "API token accounts can only be analyst or auditor"
         )
+    if user.auth_source == AuthSource.sso and "role" in data and data["role"] != user.role:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "The role of an SSO account comes from the identity provider groups (OIDC_ROLE_MAP) "
+            "and would be reset at the next sign-in. Change the group there.",
+        )
     demoting = ("role" in data and data["role"] != Role.admin) or data.get("active") is False
     if user.role == Role.admin and user.active and demoting and _active_admins(db) <= 1:
         raise HTTPException(status.HTTP_409_CONFLICT, "Cannot remove the last active admin")

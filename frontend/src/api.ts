@@ -101,6 +101,8 @@ export interface DueRule {
   due: string | null;
   overdue: boolean;
   days_left: number | null;
+  /** date of the latest check when it found issues (it does not count as verified) */
+  issues_at: string | null;
 }
 
 export interface Verification {
@@ -150,6 +152,7 @@ export interface L2 {
   onboarded_at: string | null;
   last_verified_at: string | null;
   last_verified_by: string | null;
+  updated_at: string | null;
   actors: string[];
   business_drivers: string[];
   compliance_driver_ids: number[];
@@ -196,10 +199,21 @@ export interface L3 {
   scored: boolean;
   verification_due: string | null;
   verification_overdue: boolean;
+  /** date of the latest check when it found issues (it does not count as verified) */
+  issues_at: string | null;
+}
+
+/** updated_at the edit started from: the save is refused (409) when someone saved in between. */
+interface Expected {
+  expected_updated_at?: string | null;
 }
 
 export type L2Input = Partial<
-  Omit<L2, "id" | "l1_code" | "l3_count" | "last_verified_by" | "compliance_drivers">
+  Omit<L2, "id" | "l1_code" | "l3_count" | "last_verified_by" | "compliance_drivers" | "updated_at">
+> &
+  Expected;
+export type L1Input = Partial<
+  Pick<L1, "name" | "threat_category" | "purpose" | "stakeholders" | "description" | "applicable" | "sort_order">
 >;
 export type L3Input = Partial<
   Omit<
@@ -223,8 +237,10 @@ export type L3Input = Partial<
     | "priority"
     | "business_drivers"
     | "compliance_drivers"
+    | "issues_at"
   >
->;
+> &
+  Expected;
 
 export interface RefItem {
   id: number;
@@ -374,6 +390,8 @@ export interface LifecycleState {
   status: Lifecycle;
   dod: { key: string; done: boolean; by: string | null; at: string | null }[];
   dod_complete: boolean;
+  /** statuses the use case may change to from here */
+  allowed: Lifecycle[];
   events: LifecycleEvent[];
 }
 export interface LifecycleChange {
@@ -635,12 +653,24 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** the JSON body of the error answer, e.g. the use cases that block a delete */
+    public data: unknown = null,
   ) {
     super(message);
   }
 }
 
 /** Called on any 401 so the app can send the user to the login page. */
+// True from the moment the session ends (expired or signed out): pages then let the redirect to
+// the login page through instead of asking about unsaved changes.
+let leavingSession = false;
+export function isLeavingSession(): boolean {
+  return leavingSession;
+}
+export function setLeavingSession(v: boolean) {
+  leavingSession = v;
+}
+
 let onUnauthorized: () => void = () => {};
 export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn;
@@ -663,8 +693,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       const d = data as { detail: string; head: ConfigCommit | null; diff: ConflictError["diff"] };
       throw new ConflictError(d.detail, d.head, d.diff);
     }
-    if (res.status === 401 && !path.startsWith("/api/auth/")) onUnauthorized();
-    throw new ApiError(res.status, detailMessage(data) ?? `${res.status} ${res.statusText}`);
+    if (res.status === 401 && !path.startsWith("/api/auth/")) {
+      leavingSession = true;
+      onUnauthorized();
+    }
+    throw new ApiError(res.status, detailMessage(data) ?? `${res.status} ${res.statusText}`, data);
   }
   return data as T;
 }
@@ -714,6 +747,9 @@ export const api = {
     request<Verification[]>("GET", `/api/${level}/${enc(code)}/verifications`),
 
   l1s: () => request<L1[]>("GET", "/api/l1"),
+  createL1: (body: L1Input & { code: string; name: string }) => request<L1>("POST", "/api/l1", body),
+  updateL1: (code: string, body: L1Input) => request<L1>("PATCH", `/api/l1/${enc(code)}`, body),
+  deleteL1: (code: string) => request<void>("DELETE", `/api/l1/${enc(code)}`),
   l2s: (l1?: string) => request<L2[]>("GET", `/api/l2${l1 ? `?l1=${enc(l1)}` : ""}`),
   l2: (code: string) => request<L2>("GET", `/api/l2/${enc(code)}`),
   createL2: (body: L2Input & { code: string; name: string }) => request<L2>("POST", "/api/l2", body),
@@ -732,7 +768,9 @@ export const api = {
     request<RefItem>("POST", `/api/references/${kind}`, body),
   updateRef: (kind: RefKind, id: number, body: { name: string; description: string }) =>
     request<RefItem>("PATCH", `/api/references/${kind}/${id}`, body),
-  deleteRef: (kind: RefKind, id: number) => request<void>("DELETE", `/api/references/${kind}/${id}`),
+  /** Refused with 409 and `used_by` (use case codes) while the entry is in use and not confirmed. */
+  deleteRef: (kind: RefKind, id: number, confirm = false) =>
+    request<void>("DELETE", `/api/references/${kind}/${id}${confirm ? "?confirm=true" : ""}`),
 
   drivers: () => request<BusinessDriver[]>("GET", "/api/business-drivers"),
   createDriver: (body: Omit<BusinessDriver, "id">) => request<BusinessDriver>("POST", "/api/business-drivers", body),
@@ -781,7 +819,7 @@ export const api = {
     fd.append("dry_run", String(dryRun));
     const res = await fetch("/api/import/excel", { method: "POST", body: fd, credentials: "same-origin" });
     const data = await res.json().catch(() => null);
-    if (!res.ok) throw new ApiError(res.status, detailMessage(data) ?? `${res.status} ${res.statusText}`);
+    if (!res.ok) throw new ApiError(res.status, detailMessage(data) ?? `${res.status} ${res.statusText}`, data);
     return data as ImportReport;
   },
 
@@ -838,10 +876,11 @@ export const api = {
     fd.append("dry_run", String(dryRun));
     const res = await fetch("/api/import/output-metrics", { method: "POST", body: fd, credentials: "same-origin" });
     const data = await res.json().catch(() => null);
-    if (!res.ok) throw new ApiError(res.status, detailMessage(data) ?? `${res.status} ${res.statusText}`);
+    if (!res.ok) throw new ApiError(res.status, detailMessage(data) ?? `${res.status} ${res.statusText}`, data);
     return data as CsvReport;
   },
 
+  demoDataAllowed: () => request<{ allowed: boolean }>("GET", "/api/admin/demo-data"),
   demoData: (seed: number) => request<Record<string, number>>("POST", "/api/admin/demo-data", { seed }),
 };
 

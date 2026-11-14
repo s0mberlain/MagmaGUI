@@ -23,6 +23,16 @@ PERIOD_RE = re.compile(r"^(\d{4})-(\d{1,2})(?:-\d{1,2})?$")
 Count = Annotated[int, Field(ge=0, le=10_000_000)]
 
 
+def csv_safe(value: str) -> str:
+    """Text for a CSV cell: a spreadsheet would run a cell starting with = + - @ as a formula."""
+    return "'" + value if value[:1] in ("=", "+", "-", "@", "\t", "\r") else value
+
+
+def csv_plain(value: str) -> str:
+    """Undo csv_safe when an exported file is imported again."""
+    return value[1:] if value[:1] == "'" and value[1:2] in ("=", "+", "-", "@") else value
+
+
 def parse_period(s: str) -> date:
     m = PERIOD_RE.match(s.strip())
     if not m or not 1 <= int(m.group(2)) <= 12:
@@ -283,7 +293,7 @@ def export_csv(_: Reader, db: DB) -> Response:
                 m.incidents,
                 m.false_positives,
                 "" if m.false_negatives is None else m.false_negatives,
-                m.note,
+                csv_safe(m.note),
             ]
         )
     return Response(
@@ -329,7 +339,8 @@ async def import_csv(
         dialect = csv.Sniffer().sniff(text.splitlines()[0] if text else ",", delimiters=",;\t")
     except csv.Error:
         dialect = csv.excel
-    rows = list(csv.reader(io.StringIO(text), dialect))
+    # only the separator is taken from the guess: its quoting rules break notes with quotes
+    rows = list(csv.reader(io.StringIO(text), delimiter=dialect.delimiter))
     if not rows:
         raise HTTPException(422, "The file is empty")
     head = [h.strip().lower() for h in rows[0]]
@@ -380,7 +391,7 @@ async def import_csv(
                 incidents=num(row, "incidents"),
                 false_positives=num(row, "false_positives"),
                 false_negatives=num(row, "false_negatives", optional=True),
-                note=cell(row, "note")[:1000],
+                note=csv_plain(cell(row, "note"))[:1000],
             )
             _check(body)
         except (ValueError, TypeError) as e:

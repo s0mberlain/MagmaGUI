@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import event, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
+from swagger_ui_bundle import swagger_ui_path
 
 from app import __version__, gitsync
 from app import snapshots as snapshot_jobs
@@ -40,6 +41,8 @@ from app.security import Reader
 from app.startup import initialize
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+DOCS_ASSETS = {"swagger-ui-bundle.js", "swagger-ui.css", "favicon-32x32.png"}
 
 system = APIRouter(tags=["system"])
 
@@ -126,7 +129,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url=None,
         lifespan=lifespan,
     )
-    app.add_middleware(SecurityHeaders, hsts=settings.cookie_secure)
+    app.add_middleware(
+        SecurityHeaders, hsts=settings.cookie_secure, max_body=settings.max_body_mb * 1024 * 1024
+    )
 
     @app.exception_handler(IntegrityError)
     async def _conflict(_: Request, exc: IntegrityError) -> JSONResponse:
@@ -160,7 +165,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @docs_router.get("/docs")
     def docs(_: Reader) -> HTMLResponse:
-        return get_swagger_ui_html(openapi_url="/api/openapi.json", title=settings.app_name)
+        # Swagger UI from the installed package, not from a CDN: works in a closed network and
+        # no third party script runs in the app's origin.
+        return get_swagger_ui_html(
+            openapi_url="/api/openapi.json",
+            title=settings.app_name,
+            swagger_js_url="/api/docs-assets/swagger-ui-bundle.js",
+            swagger_css_url="/api/docs-assets/swagger-ui.css",
+            swagger_favicon_url="/api/docs-assets/favicon-32x32.png",
+        )
+
+    @docs_router.get("/docs-assets/{name}")
+    def docs_asset(name: str, _: Reader) -> FileResponse:
+        if name not in DOCS_ASSETS:
+            raise HTTPException(status_code=404)
+        return FileResponse(Path(swagger_ui_path) / name)
 
     for r in (
         system,

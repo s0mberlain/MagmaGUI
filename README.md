@@ -24,11 +24,16 @@ later has no effect. To set a new password (it also unlocks the account and sign
 docker compose exec magma magma reset-password                # asks for the new password
 docker compose exec magma magma reset-password --from-env     # takes ADMIN_PASSWORD from .env
 docker compose exec magma magma reset-password alice --disable-totp   # lost authenticator too
+docker compose exec magma magma reset-password alice --enable         # also re-enable a disabled account
 ```
+
+A disabled account stays disabled unless you pass `--enable`.
 
 Behind a reverse proxy, set `FORWARDED_ALLOW_IPS` to the proxy's address so the audit log records
 the real client address (the image trusts only `127.0.0.1` by default; never use `*` when the
-port is reachable directly).
+port is reachable directly). Without it every user appears to come from the proxy's address, so the
+per-address sign-in limit counts all users together; the app logs a warning once when it sees
+this.
 
 ## PostgreSQL
 
@@ -102,8 +107,10 @@ npm run build
   perfect rule in one of ten L2s gives a 100 % SOC score but 10 % catalogue coverage.
 - Verification: operational rules must be re-verified every `DEFAULT_VERIFICATION_DAYS` (180) days
   unless the rule sets its own interval. Never verified counts as overdue.
-- Demo data: start with `DEMO_DATA=true`, use *Users → Demo data* (admin), or run
-  `python -m app.demo --seed 42` in `backend/`.
+- Demo data: start with `DEMO_DATA=true`, or run `python -m app.demo --seed 42` in `backend/`.
+  With `ALLOW_DEMO_DATA=true` (or `DEMO_DATA=true`) admins can also load it from
+  *Import / Export*. Loading deletes the verification, lifecycle and configuration history, so
+  leave both off in production.
 
 ## YAML configurations
 
@@ -232,8 +239,9 @@ including the original tool, with a preview before anything is saved. The L2 bus
 regulator columns hold one value each, as in the classic tool: export writes the first link
 there and every link in the app columns *All business drivers* and *All compliance drivers*;
 import links both, and an unknown code is a warning in the preview. *Merge* adds and updates by
-ID; *Replace* (admin) also removes what is not in the file. A JSON backup export includes
-verifications and the configuration history.
+ID; *Replace* (admin) also removes what is not in the file. A JSON export includes
+verifications, the change log, output metrics and the configuration history. It is meant for
+reporting and other tools and cannot be imported again; back up the database itself.
 
 Import follows the same rules as the app: a use case only becomes *Operational* through the import
 when its definition of done is complete (admins may skip it, which is logged), every status change
@@ -277,6 +285,11 @@ second factor of the identity provider.
   in the app. Protect the branch like you would the analyst role. Imported commits are shown with
   a `git:` prefix before the git author name (it is self-asserted), and a `Magma-Commit` trailer
   in someone else's commit is only trusted when the content matches the app's commit.
+- SSO sessions last `SSO_SESSION_HOURS` (8) instead of `SESSION_HOURS`, and the role of an SSO
+  account is set by the identity provider only.
+- Requests larger than `MAX_BODY_MB` (25) are refused with 413, and text fields have length
+  limits.
+- The API docs load their assets from the app itself, not from a CDN.
 - The SSO login page shows fixed texts only; IdP error details go to the log.
 
 ## Languages

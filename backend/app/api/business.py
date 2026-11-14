@@ -12,6 +12,8 @@ from app.models import (
     BusinessDriver,
     ComplianceDriver,
     ComplianceSource,
+    L2UseCase,
+    L3UseCase,
     ReferenceItem,
     RefKind,
 )
@@ -81,14 +83,40 @@ def update_ref(kind: RefKind, item_id: int, body: RefItemIn, user: Editor, db: D
     return item
 
 
-@router.delete("/references/{kind}/{item_id}", status_code=204)
-def delete_ref(kind: RefKind, item_id: int, user: Editor, db: DB) -> None:
+def _ref_users(db, item: ReferenceItem) -> list[str]:
+    """Codes of the use cases and rules that use a reference list entry."""
+    l2 = db.scalars(select(L2UseCase.code).where(L2UseCase.actors.any(ReferenceItem.id == item.id)))
+    l3 = db.scalars(
+        select(L3UseCase.code).where(L3UseCase.references.any(ReferenceItem.id == item.id))
+    )
+    return sorted([*l2, *l3])
+
+
+@router.delete("/references/{kind}/{item_id}", status_code=204, response_model=None)
+def delete_ref(
+    kind: RefKind,
+    item_id: int,
+    user: Editor,
+    db: DB,
+    confirm: bool = Query(False, description="Also remove the entry from the use cases using it"),
+) -> JSONResponse | None:
     item = _get(db, ReferenceItem, item_id)
     if item.kind != kind:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
-    audit.record(db, user, "delete", kind.value, item.name)
+    used = _ref_users(db, item)
+    if used and not confirm:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "detail": f"{item.name} is used by {len(used)} use cases or rules; "
+                "repeat with confirm=true to remove it from them",
+                "used_by": used,
+            },
+        )
+    audit.record(db, user, "delete", kind.value, item.name, {"unlinked": used} if used else None)
     db.delete(item)
     _commit(db, "Entry")
+    return None
 
 
 # ---------------------------------------------------------------- links and coverage

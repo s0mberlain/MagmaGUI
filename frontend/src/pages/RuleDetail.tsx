@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { flushSync } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, type L3, type RefItem } from "../api";
 import { useAuth } from "../auth";
@@ -6,7 +7,7 @@ import ConfigPanel from "../components/ConfigPanel";
 import LifecyclePanel from "../components/LifecyclePanel";
 import { DriverBlock } from "../components/Drivers";
 import OutputPanel from "../components/OutputPanel";
-import { ErrorNote, MultiSelect, StatusPill, useLoad } from "../components/ui";
+import { confirmDialog, ErrorNote, MultiSelect, StatusPill, useLoad, useUnsavedGuard } from "../components/ui";
 import { fmtDate, num, pct } from "../lib/format";
 import { VerifiedCell, VerifyDialog } from "./UseCases";
 import { t } from "../i18n";
@@ -83,9 +84,21 @@ export default function RuleDetail() {
   const [busy, setBusy] = useState(false);
   const [verifying, setVerifying] = useState(false);
 
+  // The form follows the server data, except while it has unsaved edits: changing the status,
+  // ticking the checklist or verifying reloads the rule and must not throw those edits away.
+  const base = useRef<string | null>(null);
   useEffect(() => {
-    if (rule.data) setForm(toForm(rule.data));
+    if (!rule.data) return;
+    const next = toForm(rule.data);
+    setForm((f) => (f && base.current !== null && JSON.stringify(f) !== base.current ? f : next));
+    base.current = JSON.stringify(next);
   }, [rule.data]);
+  useEffect(() => {
+    base.current = null; // another rule: start from its data
+  }, [code]);
+
+  const isDirty = !!form && !!rule.data && JSON.stringify(form) !== JSON.stringify(toForm(rule.data));
+  useUnsavedGuard(isDirty);
 
   if (rule.error) return <ErrorNote error={rule.error} />;
   if (!rule.data || !form) return <p className="muted">{t("Loading…")}</p>;
@@ -101,7 +114,11 @@ export default function RuleDetail() {
   const assessed = e !== null && i !== null && c !== null;
   const weight = assessed ? e * i * c : null;
   const potential = assessed ? e - weight! : null;
-  const dirty = JSON.stringify(form) !== JSON.stringify(toForm(r));
+  const dirty = isDirty;
+  const discard = () => {
+    setForm(toForm(r));
+    setError(null);
+  };
 
   async function save(ev: FormEvent) {
     ev.preventDefault();
@@ -131,7 +148,9 @@ export default function RuleDetail() {
         risk_level: form.risk ? Number(form.risk) : null,
         target_implementation: form.target === "" ? null : Number(form.target) / 100,
         comments: form.comments,
+        expected_updated_at: r.updated_at,
       });
+      base.current = null; // saved: take over what the server stored
       rule.setData(updated);
       setSaved(t("Saved."));
     } catch (err) {
@@ -142,9 +161,17 @@ export default function RuleDetail() {
   }
 
   async function remove() {
-    if (!window.confirm(t("Delete rule {code}? This cannot be undone.", { code }))) return;
+    const ok = await confirmDialog(
+      t(
+        "Delete rule {code}? Its verifications, status changes, output metrics and configuration history are deleted with it. This cannot be undone.",
+        { code },
+      ),
+      { title: t("Delete rule"), confirmLabel: t("Delete"), danger: true },
+    );
+    if (!ok) return;
     try {
       await api.deleteL3(code);
+      flushSync(() => setForm(toForm(r))); // nothing left to save: no "unsaved changes" question
       navigate(`/usecases?l2=${r.l2_code}`);
     } catch (err) {
       setError((err as Error).message);
@@ -212,7 +239,7 @@ export default function RuleDetail() {
         </header>
         {!editor && <p className="form-notice">{t("Read-only: your role cannot change rules.")}</p>}
         <ErrorNote error={error} />
-        {saved && (
+        {saved && !dirty && (
           <p className="form-notice" role="status">
             {saved}
           </p>
@@ -316,6 +343,13 @@ export default function RuleDetail() {
                   : t(" · default interval")}
                 {r.last_verified_by && ` · ${t("last by {user}", { user: r.last_verified_by })}`}
               </p>
+              {r.issues_at && (
+                <p className="form-error" role="status">
+                  {t("The last check on {date} found issues. It does not count as verified until a check is OK.", {
+                    date: fmtDate(r.issues_at),
+                  })}
+                </p>
+              )}
               <ErrorNote error={history.error} />
               {history.data && !history.data.length && <p className="muted small">{t("No verifications recorded.")}</p>}
               <ul className="history">
@@ -336,6 +370,13 @@ export default function RuleDetail() {
             </section>
 
             <LifecyclePanel level="l3" code={code} onChanged={() => void rule.reload()} />
+            {editor && (
+              <p className="instant-note">
+                {t(
+                  "Checklist, status, verification, output metrics and configuration are saved as soon as you change them. Everything else on this page is saved with “Save changes”.",
+                )}
+              </p>
+            )}
           </div>
 
           <div className="split-wide stack-lg">
@@ -477,6 +518,19 @@ export default function RuleDetail() {
             <ConfigPanel level="l3" code={code} editor={editor} />
           </div>
         </div>
+        {editor && dirty && (
+          <div className="unsaved-bar" role="status">
+            <span>{t("Unsaved changes to the rule details and metrics.")}</span>
+            <span className="row-actions">
+              <button type="button" className="btn btn-ghost" onClick={discard} disabled={busy}>
+                {t("Discard")}
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={busy}>
+                {busy ? t("Saving…") : t("Save changes")}
+              </button>
+            </span>
+          </div>
+        )}
       </form>
 
       {verifying && (

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type DueRule } from "../api";
 import { useAuth } from "../auth";
-import { ErrorNote, StatusPill, useLoad } from "../components/ui";
+import { ErrorNote, ShowMore, StatusPill, useLoad, useShowMore } from "../components/ui";
 import { fmtDate } from "../lib/format";
 import { DueBadge } from "./Dashboard";
 import { VerifyDialog } from "./UseCases";
@@ -22,9 +22,13 @@ export default function Verification() {
   const due = useLoad<DueRule[]>(() => api.due(days), [days]);
   const scores = useLoad(() => api.scores());
   const k = scores.data?.kpis;
-  const rows = due.data?.filter((d) => days > 0 || d.overdue) ?? [];
+  // a rule whose last check found issues is always listed, whatever its due date
+  const rows = due.data?.filter((d) => days > 0 || d.overdue || d.issues_at) ?? [];
   const never = rows.filter((d) => !d.due).length;
   const overdue = rows.filter((d) => d.due && d.overdue).length;
+  const failed = rows.filter((d) => d.issues_at).length;
+  const soon = rows.filter((d) => d.due && !d.overdue && !d.issues_at).length;
+  const page = useShowMore(rows, 50);
 
   return (
     <>
@@ -62,8 +66,13 @@ export default function Verification() {
         </div>
         <div className="card kpi">
           <span className="kpi-label">{t("Due soon")}</span>
-          <span className="kpi-value">{due.data ? rows.length - never - overdue : "–"}</span>
+          <span className="kpi-value">{due.data ? soon : "–"}</span>
           <span className="kpi-sub">{t("Within the chosen window")}</span>
+        </div>
+        <div className="card kpi">
+          <span className="kpi-label">{t("Failed last check")}</span>
+          <span className="kpi-value">{due.data ? failed : "–"}</span>
+          <span className="kpi-sub">{t("Issues found, not verified until a check is OK")}</span>
         </div>
       </section>
 
@@ -95,7 +104,7 @@ export default function Verification() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((d) => (
+            {page.shown.map((d) => (
               <tr key={d.code}>
                 <td>
                   <Link to={`/usecases/l3/${d.code}`} className="rule-link">
@@ -112,7 +121,17 @@ export default function Verification() {
                 </td>
                 <td>{fmtDate(d.due)}</td>
                 <td>
-                  <DueBadge d={d} />
+                  <span className="chips">
+                    <DueBadge d={d} />
+                    {d.issues_at && (
+                      <span
+                        className="badge-gap"
+                        title={t("The last check on {date} found issues", { date: fmtDate(d.issues_at) })}
+                      >
+                        {t("Issues")}
+                      </span>
+                    )}
+                  </span>
                 </td>
                 {editor && (
                   <td className="num">
@@ -132,6 +151,7 @@ export default function Verification() {
             )}
           </tbody>
         </table>
+        <ShowMore {...page} />
       </div>
 
       {verifying && (

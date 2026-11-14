@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import type { Lifecycle } from "../api";
 import { STATUS_LABEL } from "../lib/format";
 import { t } from "../i18n";
@@ -103,13 +104,18 @@ export function Modal({
     if (open && !d.open) d.showModal();
     if (!open && d.open) d.close();
   }, [open]);
-  return (
+  // Rendered into <body>: a dialog opened from inside a page <form> (the rule editor) would otherwise
+  // nest its own <form> in it, and submitting the dialog would submit (and reload) the page form.
+  // React still bubbles events through the component tree, so submit events stop at the dialog.
+  return createPortal(
     <dialog
       ref={ref}
       className={"modal" + (wide ? " modal-wide" : "")}
       aria-labelledby={id}
       onClose={onClose}
       onCancel={onClose}
+      onSubmit={(e) => e.stopPropagation()}
+      onReset={(e) => e.stopPropagation()}
     >
       {open && (
         <>
@@ -122,7 +128,8 @@ export function Modal({
           {children}
         </>
       )}
-    </dialog>
+    </dialog>,
+    document.body,
   );
 }
 

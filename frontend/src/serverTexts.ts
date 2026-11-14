@@ -1,8 +1,8 @@
 /**
- * Texts that the API sends as labels (lifecycle definition of done and change drivers, CMMI
- * levels, maturity aspects, trend metrics). They are shown with `t(label)`; listing them here
+ * Texts that the API sends as labels (lifecycle definition of done and change drivers, trend
+ * metrics). They are shown with `t(label)`; listing them here
  * puts them into the translation files and `npm run i18n:check`. Keep in sync with
- * backend/app/lifecycle.py, backend/app/api/growth.py and backend/app/snapshots.py.
+ * backend/app/lifecycle.py and backend/app/snapshots.py.
  */
 import { t } from "./i18n";
 
@@ -26,19 +26,6 @@ export const serverTexts = () => [
   t("Threat hunting"),
   t("Tuning / false positives"),
   t("Other"),
-  t("Initial"),
-  t("Detection is ad hoc and depends on individuals; use cases are not documented."),
-  t("Managed"),
-  t("Use cases are planned and documented per project; results can be repeated."),
-  t("Defined"),
-  t("A standard use case process exists for the whole SOC and is followed."),
-  t("Quantitatively managed"),
-  t("Use cases are steered with metrics: scores, trends, verification."),
-  t("Optimizing"),
-  t("Metrics, hunting and incidents continuously improve the use cases."),
-  t("People"),
-  t("Process"),
-  t("Technology"),
   t("SOC detection score"),
   t("Catalogue coverage"),
   t("Growth potential"),
@@ -50,6 +37,5 @@ export const serverTexts = () => [
   t("Operational rules"),
   t("Log sources in use"),
   t("Scopes in use"),
-  t("Maturity level (CMMI)"),
   t("Now"),
 ];

@@ -14,7 +14,6 @@ from app.models import (
     L3UseCase,
     Lifecycle,
     LifecycleEvent,
-    MaturityAssessment,
     ReferenceItem,
     RefKind,
     Snapshot,
@@ -39,7 +38,6 @@ METRICS = [
     ("operational_rules", "Operational rules", "count"),
     ("log_sources_used", "Log sources in use", "count"),
     ("scopes_used", "Scopes in use", "count"),
-    ("maturity_level", "Maturity level (CMMI)", "count"),
 ]
 
 
@@ -71,12 +69,6 @@ def capture(db: Session, default_interval: int, today: date | None = None) -> di
         "operational_rules": sum(1 for x in l3s if x.lifecycle_status in SCORED_STATES),
         "log_sources_used": used.get(RefKind.log_source, 0),
         "scopes_used": used.get(RefKind.scope, 0),
-        "maturity_level": db.scalar(
-            select(MaturityAssessment.level)
-            .where(MaturityAssessment.assessed_at <= (today or date.today()))
-            .order_by(MaturityAssessment.assessed_at.desc(), MaturityAssessment.id.desc())
-            .limit(1)
-        ),
     }
     return {
         "kpis": kpis,

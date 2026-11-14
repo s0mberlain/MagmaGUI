@@ -63,34 +63,6 @@ def test_gap_view(admin, make_user):
     assert all(x["risk"] == 5 for x in only_high)
 
 
-def test_maturity(admin, make_user):
-    analyst = make_user("analyst")
-    auditor = make_user("auditor")
-    m = auditor.get("/api/maturity").json()
-    assert m["current"] is None and len(m["levels"]) == 5
-    assert auditor.post("/api/maturity", json={"level": 2}).status_code == 403
-    assert analyst.post("/api/maturity", json={"level": 6}).status_code == 422
-    assert analyst.post("/api/maturity", json={"level": 2, "aspects": {"x": 1}}).status_code == 422
-    r = analyst.post(
-        "/api/maturity",
-        json={
-            "level": 2,
-            "target_level": 3,
-            "aspects": {"people": 2, "process": 2},
-            "notes": "first",
-            "assessed_at": "2026-01-15",
-        },
-    )
-    assert r.status_code == 201
-    analyst.post("/api/maturity", json={"level": 3})
-    m = auditor.get("/api/maturity").json()
-    assert m["current"]["level"] == 3 and len(m["history"]) == 2
-    assert admin.post("/api/snapshots", json={}).json()["kpis"]["maturity_level"] == 3
-    assert analyst.delete(f"/api/maturity/{m['current']['id']}").status_code == 403
-    assert admin.delete(f"/api/maturity/{m['current']['id']}").status_code == 204
-    assert auditor.get("/api/maturity").json()["current"]["level"] == 2
-
-
 def test_priority_follows_gap_to_target(admin):
     """A rule that meets its target has nothing to gain; an unassessed rule counts its whole
     target as gap instead of dropping to the bottom of the list."""

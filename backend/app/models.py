@@ -426,22 +426,6 @@ class GitSyncState(Base):
     import_notes: Mapped[list | None] = mapped_column(JSON, default=list)
 
 
-class MaturityAssessment(Base):
-    """SOC maturity self-assessment on the CMMI scale 1..5 (PLAN 2.12)."""
-
-    __tablename__ = "maturity_assessments"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    level: Mapped[int] = mapped_column(Integer)
-    target_level: Mapped[int | None] = mapped_column(Integer)
-    # optional level per aspect, e.g. {"people": 2, "process": 3, "technology": 3}
-    aspects: Mapped[dict] = mapped_column(JSON, default=dict)
-    notes: Mapped[str] = mapped_column(Text, default="")
-    assessed_by: Mapped[str] = mapped_column(String(64))
-    assessed_at: Mapped[date] = mapped_column(Date)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-
 class OutputMetric(Base):
     """Output metrics of an L3 rule for one month (PLAN 2.13)."""
 

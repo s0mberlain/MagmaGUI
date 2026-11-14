@@ -216,7 +216,6 @@ def build(db: Session, settings: Settings) -> bytes:
     k = s.kpis
     trends = snapshots.trends(None, db, settings)
     gaps = growth.gaps(None, db, settings, None, 1, True)
-    mat = growth.maturity(None, db)
     due = scores.verification_due(None, db, settings, 0)
     cov = attack_api.coverage(None, db, settings)
     out = output.summary(None, db, 12)
@@ -276,17 +275,6 @@ def build(db: Session, settings: Settings) -> bytes:
                 pct(k.verification_health),
                 f"{k.verification_overdue} of {k.operational_rules} rules overdue",
                 k.verification_health,
-            ),
-            (
-                "Maturity (CMMI)",
-                f"{mat.current.level} of 5" if mat.current else "-",
-                (
-                    f"Target {mat.current.target_level}, "
-                    f"assessed {mat.current.assessed_at:%d %b %Y}"
-                    if mat.current and mat.current.target_level
-                    else "No assessment yet"
-                ),
-                (mat.current.level / 5) if mat.current else None,
             ),
         ]
     )

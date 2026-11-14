@@ -3,7 +3,7 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select, update
 
 from app import audit, totp
 from app.api.deps import DB, SettingsDep
@@ -16,6 +16,7 @@ from app.security import (
     check_password_policy,
     create_session,
     drop_session,
+    drop_user_sessions,
     hash_password,
     verify_password,
 )
@@ -37,29 +38,59 @@ def auth_config(settings: SettingsDep) -> AuthConfigOut:
     )
 
 
+def _locked(user: User) -> bool:
+    return bool(user.locked_until and as_utc(user.locked_until) > datetime.now(UTC))
+
+
+LOCKED = "Account temporarily locked, try again later"
+
+
+def _count_failure(db, user: User, settings) -> None:
+    """A wrong password or code: after MAX_FAILED_LOGINS the account is locked for a while."""
+    user.failed_logins += 1
+    if user.failed_logins >= settings.max_failed_logins:
+        user.locked_until = datetime.now(UTC) + timedelta(minutes=settings.lockout_minutes)
+        user.failed_logins = 0
+        audit.record(db, user, "lockout", "user", user.username)
+    db.commit()
+
+
+def _require_password(db, user: User, password: str, settings, message: str) -> None:
+    """Re-check the password for account changes. Wrong guesses count toward the lockout, so a
+    stolen session cannot be used to guess the password without limit."""
+    if _locked(user):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, LOCKED)
+    if not verify_password(user.password_hash, password):
+        _count_failure(db, user, settings)
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, message)
+
+
 @router.post("/login", response_model=UserOut)
-def login(body: LoginIn, response: Response, db: DB, settings: SettingsDep) -> User:
+def login(
+    body: LoginIn, request: Request, response: Response, db: DB, settings: SettingsDep
+) -> User:
     if not settings.local_login_enabled:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Local login is disabled")
+    limiter = request.app.state.login_limiter
+    ip = request.client.host if request.client else None
+    if limiter.blocked(ip):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS, "Too many failed sign-ins, try again later"
+        )
     invalid = HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
     user = db.scalar(select(User).where(User.username == body.username))
     now = datetime.now(UTC)
 
     if user is None or user.auth_source != AuthSource.local:
         verify_password(_DUMMY_HASH, body.password)
+        limiter.failed(ip)
         raise invalid
-    if user.locked_until and as_utc(user.locked_until) > now:
-        raise HTTPException(
-            status.HTTP_429_TOO_MANY_REQUESTS, "Account temporarily locked, try again later"
-        )
+    if _locked(user):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, LOCKED)
 
     def fail(exc: HTTPException) -> HTTPException:
-        user.failed_logins += 1
-        if user.failed_logins >= settings.max_failed_logins:
-            user.locked_until = now + timedelta(minutes=settings.lockout_minutes)
-            user.failed_logins = 0
-            audit.record(db, user, "lockout", "user", user.username)
-        db.commit()
+        limiter.failed(ip)
+        _count_failure(db, user, settings)
         return exc
 
     if not verify_password(user.password_hash, body.password) or not user.active:
@@ -68,7 +99,7 @@ def login(body: LoginIn, response: Response, db: DB, settings: SettingsDep) -> U
         if not body.otp:
             # password was right: ask for the second factor (does not count as a failure)
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, TOTP_REQUIRED)
-        how = _check_second_factor(user, body.otp, settings)
+        how = _check_second_factor(db, user, body.otp, settings)
         if how is None:
             raise fail(HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid authentication code"))
         if how == "recovery":
@@ -124,13 +155,16 @@ def set_locale(body: LocaleIn, user: CurrentUser, db: DB) -> User:
 
 
 @router.post("/me/password", status_code=status.HTTP_204_NO_CONTENT)
-def change_password(body: PasswordChange, user: CurrentUser, db: DB) -> None:
+def change_password(
+    body: PasswordChange, request: Request, user: CurrentUser, db: DB, settings: SettingsDep
+) -> None:
     if user.auth_source != AuthSource.local:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "SSO accounts have no local password")
-    if not verify_password(user.password_hash, body.current_password):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is wrong")
+    _require_password(db, user, body.current_password, settings, "Current password is wrong")
     check_password_policy(body.new_password)
     user.password_hash = hash_password(body.new_password)
+    # other browsers (possibly an attacker's) are signed out; this one stays signed in
+    drop_user_sessions(db, user, keep_token=request.cookies.get(SESSION_COOKIE))
     audit.record(db, user, "password_change", "user", user.username)
     db.commit()
 
@@ -138,12 +172,25 @@ def change_password(body: PasswordChange, user: CurrentUser, db: DB) -> None:
 # ---------------------------------------------------------------- two-factor login (TOTP)
 
 
-def _check_second_factor(user: User, code: str, settings) -> str | None:
+def _check_second_factor(db, user: User, code: str, settings) -> str | None:
     """'totp' or 'recovery' when the code is valid (and consumes it), else None."""
     secret = totp.decrypt(user.totp_secret or "", settings.secret_key)
     if secret:
         step = totp.verify(secret, code, user.totp_last_step)
         if step is not None:
+            # claim the time step in the database, so two parallel requests with the same code
+            # cannot both pass (replay)
+            claimed = db.execute(
+                update(User)
+                .where(
+                    User.id == user.id,
+                    or_(User.totp_last_step.is_(None), User.totp_last_step < step),
+                )
+                .values(totp_last_step=step)
+                .execution_options(synchronize_session=False)
+            ).rowcount
+            if claimed != 1:
+                return None
             user.totp_last_step = step
             return "totp"
     h = totp.hash_code(code)
@@ -192,8 +239,7 @@ def totp_setup(
     _local(user)
     if user.totp_enabled:
         raise HTTPException(status.HTTP_409_CONFLICT, "Two-factor login is already on")
-    if not verify_password(user.password_hash, body.password):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Password is wrong")
+    _require_password(db, user, body.password, settings, "Password is wrong")
     secret = totp.new_secret()
     user.totp_secret = totp.encrypt(secret, settings.secret_key)
     user.totp_last_step = None
@@ -203,7 +249,9 @@ def totp_setup(
 
 
 @router.post("/me/totp/enable", response_model=RecoveryOut)
-def totp_enable(body: TotpCode, user: CurrentUser, db: DB, settings: SettingsDep) -> RecoveryOut:
+def totp_enable(
+    body: TotpCode, request: Request, user: CurrentUser, db: DB, settings: SettingsDep
+) -> RecoveryOut:
     _local(user)
     if user.totp_enabled:
         raise HTTPException(status.HTTP_409_CONFLICT, "Two-factor login is already on")
@@ -219,24 +267,25 @@ def totp_enable(body: TotpCode, user: CurrentUser, db: DB, settings: SettingsDep
     user.totp_enabled = True
     user.totp_last_step = step
     user.recovery_codes = [totp.hash_code(c) for c in codes]
+    drop_user_sessions(db, user, keep_token=request.cookies.get(SESSION_COOKIE))
     audit.record(db, user, "totp_enable", "user", user.username)
     db.commit()
     return RecoveryOut(recovery_codes=codes)
 
 
-def _confirm(user: User, body: TotpConfirm, settings) -> None:
+def _confirm(db, user: User, body: TotpConfirm, settings) -> None:
     _local(user)
     if not user.totp_enabled:
         raise HTTPException(status.HTTP_409_CONFLICT, "Two-factor login is off")
-    if not verify_password(user.password_hash, body.password):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Password is wrong")
-    if _check_second_factor(user, body.code, settings) is None:
+    _require_password(db, user, body.password, settings, "Password is wrong")
+    if _check_second_factor(db, user, body.code, settings) is None:
+        _count_failure(db, user, settings)
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid authentication code")
 
 
 @router.post("/me/totp/disable", status_code=status.HTTP_204_NO_CONTENT)
 def totp_disable(body: TotpConfirm, user: CurrentUser, db: DB, settings: SettingsDep) -> None:
-    _confirm(user, body, settings)
+    _confirm(db, user, body, settings)
     clear_totp(user)
     audit.record(db, user, "totp_disable", "user", user.username)
     db.commit()
@@ -246,7 +295,7 @@ def totp_disable(body: TotpConfirm, user: CurrentUser, db: DB, settings: Setting
 def totp_new_codes(
     body: TotpConfirm, user: CurrentUser, db: DB, settings: SettingsDep
 ) -> RecoveryOut:
-    _confirm(user, body, settings)
+    _confirm(db, user, body, settings)
     codes = totp.new_recovery_codes()
     user.recovery_codes = [totp.hash_code(c) for c in codes]
     audit.record(db, user, "recovery_codes_renewed", "user", user.username)

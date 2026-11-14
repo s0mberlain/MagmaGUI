@@ -2,6 +2,7 @@
 
 import csv
 import io
+import math
 import re
 from datetime import date
 from typing import Annotated
@@ -353,7 +354,10 @@ async def import_csv(
         v = cell(row, key)
         if v == "":
             return None if optional else 0
-        return int(float(v))
+        f = float(v)
+        if not math.isfinite(f):
+            raise ValueError(f"'{v}' is not a number")
+        return int(f)
 
     for n, row in enumerate(rows[1:], start=2):
         if not any(c.strip() for c in row):

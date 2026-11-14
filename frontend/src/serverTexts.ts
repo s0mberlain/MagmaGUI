@@ -40,6 +40,7 @@ export const serverTexts = () => [
   t("Process"),
   t("Technology"),
   t("SOC detection score"),
+  t("Catalogue coverage"),
   t("Growth potential"),
   t("Framework completeness"),
   t("Assessment coverage"),

@@ -7,13 +7,19 @@ Status: **M7**: MVP (catalogue, scoring, verification, YAML configs with history
 ## Run with Docker
 
 ```bash
-cp .env.example .env        # optional, adjust settings
+cp .env.example .env
+# required: the app refuses to start without a strong SECRET_KEY
+echo "SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')" >> .env
 docker compose up -d --build
 ```
 
 Open http://localhost:8080 and sign in as `admin`. Set `ADMIN_PASSWORD` in `.env` before the first start, or read the generated password from the log: `docker compose logs magma | grep "generated password"`.
 
-On first start the database is created, migrated and filled with the default MaGMa catalogue (12 L1 + Weaponization (not applicable), 62 L2, 169 L3, reference lists, business drivers). Data is stored in the `magma-data` volume (`/data` in the container). API docs: http://localhost:8080/api/docs
+On first start the database is created, migrated and filled with the default MaGMa catalogue (12 L1 + Weaponization (not applicable), 62 L2, 169 L3, reference lists, business drivers). Data is stored in the `magma-data` volume (`/data` in the container). API docs (signed-in users): http://localhost:8080/api/docs
+
+Behind a reverse proxy, set `FORWARDED_ALLOW_IPS` to the proxy's address so the audit log records
+the real client address (the image trusts only `127.0.0.1` by default; never use `*` when the
+port is reachable directly).
 
 ## PostgreSQL
 
@@ -82,6 +88,9 @@ npm run build
 - Rule weight = effectiveness × implementation × coverage, potential = effectiveness − weight.
 - Only operational and maintenance rules with all three metrics count. Empty L2 use cases are shown
   as detection gaps instead of counting as zero, and every L2 counts equally in its L1.
+- Next to the SOC detection score the dashboard shows **catalogue coverage**: the same average,
+  but an applicable L2 without scored rules counts as 0 (the rule driver coverage uses). One
+  perfect rule in one of ten L2s gives a 100 % SOC score but 10 % catalogue coverage.
 - Verification: operational rules must be re-verified every `DEFAULT_VERIFICATION_DAYS` (180) days
   unless the rule sets its own interval. Never verified counts as overdue.
 - Demo data: start with `DEMO_DATA=true`, use *Users → Demo data* (admin), or run
@@ -137,8 +146,10 @@ snapshots and a matching change log.
 Every L2 use case has a risk level (1–5) and an optional target implementation; a rule follows
 its L2 unless it sets its own. Without an explicit target the risk level gives one
 (`RISK_TARGETS`, default 40 % for risk 1 up to 90 % for risk 5). *Priorities* lists the active
-rules with the gap between implementation and target, sorted by priority = potential × risk ÷ 5
-× driver boost, so the work with the most detection gain on the riskiest use cases comes first.
+rules with the gap between implementation and target, sorted by priority = gap to target × risk ÷ 5
+× driver boost, so the biggest shortfalls on the riskiest use cases come first. A rule that meets
+its target has priority 0; a rule without an implementation score counts its whole target as gap,
+so unassessed high-risk rules show up at the top instead of disappearing.
 
 ## Business and compliance drivers
 
@@ -193,14 +204,17 @@ There is no live SIEM connector; instead the SIEM side pushes data to the app (s
 [deploy/siem/](deploy/siem/) for a small client and Splunk / Sentinel searches):
 
 - **API tokens** (*Integrations*, admin): each token is its own service account with the analyst
-  or auditor role, sent as `Authorization: Bearer mgm_…`. Revoking it disables the account; what
-  it did stays in the audit log.
+  or auditor role, sent as `Authorization: Bearer mgm_…`. Its access limits what it may call:
+  *SIEM push only* (the default) reaches only the SIEM endpoints below, *Read only* any `GET`,
+  or both. So a leaked SIEM token cannot change the catalogue. Revoking it disables the account;
+  what it did stays in the audit log.
 - **Rule inventory** `PUT /api/integrations/siem/<source>/rules`: the SIEM's full rule list. The
   *Integrations* page shows SIEM rules without a use case (with suggestions by ATT&CK technique),
   rules disabled in the SIEM but operational in the app, and linked ids no SIEM reports.
 - **Alert counts** `POST /api/integrations/siem/<source>/alerts`: alerts, incidents and false
   positives per SIEM rule and month become the output metrics of the linked L3 rules
-  (`mode: replace` for month totals, `add` for daily pushes, `?dry_run=true` to check).
+  (`mode: replace` for month totals, `add` for daily pushes, `?dry_run=true` to check). Send a
+  `batch_id` with `add` pushes: a retry with the same id is not counted twice.
 
 A SIEM rule is linked through the field *SIEM rule IDs* on the rule page, or by using the L3 code
 as the SIEM rule id.
@@ -215,6 +229,12 @@ there and every link in the app columns *All business drivers* and *All complian
 import links both, and an unknown code is a warning in the preview. *Merge* adds and updates by
 ID; *Replace* (admin) also removes what is not in the file. A JSON backup export includes
 verifications and the configuration history.
+
+Import follows the same rules as the app: a use case only becomes *Operational* through the import
+when its definition of done is complete (admins may skip it, which is logged), every status change
+is written to the change log, verification dates in the future are refused, and the importing user
+is recorded as the verifier. Workbooks that unpack to more than 200 MB are refused. In the export,
+text that starts with `=` is written as text, never as a live formula.
 
 ## Single sign-on (OIDC)
 
@@ -232,9 +252,27 @@ Keycloak values from `.env.example`.
 
 Local accounts can turn on a TOTP second factor under *Account* (click your name in the
 sidebar): scan the QR code with any authenticator app, confirm a code, and save the eight
-one-time recovery codes. The secret is stored encrypted with `SECRET_KEY` (changing that key
-turns existing second factors unusable; an admin can then reset them under *Users*). SSO
-accounts use the second factor of the identity provider.
+one-time recovery codes. The secret is stored encrypted with `SECRET_KEY`. To change that key,
+set the new one and run `magma rotate-secret --old <previous key>` once, otherwise existing
+second factors stop working (an admin can also reset them under *Users*). SSO accounts use the
+second factor of the identity provider.
+
+## Security notes
+
+- `SECRET_KEY` is required (at least 32 characters); `ALLOW_WEAK_SECRET_KEY=true` is for local
+  development only.
+- Changing a password, turning on two-factor login, or an admin resetting either signs the
+  account out everywhere else.
+- Wrong passwords and codes count toward the account lockout (`MAX_FAILED_LOGINS`,
+  `LOCKOUT_MINUTES`), also on the *Account* page. Failed sign-ins per client address are limited
+  too (`LOGIN_IP_MAX_FAILURES` per `LOGIN_IP_WINDOW_MINUTES`, in memory per process).
+- Every response carries a strict Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff`
+  and, with an `https://` `BASE_URL`, HSTS. The audit log records the client address.
+- **Two-way git sync is a trust boundary**: anyone who can push to the branch can change configs
+  in the app. Protect the branch like you would the analyst role. Imported commits are shown with
+  a `git:` prefix before the git author name (it is self-asserted), and a `Magma-Commit` trailer
+  in someone else's commit is only trusted when the content matches the app's commit.
+- The SSO login page shows fixed texts only; IdP error details go to the log.
 
 ## Languages
 

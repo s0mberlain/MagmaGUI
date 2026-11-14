@@ -21,7 +21,7 @@ def test_rule_inherits_risk_and_target(admin):
     assert r["effective_risk"] == 4 and r["risk_source"] == "l2"
     assert r["effective_target"] == 0.75 and r["target_source"] == "risk"
     assert abs(r["implementation_gap"] - 0.25) < 1e-9
-    assert abs(r["priority"] - 0.45 * 4 / 5) < 1e-9
+    assert abs(r["priority"] - 0.25 * 4 / 5) < 1e-9  # gap to target x risk / 5
 
     admin.patch("/api/l2/AO-CRE", json={"target_implementation": 0.6})
     admin.patch("/api/l3/AO-CRE-01", json={"risk_level": 5, "target_implementation": 0.4})
@@ -54,7 +54,9 @@ def test_gap_view(admin, make_user):
     )
     g = auditor.get("/api/growth/gaps?l1=AO&below_target=true").json()
     codes = [x["code"] for x in g["rows"]]
-    assert codes[0] == "AO-CRE-01" and "AO-CRE-02" not in codes
+    assert "AO-CRE-01" in codes and "AO-CRE-02" not in codes
+    prios = [x["priority"] or 0 for x in g["rows"]]
+    assert prios == sorted(prios, reverse=True)
     assert g["summary"]["by_risk"]["5"]["below_target"] >= 1
     assert g["summary"]["risk_targets"]["5"] == 0.9
     only_high = auditor.get("/api/growth/gaps?min_risk=5").json()["rows"]
@@ -87,3 +89,22 @@ def test_maturity(admin, make_user):
     assert analyst.delete(f"/api/maturity/{m['current']['id']}").status_code == 403
     assert admin.delete(f"/api/maturity/{m['current']['id']}").status_code == 204
     assert auditor.get("/api/maturity").json()["current"]["level"] == 2
+
+
+def test_priority_follows_gap_to_target(admin):
+    """A rule that meets its target has nothing to gain; an unassessed rule counts its whole
+    target as gap instead of dropping to the bottom of the list."""
+    admin.patch("/api/l2/AO-CRE", json={"risk_level": 5})  # target 0.9
+    done = {"effectiveness": 1, "implementation": 0.95, "coverage": 0.2}  # big potential
+    admin.patch("/api/l3/AO-CRE-01", json=done | {"lifecycle_status": "onboarding"})
+    admin.patch(
+        "/api/l3/AO-CRE-02",
+        json={"effectiveness": None, "implementation": None, "lifecycle_status": "onboarding"},
+    )
+    met = admin.get("/api/l3/AO-CRE-01").json()
+    assert met["implementation_gap"] == 0 and met["priority"] == 0
+    new = admin.get("/api/l3/AO-CRE-02").json()
+    assert abs(new["priority"] - 0.9) < 1e-9
+    rows = admin.get("/api/growth/gaps?l1=AO").json()["rows"]
+    codes = [r["code"] for r in rows]
+    assert codes.index("AO-CRE-02") < codes.index("AO-CRE-01")

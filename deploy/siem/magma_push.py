@@ -60,7 +60,10 @@ def alerts(args) -> None:
         items.append(item)
     q = "?dry_run=true" if args.dry_run else ""
     path = f"/api/integrations/siem/{args.source}/alerts{q}"
-    res = call("POST", path, {"mode": args.mode, "items": items})
+    body = {"mode": args.mode, "items": items}
+    if args.batch_id:
+        body["batch_id"] = args.batch_id
+    res = call("POST", path, body)
     print(json.dumps(res, indent=2))
 
 
@@ -82,6 +85,10 @@ def main() -> None:
     a.add_argument("file")
     a.add_argument("--mode", choices=["replace", "add"], default="replace")
     a.add_argument("--dry-run", action="store_true")
+    a.add_argument(
+        "--batch-id",
+        help="id of this push (e.g. the date); a retry with the same id is not counted twice",
+    )
     r = sub.add_parser("rules")
     r.add_argument("source")
     r.add_argument("file")

@@ -10,6 +10,7 @@ recomputes everything else. Several values in one cell are split on ';' or ','.
 
 import io
 import re
+import zipfile
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
@@ -20,6 +21,7 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app import lifecycle
 from app.models import (
     BusinessDriver,
     ComplianceDriver,
@@ -31,6 +33,8 @@ from app.models import (
     ReferenceItem,
     RefKind,
 )
+
+MAX_UNPACKED_BYTES = 200 * 2**20
 
 L1_RE = re.compile(r"^[A-Z]{2}$")
 L2_RE = re.compile(r"^[A-Z]{2}-[A-Z0-9]{3}$")
@@ -317,9 +321,28 @@ def export_workbook(db: Session) -> bytes:
         row += 1
     _widths(ws, {"B": 34, "C": 80})
 
+    _neutralise_formulas(wb)
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+# Columns where the export itself writes formulas (classic layout). Any other cell whose value
+# starts with "=" holds user text that openpyxl would otherwise store as a live formula.
+_FORMULA_COLUMNS = {
+    "L1 UC": set("GHIJKLM"),
+    "L2 UC": set("ABGHIJKL"),
+    "L3 UC": set("ABCDELM"),
+}
+
+
+def _neutralise_formulas(wb: Workbook) -> None:
+    for ws in wb.worksheets:
+        allowed = _FORMULA_COLUMNS.get(ws.title, set())
+        for row in ws.iter_rows():
+            for cell in row:
+                if cell.data_type == "f" and (cell.row == 1 or cell.column_letter not in allowed):
+                    cell.data_type = "s"
 
 
 # --------------------------------------------------------------------------- import
@@ -387,6 +410,13 @@ def _date(v: Any) -> date | None:
     raise ValueError(f"'{s}' is not a date (use YYYY-MM-DD)")
 
 
+def _past_date(v: Any) -> date | None:
+    d = _date(v)
+    if d is not None and d > date.today():
+        raise ValueError(f"{d.isoformat()} is in the future")
+    return d
+
+
 def _source_for_header(header: str, sources: dict[str, ComplianceSource]):
     """Compliance source for an L2 column header: 'Internal Security Policy', 'Policy reference',
     'External Regulator #1 ref' ... A header that fits no source or several is not a source."""
@@ -425,10 +455,14 @@ def _col(cols: dict[str, int], *prefixes: str) -> int | None:
 
 
 class _Importer:
-    def __init__(self, db: Session, report: Report, replace: bool):
+    def __init__(self, db: Session, report: Report, replace: bool, username: str, is_admin: bool):
         self.db = db
         self.r = report
         self.replace = replace
+        self.username = username
+        self.is_admin = is_admin
+        # (use case, old status, new status, definition of done skipped) for the change log
+        self.status_changes: list[tuple[Any, Lifecycle | None, Lifecycle, bool]] = []
         self.refs: dict[tuple[RefKind, str], ReferenceItem] = {
             (x.kind, x.name.lower()): x for x in db.scalars(select(ReferenceItem))
         }
@@ -708,13 +742,17 @@ class _Importer:
                 if c_target and (v := ws.cell(r, c_target).value) not in (None, ""):
                     vals["target_implementation"] = self.metric(v, sheet, r, "target")
                 if c_onb:
-                    vals["onboarded_at"] = _date(ws.cell(r, c_onb).value)
+                    vals["onboarded_at"] = _past_date(ws.cell(r, c_onb).value)
                 if c_ver:
-                    vals["last_verified_at"] = _date(ws.cell(r, c_ver).value)
+                    vals["last_verified_at"] = _past_date(ws.cell(r, c_ver).value)
             except ValueError as e:
                 self.r.error(sheet, r, f"{code}: {e}")
                 continue
             obj = existing.get(code)
+            change = self.check_status(sheet, r, code, obj, vals)
+            if change is False:
+                continue
+            self.verification(obj, vals)
             created = obj is None
             if created:
                 obj = L2UseCase(code=code, parent=parent, name=vals["name"])
@@ -763,9 +801,55 @@ class _Importer:
                         continue
                     chosen_cd[id(d)] = d
                 obj.compliance_drivers = list(chosen_cd.values())
+            self.queue_status(obj, change)
             keep.add(code)
         self.db.flush()
+        self.log_status()
         self.keep_l2 = keep
+
+    def check_status(self, sheet: str, row: int, code: str, obj, vals: dict[str, Any]):
+        """Same rules as a status change in the app: Operational needs the definition of done
+        (admins may skip it). Returns False when the row is refused, else the pending change
+        (old, new, skipped definition of done) or None; see log_status()."""
+        old = obj.lifecycle_status if obj is not None else None
+        new = vals.get("lifecycle_status")
+        if new is None or new == old:
+            return None
+        missing: list[str] = []
+        if new == Lifecycle.operational:
+            missing = lifecycle.dod_missing(obj) if obj is not None else list(lifecycle.DOD_KEYS)
+        if missing and not self.is_admin:
+            self.r.error(
+                sheet,
+                row,
+                f"{code}: cannot become operational, the definition of done is not complete "
+                "(tick the checklist in the app or ask an admin)",
+            )
+            return False
+        if new == Lifecycle.operational and not vals.get("onboarded_at"):
+            if obj is None or obj.onboarded_at is None:
+                vals["onboarded_at"] = date.today()
+        return (old, new, bool(missing))
+
+    def queue_status(self, obj, change) -> None:
+        if change:
+            self.status_changes.append((obj, *change))
+
+    def log_status(self) -> None:
+        """Write the queued changes to the lifecycle change log (after the flush, ids exist)."""
+        for obj, old, new, override in self.status_changes:
+            lifecycle.record_change(
+                self.db, obj, old, new, self.username, note="Excel import", override=override
+            )
+        self.status_changes = []
+
+    def verification(self, obj, vals: dict[str, Any]) -> None:
+        """Whoever imports a new verification date is recorded as the verifier."""
+        vals.pop("last_verified_by", None)
+        if "last_verified_at" in vals:
+            old = obj.last_verified_at if obj is not None else None
+            if vals["last_verified_at"] != old:
+                vals["last_verified_by"] = self.username if vals["last_verified_at"] else None
 
     def metric(self, v: Any, sheet: str, row: int, what: str) -> float | None:
         if v is None or (isinstance(v, str) and not v.strip()):
@@ -839,9 +923,9 @@ class _Importer:
                 if c_status and (s := _norm(ws.cell(r, c_status).value)):
                     vals["lifecycle_status"] = Lifecycle(s)
                 if c_onb:
-                    vals["onboarded_at"] = _date(ws.cell(r, c_onb).value)
+                    vals["onboarded_at"] = _past_date(ws.cell(r, c_onb).value)
                 if c_ver:
-                    vals["last_verified_at"] = _date(ws.cell(r, c_ver).value)
+                    vals["last_verified_at"] = _past_date(ws.cell(r, c_ver).value)
                 if c_verby:
                     vals["last_verified_by"] = _text(ws.cell(r, c_verby).value) or None
                 if c_int:
@@ -871,6 +955,10 @@ class _Importer:
                 vals["attack_techniques"] = list(dict.fromkeys(techniques))
 
             obj = existing.get(code)
+            change = self.check_status(sheet, r, code, obj, vals)
+            if change is False:
+                continue
+            self.verification(obj, vals)
             created = obj is None
             if created:
                 obj = L3UseCase(code=code, parent=parent, name=vals["name"], references=[])
@@ -889,20 +977,40 @@ class _Importer:
                         for n in self.ref_names(kind, ws.cell(r, col).value)
                     ]
             obj.references = refs
+            self.queue_status(obj, change)
             keep.add(code)
         self.db.flush()
+        self.log_status()
         self.keep_l3 = keep
 
 
-def import_workbook(db: Session, data: bytes, replace: bool, dry_run: bool) -> Report:
+def import_workbook(
+    db: Session,
+    data: bytes,
+    replace: bool,
+    dry_run: bool,
+    username: str = "import",
+    is_admin: bool = False,
+) -> Report:
     """Apply the workbook to the session. The caller commits or rolls back."""
     report = Report(mode="replace" if replace else "merge", dry_run=dry_run)
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            unpacked = sum(i.file_size for i in z.infolist())
+    except zipfile.BadZipFile as e:
+        raise ImportFailed(f"Not a readable .xlsx file: {e}") from e
+    if unpacked > MAX_UNPACKED_BYTES:
+        # a small upload can unpack to gigabytes in memory ("zip bomb")
+        raise ImportFailed(
+            f"The workbook unpacks to {unpacked // 2**20} MB, more than the "
+            f"{MAX_UNPACKED_BYTES // 2**20} MB allowed"
+        )
     try:
         wb = load_workbook(io.BytesIO(data), data_only=False)
     except Exception as e:  # noqa: BLE001 - any parse error is a user error here
         raise ImportFailed(f"Not a readable .xlsx file: {e}") from e
 
-    imp = _Importer(db, report, replace)
+    imp = _Importer(db, report, replace, username, is_admin)
     sheets = {n: _sheet(wb, n) for n in ("References", "Drivers", "L1 UC", "L2 UC", "L3 UC")}
     report.sheets = [ws.title for ws in sheets.values() if ws is not None]
     if not any(sheets[n] for n in ("L1 UC", "L2 UC", "L3 UC")):

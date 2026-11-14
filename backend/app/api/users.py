@@ -51,6 +51,13 @@ def create_user(body: UserCreate, admin: Admin, db: DB) -> User:
 def update_user(user_id: int, body: UserUpdate, admin: Admin, db: DB) -> User:
     user = _get(db, user_id)
     data = body.model_dump(exclude_unset=True)
+    for k in ("role", "active", "display_name"):
+        if k in data and data[k] is None:
+            raise HTTPException(422, f"{k} cannot be empty")
+    if user.auth_source == AuthSource.service and data.get("role") == Role.admin:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "API token accounts can only be analyst or auditor"
+        )
     demoting = ("role" in data and data["role"] != Role.admin) or data.get("active") is False
     if user.role == Role.admin and user.active and demoting and _active_admins(db) <= 1:
         raise HTTPException(status.HTTP_409_CONFLICT, "Cannot remove the last active admin")
@@ -66,6 +73,7 @@ def update_user(user_id: int, body: UserUpdate, admin: Admin, db: DB) -> User:
             user.failed_logins = 0
             user.locked_until = None
             changes["password"] = ["***", "***"]
+            db.execute(delete(UserSession).where(UserSession.user_id == user.id))
     before = {k: getattr(user, k) for k in data}
     for k, v in data.items():
         setattr(user, k, v)
@@ -96,6 +104,7 @@ def reset_totp(user_id: int, admin: Admin, db: DB) -> User:
 
     user = _get(db, user_id)
     clear_totp(user)
+    db.execute(delete(UserSession).where(UserSession.user_id == user.id))
     audit.record(db, admin, "totp_reset", "user", user.username)
     db.commit()
     return user

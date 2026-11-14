@@ -1,7 +1,16 @@
 from datetime import date, datetime
-from typing import Annotated
+from typing import Annotated, ClassVar
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, StringConstraints
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from app.models import AuthSource, Lifecycle, RefKind, Role
 
@@ -16,6 +25,28 @@ AttackId = Annotated[str, StringConstraints(pattern=r"^T\d{4}(\.\d{3})?$")]
 
 class ORM(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
+
+class Patch(BaseModel):
+    """PATCH body: a field left out is unchanged; an explicit null is only allowed for fields
+    that may be empty (otherwise the database refuses it later with a misleading error)."""
+
+    nullable: ClassVar[frozenset[str]] = frozenset()
+
+    @model_validator(mode="after")
+    def _no_nulls(self):
+        bad = sorted(
+            k for k in self.model_fields_set if getattr(self, k) is None and k not in self.nullable
+        )
+        if bad:
+            raise ValueError(f"cannot be empty: {', '.join(bad)}")
+        return self
+
+
+def not_in_future(v: date | None) -> date | None:
+    if v is not None and v > date.today():
+        raise ValueError("date is in the future")
+    return v
 
 
 # ---------------------------------------------------------------- auth & users
@@ -190,7 +221,7 @@ class L1Create(L1Base):
     code: L1Code
 
 
-class L1Update(BaseModel):
+class L1Update(Patch):
     name: Name | None = None
     threat_category: str | None = None
     purpose: str | None = None
@@ -222,6 +253,9 @@ class TrackingFields(BaseModel):
     onboarded_at: date | None = None
     last_verified_at: date | None = None
 
+    # a verification date in the future would keep a rule "verified" for years
+    _past = field_validator("onboarded_at", "last_verified_at")(not_in_future)
+
 
 class L2Create(TrackingFields):
     code: L2Code
@@ -234,7 +268,10 @@ class L2Create(TrackingFields):
     compliance_driver_ids: list[int] = []
 
 
-class L2Update(TrackingFields):
+class L2Update(TrackingFields, Patch):
+    nullable = frozenset(
+        {"onboarded_at", "last_verified_at", "risk_level", "target_implementation"}
+    )
     name: Name | None = None
     description: str | None = None
     risk_level: Annotated[int, Field(ge=1, le=5)] | None = None
@@ -287,7 +324,19 @@ class L3Create(TrackingFields):
     scopes: list[str] = []
 
 
-class L3Update(TrackingFields):
+class L3Update(TrackingFields, Patch):
+    nullable = frozenset(
+        {
+            "onboarded_at",
+            "last_verified_at",
+            "risk_level",
+            "target_implementation",
+            "effectiveness",
+            "implementation",
+            "coverage",
+            "verification_interval_days",
+        }
+    )
     name: Name | None = None
     description: str | None = None
     effectiveness: Metric | None = None
@@ -364,3 +413,4 @@ class AuditOut(ORM):
     entity: str
     entity_key: str
     changes: dict
+    ip: str | None = None

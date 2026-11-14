@@ -20,6 +20,7 @@ services:
     image: quay.io/keycloak/keycloak:26.0.7
     command: ["start-dev", "--import-realm"]
     environment:
+      # development credentials: never expose this profile beyond your own machine
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       # The browser uses localhost:8081, the app container talks to keycloak:8080.

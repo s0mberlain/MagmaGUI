@@ -9,6 +9,11 @@ import { t } from "../i18n";
 function kpiTiles(k: Kpis) {
   return [
     { label: t("SOC detection score"), value: k.soc_detection_score, sub: t("Average weight of applicable L1") },
+    {
+      label: t("Catalogue coverage"),
+      value: k.catalogue_coverage,
+      sub: t("Same average, L2 without scored rules count as 0"),
+    },
     { label: t("Growth potential"), value: k.growth_potential, sub: t("Average effectiveness − weight") },
     { label: t("Detection gap"), value: k.detection_gap, sub: t("1 − detection score"), invert: true },
     {

@@ -7,7 +7,7 @@
 services:
   magma:
     environment:
-      DATABASE_URL: postgresql+psycopg://magma:${POSTGRES_PASSWORD:-magma-dev-password}@postgres:5432/magma
+      DATABASE_URL: postgresql+psycopg://magma:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/magma
     depends_on:
       postgres:
         condition: service_healthy
@@ -19,7 +19,7 @@ services:
     environment:
       POSTGRES_DB: magma
       POSTGRES_USER: magma
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-magma-dev-password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - magma-pg:/var/lib/postgresql/data
     healthcheck:

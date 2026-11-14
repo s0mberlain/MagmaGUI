@@ -1,5 +1,8 @@
 import os
 
+# Startup refuses a missing or weak SECRET_KEY (app/config.py); tests use a fixed strong one.
+os.environ.setdefault("SECRET_KEY", "test-secret-key-0123456789-abcdefghijklmnop")
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text

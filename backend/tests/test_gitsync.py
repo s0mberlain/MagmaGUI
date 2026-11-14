@@ -156,7 +156,7 @@ def test_two_way_imports_changes_made_in_git(pull_admin, remote, tmp_path):
     head = a.get("/api/l3/AO-CRE-01/config").json()
     assert head["content"] == "threshold: 3\n# tuned\n"
     h = head["head"]
-    assert (h["rev"], h["author"], h["message"]) == (2, "Grace Hopper", "Lower threshold")
+    assert (h["rev"], h["author"], h["message"]) == (2, "git:Grace Hopper", "Lower threshold")
     assert (h["source"], h["git_sha"]) == ("git", sha)
     audit = a.get("/api/audit").json()
     assert any(e["action"] == "config_import" and e["entity_key"] == "AO-CRE-01" for e in audit)
@@ -257,3 +257,34 @@ def test_webhook(pull_admin, monkeypatch):
 
 def test_webhook_off_by_default(anon):
     assert anon.post("/api/git/webhook", headers={"X-Magma-Token": "x"}).status_code == 404
+
+
+def test_forged_trailer_and_people_tags(pull_admin, remote, tmp_path):
+    """Anyone with push access can write a Magma-Commit trailer or a <code>/<tag> tag: a forged
+    trailer must not stop an app commit from being exported, and people's tags are kept."""
+    a = pull_admin
+    a.put("/api/l3/AO-CRE-01/config", json={"content": "threshold: 5\n", "message": "First"})
+    assert a.post("/api/admin/git/sync").json()["last_error"] is None
+    first = a.get("/api/l3/AO-CRE-01/config").json()["head"]
+    second = a.put(
+        "/api/l3/AO-CRE-01/config",
+        json={"content": "threshold: 7\n", "message": "Second", "base_sha": first["sha"]},
+    ).json()
+    clone = tmp_path / "clone"
+    subprocess.run(["git", "clone", "-q", str(remote), str(clone)], check=True)
+    # a commit that claims to be the (not yet exported) app commit, with other content
+    human_push(
+        clone,
+        {"notes.txt": "x\n"},
+        f"Sneaky\n\nMagma-Commit: {second['sha']}",
+        name="Mallory",
+    )
+    git(clone, "tag", "AO-CRE-01/mine")
+    git(clone, "push", "-q", "origin", "AO-CRE-01/mine")
+
+    s = a.post("/api/admin/git/sync").json()
+    assert s["last_error"] is None, s["last_error"]
+    assert s["commits_unsynced"] == 0
+    git(clone, "pull", "-q")
+    assert (clone / RULE).read_text() == "threshold: 7\n"
+    assert "AO-CRE-01/mine" in git(remote, "tag", "--list").splitlines()

@@ -4,6 +4,7 @@ magma migrate                      apply database migrations
 magma demo-data --seed 42          fill the catalogue with generated demo data
 magma db-copy --source URL --target URL [--replace]
                                    copy all data, e.g. SQLite -> PostgreSQL
+magma rotate-secret --old KEY      re-encrypt the TOTP seeds after SECRET_KEY was changed
 """
 
 import argparse
@@ -27,6 +28,10 @@ def main(argv: list[str] | None = None) -> int:
     cp.add_argument("--source", help="source database URL (default: DATABASE_URL)")
     cp.add_argument("--target", required=True, help="target database URL")
     cp.add_argument("--replace", action="store_true", help="delete existing data in the target")
+    rot = sub.add_parser(
+        "rotate-secret", help="re-encrypt stored TOTP seeds with the current SECRET_KEY"
+    )
+    rot.add_argument("--old", required=True, help="the previous SECRET_KEY")
     args = p.parse_args(argv)
 
     settings = get_settings()
@@ -41,6 +46,25 @@ def main(argv: list[str] | None = None) -> int:
         for name, n in res.rows.items():
             print(f"{name:28} {n:>8}")
         print(f"{'total':28} {res.total:>8}")
+        return 0
+
+    if args.cmd == "rotate-secret":
+        from app.config import check_secret_key
+        from app.totp import reencrypt_all
+
+        check_secret_key(settings)
+        engine = make_engine(settings.database_url, settings)
+        with sessionmaker(bind=engine)() as db:
+            done, failed = reencrypt_all(db, args.old, settings.secret_key)
+            db.commit()
+        engine.dispose()
+        print(f"re-encrypted {done} TOTP secret(s)")
+        if failed:
+            print(
+                f"error: {len(failed)} could not be decrypted with --old: {', '.join(failed)}",
+                file=sys.stderr,
+            )
+            return 1
         return 0
 
     from app.startup import initialize

@@ -20,7 +20,14 @@ from datetime import UTC, date, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import L3UseCase, Lifecycle, OutputMetric, SiemRule, SiemSource
+from app.models import (
+    L3UseCase,
+    Lifecycle,
+    OutputMetric,
+    SiemAlertBatch,
+    SiemRule,
+    SiemSource,
+)
 
 SOURCE_RE = r"^[a-z0-9][a-z0-9_.-]{0,31}$"
 
@@ -147,6 +154,21 @@ def reconcile(db: Session) -> tuple[list[Reconciliation], list[dict]]:
 
 
 # ---------------------------------------------------------------- alert counts
+
+
+def batch_applied(db: Session, src: SiemSource, batch_id: str) -> bool:
+    return (
+        db.scalar(
+            select(SiemAlertBatch.id).where(
+                SiemAlertBatch.source_id == src.id, SiemAlertBatch.batch_id == batch_id
+            )
+        )
+        is not None
+    )
+
+
+def mark_batch(db: Session, src: SiemSource, batch_id: str, user: str) -> None:
+    db.add(SiemAlertBatch(source_id=src.id, batch_id=batch_id, applied_by=user))
 
 
 @dataclass

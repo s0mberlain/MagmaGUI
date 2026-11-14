@@ -50,7 +50,7 @@ export default function Priorities() {
           <h1>{t("Priorities")}</h1>
           <div className="subtitle">
             {t(
-              "Gap to target per rule, highest priority first. Priority = potential × risk level ÷ 5, raised by 10 % per driver linked to the L2 use case (at most 50 %).",
+              "Gap to target per rule, highest priority first. Priority = gap to target × risk level ÷ 5, raised by 10 % per driver linked to the L2 use case (at most 50 %). A rule without an implementation score counts its whole target as gap.",
             )}
           </div>
         </div>

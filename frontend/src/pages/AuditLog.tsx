@@ -46,7 +46,10 @@ export default function AuditLog() {
             {entries.map((e) => (
               <tr key={e.id}>
                 <td style={{ whiteSpace: "nowrap" }}>{new Date(e.at).toLocaleString()}</td>
-                <td>{e.username}</td>
+                <td>
+                  {e.username}
+                  {e.ip && <div className="small muted mono">{e.ip}</div>}
+                </td>
                 <td>{e.action}</td>
                 <td>
                   <span className="muted">{e.entity}</span> <span className="mono">{e.entity_key}</span>

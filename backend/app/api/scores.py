@@ -43,6 +43,7 @@ class L2ScoreOut(GroupOut):
 
 class KpiOut(BaseModel):
     soc_detection_score: float | None
+    catalogue_coverage: float | None
     growth_potential: float | None
     detection_gap: float | None
     framework_completeness: float | None

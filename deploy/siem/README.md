@@ -1,12 +1,16 @@
 # SIEM examples
 
 The app has no live SIEM connector (plan section 3). Instead the SIEM side pushes two things
-to the app with an API token (*Integrations → API tokens*, role analyst):
+to the app with an API token (*Integrations → API tokens*, role analyst, access *SIEM push
+only*; such a token can call nothing but these two endpoints and `GET /api/integrations/siem`):
 
 | What | Call | Effect |
 |---|---|---|
 | Rule inventory | `PUT /api/integrations/siem/<source>/rules` | Compared with the use cases: SIEM rules without a use case, rules disabled in the SIEM but operational in the app, linked ids no SIEM reports |
-| Alert counts | `POST /api/integrations/siem/<source>/alerts` | Stored as output metrics per rule and month (`mode` `replace` or `add`) |
+| Alert counts | `POST /api/integrations/siem/<source>/alerts` | Stored as output metrics per rule and month (`mode` `replace` or `add`; months in the future are refused) |
+
+With `mode: add` (daily pushes) send a `batch_id`, e.g. the date: a retried push with an id that
+was already applied is answered with `"duplicate": true` and not counted twice.
 
 A SIEM rule is linked to an L3 rule through the field *SIEM rule IDs* on the rule page, or by
 using the L3 code (e.g. `AO-CRE-01`) as the SIEM rule id.
@@ -26,7 +30,7 @@ Files here:
 export MAGMA_URL=https://magma.example.com MAGMA_TOKEN=mgm_...
 # alert counts (columns: rule, period, alerts, incidents, false_positives[, false_negatives])
 python3 magma_push.py alerts splunk counts.csv
-python3 magma_push.py alerts sentinel counts.csv --mode add --dry-run
+python3 magma_push.py alerts sentinel counts.csv --mode add --batch-id "$(date +%F)" --dry-run
 # rule inventory (JSON list of {"id", "name", "enabled", "severity", "techniques"})
 python3 magma_push.py rules splunk rules.json
 ```

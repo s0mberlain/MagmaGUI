@@ -5,6 +5,10 @@ magma demo-data --seed 42          fill the catalogue with generated demo data
 magma db-copy --source URL --target URL [--replace]
                                    copy all data, e.g. SQLite -> PostgreSQL
 magma rotate-secret --old KEY      re-encrypt the TOTP seeds after SECRET_KEY was changed
+magma reset-password [USER]        set a new password for a local account (default: ADMIN_USER),
+                                   unlock it and sign it out; asks for the password, or
+                                   --from-env takes ADMIN_PASSWORD; --disable-totp also turns
+                                   off two-factor login
 """
 
 import argparse
@@ -32,6 +36,12 @@ def main(argv: list[str] | None = None) -> int:
         "rotate-secret", help="re-encrypt stored TOTP seeds with the current SECRET_KEY"
     )
     rot.add_argument("--old", required=True, help="the previous SECRET_KEY")
+    rp = sub.add_parser(
+        "reset-password", help="set a new password for a local account and unlock it"
+    )
+    rp.add_argument("username", nargs="?", help="default: ADMIN_USER")
+    rp.add_argument("--from-env", action="store_true", help="use ADMIN_PASSWORD instead of asking")
+    rp.add_argument("--disable-totp", action="store_true", help="also turn off two-factor login")
     args = p.parse_args(argv)
 
     settings = get_settings()
@@ -47,6 +57,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{name:28} {n:>8}")
         print(f"{'total':28} {res.total:>8}")
         return 0
+
+    if args.cmd == "reset-password":
+        return reset_password(settings, args)
 
     if args.cmd == "rotate-secret":
         from app.config import check_secret_key
@@ -80,6 +93,82 @@ def main(argv: list[str] | None = None) -> int:
                 apply_demo_data(db, args.seed, default_interval=settings.default_verification_days)
             )
     engine.dispose()
+    return 0
+
+
+def _ask_password() -> str:
+    import getpass
+
+    first = getpass.getpass("New password: ")
+    if first != getpass.getpass("Repeat it: "):
+        raise ValueError("the passwords do not match")
+    return first
+
+
+def reset_password(settings, args) -> int:
+    """Recovery when nobody can sign in: ADMIN_PASSWORD only sets the password of the first admin
+    on the very first start, so changing it in .env later has no effect."""
+    from sqlalchemy import delete, select
+
+    from app import audit
+    from app.api.auth import clear_totp
+    from app.models import AuthSource, User, UserSession
+    from app.security import hash_password
+
+    username = args.username or settings.admin_user
+    try:
+        if args.from_env:
+            if not settings.admin_password:
+                raise ValueError("ADMIN_PASSWORD is not set")
+            password = settings.admin_password
+        else:
+            password = _ask_password()
+        if len(password) < settings.min_password_length:
+            raise ValueError(
+                f"the password must be at least {settings.min_password_length} characters"
+            )
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+    engine = make_engine(settings.database_url, settings)
+    try:
+        with sessionmaker(bind=engine)() as db:
+            user = db.scalar(select(User).where(User.username == username))
+            if user is None:
+                names = ", ".join(
+                    db.scalars(select(User.username).where(User.auth_source == AuthSource.local))
+                )
+                print(
+                    f"error: no user '{username}'. Local users: {names or 'none'}", file=sys.stderr
+                )
+                return 1
+            if user.auth_source != AuthSource.local:
+                print(
+                    f"error: '{username}' signs in with {user.auth_source.value}, not a password",
+                    file=sys.stderr,
+                )
+                return 1
+            user.password_hash = hash_password(password)
+            user.failed_logins = 0
+            user.locked_until = None
+            user.active = True
+            if args.disable_totp:
+                clear_totp(user)
+            db.execute(delete(UserSession).where(UserSession.user_id == user.id))
+            audit.record(
+                db,
+                None,
+                "password_reset_cli",
+                "user",
+                user.username,
+                {"totp_disabled": bool(args.disable_totp)},
+            )
+            db.commit()
+            totp_note = " Two-factor login is still on." if user.totp_enabled else ""
+            print(f"Password of '{username}' was reset; the account is unlocked.{totp_note}")
+    finally:
+        engine.dispose()
     return 0
 
 

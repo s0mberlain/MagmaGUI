@@ -17,6 +17,15 @@ Open http://localhost:8080 and sign in as `admin`. Set `ADMIN_PASSWORD` in `.env
 
 On first start the database is created, migrated and filled with the default MaGMa catalogue (12 L1 + Weaponization (not applicable), 62 L2, 169 L3, reference lists, business drivers). Data is stored in the `magma-data` volume (`/data` in the container). API docs (signed-in users): http://localhost:8080/api/docs
 
+`ADMIN_PASSWORD` is only used on the very first start, to create the first admin; changing it
+later has no effect. To set a new password (it also unlocks the account and signs it out):
+
+```bash
+docker compose exec magma magma reset-password                # asks for the new password
+docker compose exec magma magma reset-password --from-env     # takes ADMIN_PASSWORD from .env
+docker compose exec magma magma reset-password alice --disable-totp   # lost authenticator too
+```
+
 Behind a reverse proxy, set `FORWARDED_ALLOW_IPS` to the proxy's address so the audit log records
 the real client address (the image trusts only `127.0.0.1` by default; never use `*` when the
 port is reachable directly).

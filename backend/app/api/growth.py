@@ -7,9 +7,10 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app import audit, growth
+from app import audit, drivers, growth
 from app.api.deps import DB, SettingsDep
 from app.models import L3UseCase, Lifecycle, MaturityAssessment
+from app.schemas import DriverCoverage
 from app.scoring import RuleInput, score_rule
 from app.security import Admin, Editor, Reader
 
@@ -35,6 +36,9 @@ class GapRow(BaseModel):
     target_source: str | None
     gap: float | None
     priority: float | None
+    business_drivers: list[str] = []
+    compliance_drivers: list[str] = []
+    driver_boost: float = 1.0
 
 
 class GapSummary(BaseModel):
@@ -50,6 +54,9 @@ class GapSummary(BaseModel):
 class GapsOut(BaseModel):
     summary: GapSummary
     rows: list[GapRow]
+    # drivers without linked use cases, or whose use cases score below the threshold
+    driver_gaps: list[DriverCoverage] = []
+    driver_low_threshold: float = 0.3
 
 
 @router.get("/growth/gaps", response_model=GapsOut)
@@ -63,7 +70,12 @@ def gaps(
 ) -> GapsOut:
     """Active rules with risk, target and the gap to it, most valuable work first."""
     targets = settings.risk_target_map
-    q = select(L3UseCase).where(L3UseCase.lifecycle_status.in_(ACTIVE)).order_by(L3UseCase.code)
+    q = (
+        select(L3UseCase)
+        .options(*drivers.l3_parent_options())
+        .where(L3UseCase.lifecycle_status.in_(ACTIVE))
+        .order_by(L3UseCase.code)
+    )
     if l1:
         q = q.where(L3UseCase.code.startswith(l1.upper() + "-"))
     rows, all_rows = [], []
@@ -102,6 +114,11 @@ def gaps(
             target_source=e.target_source,
             gap=e.gap,
             priority=e.priority,
+            business_drivers=sorted(b.code for b in r.parent.business_drivers),
+            compliance_drivers=sorted(
+                drivers.compliance_label(c) for c in r.parent.compliance_drivers
+            ),
+            driver_boost=e.boost,
         )
         all_rows.append(row)
         if (row.risk or 0) < min_risk and min_risk > 1:
@@ -109,7 +126,14 @@ def gaps(
         if below_target and not row.gap:
             continue
         rows.append(row)
-    rows.sort(key=lambda x: (-(x.priority or 0), -(x.gap or 0), x.code))
+    rows.sort(
+        key=lambda x: (
+            -(x.priority or 0),
+            -x.driver_boost,  # without a risk level, rules of driver-linked L2s still rank first
+            -(x.gap or 0),
+            x.code,
+        )
+    )
     with_target = [x for x in all_rows if x.target is not None]
     below = [x for x in with_target if x.gap]
     by_risk: dict[int, dict[str, int]] = {}
@@ -127,7 +151,17 @@ def gaps(
             risk_targets=targets,
         ),
         rows=rows,
+        driver_gaps=driver_gaps(db, settings),
+        driver_low_threshold=settings.driver_low_coverage,
     )
+
+
+def driver_gaps(db, settings) -> list[DriverCoverage]:
+    """Uncovered drivers first, then low coverage, lowest first."""
+    cov = drivers.coverage(db, settings.default_verification_days, settings.driver_low_coverage)
+    items = [d for d in cov.business + cov.compliance if d.gap or d.low]
+    items.sort(key=lambda d: (not d.gap, d.coverage or 0.0, d.source or "", d.code))
+    return items
 
 
 # ---------------------------------------------------------------- maturity

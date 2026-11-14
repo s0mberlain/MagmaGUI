@@ -209,6 +209,7 @@ class Report(FPDF):
 
 
 def build(db: Session, settings: Settings) -> bytes:
+    from app import drivers
     from app.api import attack_api, growth, output, scores, snapshots
 
     s = scores.scores(None, db, settings)
@@ -219,6 +220,7 @@ def build(db: Session, settings: Settings) -> bytes:
     due = scores.verification_due(None, db, settings, 0)
     cov = attack_api.coverage(None, db, settings)
     out = output.summary(None, db, 12)
+    dcov = drivers.coverage(db, settings.default_verification_days, settings.driver_low_coverage)
     today = date.today()
     changes_month = db.scalar(
         select(func.count())
@@ -331,11 +333,76 @@ def build(db: Session, settings: Settings) -> bytes:
         bars={5: (5, DATA1)},
     )
 
+    def flag(gap: bool, low: bool) -> str:
+        return "no use case" if gap else ("low" if low else "")
+
+    pdf.h2("Coverage per business driver")
+    pdf.p(
+        "Average weight of the L2 use cases linked to each driver; L2 use cases without scored "
+        f"rules count as 0. Below {pct(dcov.low_threshold)} is low coverage.",
+        size=8.5,
+        color=MUTED,
+    )
+    pdf.ln(1)
+    pdf.table(
+        [
+            ("ID", 16, "L"),
+            ("Business driver", 56, "L"),
+            ("L2", 12, "R"),
+            ("L3", 12, "R"),
+            ("Coverage", 20, "R"),
+            ("", 38, "L"),
+            ("Gap", 24, "L"),
+        ],
+        [
+            [
+                d.code,
+                d.name,
+                d.l2_count,
+                d.l3_count,
+                pct(d.coverage),
+                d.coverage,
+                flag(d.gap, d.low),
+            ]
+            for d in dcov.business
+        ],
+        bars={5: (5, DATA1)},
+    )
+
+    pdf.h2("Coverage per compliance source")
+    pdf.table(
+        [
+            ("Source", 56, "L"),
+            ("Linked", 22, "R"),
+            ("L2", 12, "R"),
+            ("L3", 12, "R"),
+            ("Coverage", 20, "R"),
+            ("", 38, "L"),
+        ],
+        [
+            [
+                x.name,
+                f"{x.linked_drivers}/{x.drivers}",
+                x.l2_count,
+                x.l3_count,
+                pct(x.coverage),
+                x.coverage,
+            ]
+            for x in dcov.sources
+        ],
+        bars={5: (5, DATA1)},
+    )
+    uncovered = [d for d in dcov.business + dcov.compliance if d.gap]
+    if uncovered:
+        pdf.ln(2)
+        names = ", ".join((f"{d.source} {d.code}" if d.source else d.code) for d in uncovered)
+        pdf.p(f"Drivers without any linked use case: {names}", size=8, color=MUTED)
+
     pdf.h2("Top priorities: gap to target")
     pdf.p(
         f"{gaps.summary.below_target} of {gaps.summary.with_target} active rules are below their "
         f"target implementation (average gap {pct(gaps.summary.avg_gap)}). Priority = potential x "
-        "risk / 5.",
+        "risk / 5, raised by 10 % for each driver linked to the L2 use case (at most 50 %).",
         size=8.5,
         color=MUTED,
     )

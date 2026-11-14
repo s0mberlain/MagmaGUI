@@ -4,6 +4,7 @@ import { api, type L3, type RefItem } from "../api";
 import { useAuth } from "../auth";
 import ConfigPanel from "../components/ConfigPanel";
 import LifecyclePanel from "../components/LifecyclePanel";
+import { DriverBlock } from "../components/Drivers";
 import OutputPanel from "../components/OutputPanel";
 import { ErrorNote, MultiSelect, StatusPill, useLoad } from "../components/ui";
 import { fmtDate, num, pct } from "../lib/format";
@@ -291,6 +292,16 @@ export default function RuleDetail() {
               {assessed && !["operational", "maintenance"].includes(r.lifecycle_status) && (
                 <p className="small muted">{t("Only operational and maintenance rules count towards the scores.")}</p>
               )}
+            </section>
+
+            <section className="card stack-sm" aria-labelledby="drh">
+              <div className="section-head">
+                <h2 id="drh">{t("Drivers")}</h2>
+                <Link to={`/usecases?l2=${r.l2_code}`} className="small">
+                  {t("Inherited from {code}", { code: r.l2_code })}
+                </Link>
+              </div>
+              <DriverBlock business={r.business_drivers} compliance={r.compliance_drivers} />
             </section>
 
             <section className="card stack" aria-labelledby="vh">

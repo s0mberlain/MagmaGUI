@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { api, type GapRow, type Gaps, type L1 } from "../api";
+import { api, type DriverCoverageReport, type GapRow, type Gaps, type L1 } from "../api";
+import { CoverageCell } from "../components/Drivers";
 import { ErrorNote, StatusPill, useLoad } from "../components/ui";
 import { num, pct } from "../lib/format";
 import { t } from "../i18n";
@@ -37,6 +38,8 @@ export default function Priorities() {
   const [below, setBelow] = useState(true);
   const gaps = useLoad<Gaps>(() => api.gaps({ l1, min_risk: minRisk, below_target: below }), [l1, minRisk, below]);
   const [limit, setLimit] = useState(50);
+  const cov = useLoad<DriverCoverageReport>(() => api.driverCoverage());
+  const [allDrivers, setAllDrivers] = useState(false);
   const g = gaps.data;
   const s = g?.summary;
 
@@ -46,11 +49,13 @@ export default function Priorities() {
         <div>
           <h1>{t("Priorities")}</h1>
           <div className="subtitle">
-            {t("Gap to target per rule, highest priority first. Priority = potential × risk level ÷ 5.")}
+            {t(
+              "Gap to target per rule, highest priority first. Priority = potential × risk level ÷ 5, raised by 10 % per driver linked to the L2 use case (at most 50 %).",
+            )}
           </div>
         </div>
       </header>
-      <ErrorNote error={gaps.error ?? cat.error} />
+      <ErrorNote error={gaps.error ?? cat.error ?? cov.error} />
 
       <section className="kpi-grid" aria-label={t("Summary")}>
         <div className="card kpi">
@@ -67,6 +72,18 @@ export default function Priorities() {
           <span className="kpi-label">{t("No risk level")}</span>
           <span className="kpi-value">{s ? s.no_risk : "–"}</span>
           <span className="kpi-sub">{t("Set a risk level on the L2 use case or the rule")}</span>
+        </div>
+        <div className="card kpi">
+          <span className="kpi-label">{t("Driver gaps")}</span>
+          <span className="kpi-value">{g ? g.driver_gaps.length : "–"}</span>
+          <span className="kpi-sub">
+            {g
+              ? t("{a} without a use case, {b} with low coverage", {
+                  a: g.driver_gaps.filter((d) => d.gap).length,
+                  b: g.driver_gaps.filter((d) => !d.gap).length,
+                })
+              : "…"}
+          </span>
         </div>
         <div className="card kpi risk-kpi">
           <span className="kpi-label">{t("Below target per risk level")}</span>
@@ -94,6 +111,62 @@ export default function Priorities() {
               })}
           </div>
         </div>
+      </section>
+
+      <section className="card table-card" aria-labelledby="dch">
+        <div className="table-title filters">
+          <h2 id="dch">{t("Driver coverage")}</h2>
+          <label className="check small">
+            <input type="checkbox" checked={!allDrivers} onChange={(e) => setAllDrivers(!e.target.checked)} />
+            {t("Only gaps and low coverage")}
+          </label>
+          <span className="grow" />
+          <span className="small muted">
+            {g && t("Low coverage: below {p}", { p: pct(g.driver_low_threshold) })}
+          </span>
+        </div>
+        <div className="scroll-x">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>{t("Driver")}</th>
+                <th>{t("Type")}</th>
+                <th className="num">L2</th>
+                <th className="num">L3</th>
+                <th style={{ width: "30%" }}>{t("Coverage")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(allDrivers && cov.data
+                ? [...cov.data.business, ...cov.data.compliance].sort(
+                    (a, b) => Number(b.gap) - Number(a.gap) || (a.coverage ?? 0) - (b.coverage ?? 0),
+                  )
+                : (g?.driver_gaps ?? [])
+              ).map((d) => (
+                <tr key={`${d.source ?? "bd"}-${d.id}`}>
+                  <td>
+                    <Link
+                      className="rule-link"
+                      to={d.source ? `/usecases?cd=${d.id}&view=table` : `/usecases?bd=${encodeURIComponent(d.code)}&view=table`}
+                    >
+                      <span className="mono small muted">{d.source ? `${d.source} ${d.code}` : d.code}</span>
+                      <span>{d.name || d.code}</span>
+                    </Link>
+                  </td>
+                  <td className="small">{d.source ? t("Compliance") : t("Business")}</td>
+                  <td className="num">{d.l2_count}</td>
+                  <td className="num">{d.l3_count}</td>
+                  <td>
+                    <CoverageCell d={d} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {g && !allDrivers && !g.driver_gaps.length && (
+          <p className="muted empty-flat">{t("Every driver is linked and above the threshold.")}</p>
+        )}
       </section>
 
       <section className="card table-card" aria-labelledby="gh">
@@ -146,6 +219,7 @@ export default function Priorities() {
                 <th style={{ width: "22%" }}>{t("Implementation vs target")}</th>
                 <th className="num">{t("Gap")}</th>
                 <th className="num">{t("Potential")}</th>
+                <th>{t("Drivers")}</th>
                 <th className="num">{t("Priority")}</th>
               </tr>
             </thead>
@@ -174,6 +248,21 @@ export default function Priorities() {
                   </td>
                   <td className="num">{r.gap ? pct(r.gap) : <span className="text-ok">reached</span>}</td>
                   <td className="num">{num(r.potential)}</td>
+                  <td>
+                    {r.business_drivers.length + r.compliance_drivers.length > 0 ? (
+                      <span
+                        className="chip chip-info"
+                        title={[...r.business_drivers, ...r.compliance_drivers].join(", ")}
+                      >
+                        {t("{n} linked · ×{f}", {
+                          n: r.business_drivers.length + r.compliance_drivers.length,
+                          f: r.driver_boost.toFixed(1),
+                        })}
+                      </span>
+                    ) : (
+                      <span className="muted small">{t("none")}</span>
+                    )}
+                  </td>
                   <td className="num strong">{num(r.priority)}</td>
                 </tr>
               ))}

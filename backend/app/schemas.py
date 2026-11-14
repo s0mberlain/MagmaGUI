@@ -121,6 +121,58 @@ class ComplianceSourceIn(BaseModel):
     name: Name
 
 
+class ComplianceRef(BaseModel):
+    """A linked compliance driver, with its source, as shown next to a use case."""
+
+    id: int
+    source_id: int
+    source: str
+    ref: str
+    name: str
+
+
+class LinkedUseCase(BaseModel):
+    code: str
+    name: str
+    level: str  # l2 | l3
+
+
+class DriverCoverage(BaseModel):
+    """Coverage of one driver over the L2 use cases linked to it (app/drivers.py)."""
+
+    id: int
+    code: str  # business driver code or compliance reference
+    name: str
+    source_id: int | None = None
+    source: str | None = None
+    l2_count: int
+    l3_count: int
+    scored_l2: int
+    coverage: float | None  # average L2 weight, L2s without scored rules count as 0
+    gap: bool  # no linked use case
+    low: bool  # linked, but coverage below the threshold
+    l2_codes: list[str]
+
+
+class SourceCoverage(BaseModel):
+    id: int
+    name: str
+    drivers: int
+    linked_drivers: int
+    l2_count: int
+    l3_count: int
+    coverage: float | None
+    gap_drivers: int
+    low_drivers: int
+
+
+class DriverCoverageOut(BaseModel):
+    low_threshold: float
+    business: list[DriverCoverage]
+    compliance: list[DriverCoverage]
+    sources: list[SourceCoverage]
+
+
 # ---------------------------------------------------------------- use cases
 
 
@@ -160,6 +212,9 @@ class L1Out(ORM):
     sort_order: int
     l2_count: int = 0
     l3_count: int = 0
+    # inherited from the L2 use cases below (read-only)
+    business_drivers: list[str] = []
+    compliance_drivers: list[ComplianceRef] = []
 
 
 class TrackingFields(BaseModel):
@@ -204,6 +259,7 @@ class L2Out(BaseModel):
     actors: list[str]
     business_drivers: list[str]
     compliance_driver_ids: list[int]
+    compliance_drivers: list[ComplianceRef] = []
     l3_count: int
 
 
@@ -272,6 +328,9 @@ class L3Out(BaseModel):
     detection_technologies: list[str]
     scopes: list[str]
     updated_at: datetime
+    # inherited from the L2 use case (read-only)
+    business_drivers: list[str] = []
+    compliance_drivers: list[ComplianceRef] = []
     # risk and target in effect (own value, else the L2's, else derived from the risk level)
     effective_risk: int | None = None
     risk_source: str | None = None

@@ -137,8 +137,22 @@ snapshots and a matching change log.
 Every L2 use case has a risk level (1–5) and an optional target implementation; a rule follows
 its L2 unless it sets its own. Without an explicit target the risk level gives one
 (`RISK_TARGETS`, default 40 % for risk 1 up to 90 % for risk 5). *Priorities* lists the active
-rules with the gap between implementation and target, sorted by priority = potential × risk ÷ 5,
-so the work with the most detection gain on the riskiest use cases comes first.
+rules with the gap between implementation and target, sorted by priority = potential × risk ÷ 5
+× driver boost, so the work with the most detection gain on the riskiest use cases comes first.
+
+## Business and compliance drivers
+
+Each L2 use case links to any number of business drivers and compliance drivers (from any
+compliance source) as plain links without a weight; its L3 rules and its L1 inherit them
+read-only. Analysts and admins set them on the L2 detail or in the table view of *Use cases*,
+which can be filtered by business driver, compliance source and compliance driver. Every change
+is in the audit log with the old and new links.
+
+Driver coverage = average weight of the linked L2 use cases, where an L2 without scored rules
+counts as 0. A driver without any linked use case is a gap; one below `DRIVER_LOW_COVERAGE`
+(default 30 %) has low coverage. *Business drivers*, the dashboard, *Priorities* and the PDF
+report show the coverage. Each linked driver raises the priority of the L2's rules by 10 %, at
+most 50 %. Deleting a linked driver asks first and lists the use cases that lose the link.
 
 *Maturity* records self-assessments on the CMMI scale (1 Initial … 5 Optimizing) with an
 optional target level, a level per aspect (people, process, technology) and notes. The level is
@@ -195,7 +209,10 @@ as the SIEM rule id.
 
 *Import / Export* writes the classic MaGMa UCF Tool layout (L1 UC, L2 UC, L3 UC, Drivers,
 References) with its formulas, plus extra columns for app fields. Import reads the same layout,
-including the original tool, with a preview before anything is saved. *Merge* adds and updates by
+including the original tool, with a preview before anything is saved. The L2 business driver and policy /
+regulator columns hold one value each, as in the classic tool: export writes the first link
+there and every link in the app columns *All business drivers* and *All compliance drivers*;
+import links both, and an unknown code is a warning in the preview. *Merge* adds and updates by
 ID; *Replace* (admin) also removes what is not in the file. A JSON backup export includes
 verifications and the configuration history.
 

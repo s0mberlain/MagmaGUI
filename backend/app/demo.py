@@ -384,7 +384,8 @@ def apply_demo_data(
     drivers = list(db.scalars(select(BusinessDriver)))
 
     compliance: list[ComplianceDriver] = []
-    for src in db.scalars(select(ComplianceSource)):
+    sources = list(db.scalars(select(ComplianceSource).order_by(ComplianceSource.id)))
+    for src in sources:
         existing = {d.ref for d in src.drivers}
         for code, name in COMPLIANCE_REFS.get(src.name, []):
             if code not in existing:
@@ -423,13 +424,19 @@ def apply_demo_data(
             added += 1
     db.flush()
 
+    # Leave the last business driver and the last requirement of each compliance source unlinked,
+    # so the driver pages and the Priorities page show what a coverage gap looks like.
+    linkable_bd = sorted(drivers, key=lambda d: d.code)[:-1] or drivers
+    spare = {max(src.drivers, key=lambda d: d.ref).id for src in sources if len(src.drivers) > 1}
+    linkable_cd = [c for c in compliance if c.id not in spare] or compliance
+
     l2s = list(db.scalars(select(L2UseCase).order_by(L2UseCase.code)))
     for l2 in l2s:
         has_rules = bool(l2.children)
         l2.lifecycle_status = Lifecycle.operational if has_rules else Lifecycle.onboarding
         l2.actors = _pick(rnd, refs[RefKind.threat_actor], 1, 2)
-        l2.business_drivers = _pick(rnd, drivers, 1, 2)
-        l2.compliance_drivers = _pick(rnd, compliance, 0, 2)
+        l2.business_drivers = _pick(rnd, linkable_bd, 1, 3)
+        l2.compliance_drivers = _pick(rnd, linkable_cd, 1, 2)
         l2.risk_level = rnd.randint(1, 5)
         l2.target_implementation = rnd.choice([0.5, 0.6, 0.7, 0.8])
         l2.onboarded_at = today - timedelta(days=rnd.randint(200, 1100)) if has_rules else None

@@ -135,7 +135,8 @@ export function MultiSelect({
   disabled,
 }: {
   label: string;
-  options: { value: string; label: string }[];
+  /** options with a `group` are listed under that heading (in the order the groups appear) */
+  options: { value: string; label: string; group?: string }[];
   value: string[];
   onChange: (v: string[]) => void;
   disabled?: boolean;
@@ -162,11 +163,18 @@ export function MultiSelect({
         </summary>
         {!disabled && (
           <fieldset className="multi-list" aria-labelledby={id}>
-            {options.map((o) => (
-              <label key={o.value}>
-                <input type="checkbox" checked={value.includes(o.value)} onChange={() => toggle(o.value)} />
-                {o.label}
-              </label>
+            {[...new Set(options.map((o) => o.group ?? ""))].map((g) => (
+              <div key={g} className="multi-group" role="group" aria-label={g || undefined}>
+                {g && <span className="multi-group-head">{g}</span>}
+                {options
+                  .filter((o) => (o.group ?? "") === g)
+                  .map((o) => (
+                    <label key={o.value}>
+                      <input type="checkbox" checked={value.includes(o.value)} onChange={() => toggle(o.value)} />
+                      {o.label}
+                    </label>
+                  ))}
+              </div>
             ))}
             {!options.length && <span className="muted">{t("The reference list is empty.")}</span>}
           </fieldset>

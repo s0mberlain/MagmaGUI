@@ -59,6 +59,12 @@ class Settings(BaseSettings):
     git_author_email_domain: str = "magma.local"
     # Push automatically after each config commit and tag (in the background).
     git_auto_sync: bool = True
+    # Two-way sync: also read config changes made directly in the repository back into the app.
+    git_pull: bool = False
+    # How often to look for changes in the repository (minutes, 0 = only via webhook / by hand).
+    git_pull_interval_minutes: int = 5
+    # Shared secret for POST /api/git/webhook (GitHub, Gitea, GitLab push events). Empty = off.
+    git_webhook_secret: str | None = None
 
     # SSO via OpenID Connect (see app/oidc.py). Enabled when issuer and client id are set.
     oidc_issuer: str | None = None

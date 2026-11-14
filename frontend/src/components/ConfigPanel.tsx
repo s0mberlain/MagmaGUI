@@ -370,7 +370,14 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
                 <span className="mono small accent">r{c.rev}</span>
                 <span className="mono small muted">{c.short}</span>
                 <span className="stack-xs grow">
-                  <span className="strong-500">{c.message}</span>
+                  <span className="strong-500">
+                    {c.message}
+                    {c.source === "git" && (
+                      <span className="chip chip-git" title={t("Committed directly in the git repository")}>
+                        {t("from git")}
+                      </span>
+                    )}
+                  </span>
                   <span className="small muted">
                     {c.author} · {when(c.created_at)}
                     {c.git_sha && (

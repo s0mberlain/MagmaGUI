@@ -249,6 +249,8 @@ export interface ConfigCommit {
   created_at: string;
   restored_from: string | null;
   git_sha?: string | null;
+  /** "git" when the commit was made directly in the connected repository (two-way sync). */
+  source?: "app" | "git";
   tags: ConfigTag[];
 }
 export interface ConfigState {
@@ -372,6 +374,13 @@ export interface GitStatus {
   head_sha: string | null;
   commits_total: number;
   commits_unsynced: number;
+  pull: boolean;
+  pull_interval_minutes: number;
+  webhook: boolean;
+  commits_from_git: number;
+  last_import_at: string | null;
+  last_imported_sha: string | null;
+  import_notes: string[];
 }
 
 export interface GapRow {

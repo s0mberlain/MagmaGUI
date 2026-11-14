@@ -590,3 +590,8 @@ a.user-meta:hover span:first-child { text-decoration: underline; }
 .sidebar .lang-dark option { color: #000; background: #fff; }
 .login-panel { position: relative; }
 .lang-corner { position: absolute; top: 16px; right: 16px; }
+
+/* two-way git sync (M7) */
+.chip-git { margin-left: 8px; background: var(--c-info-soft); color: var(--c-info-ink); font-size: 11px; vertical-align: middle; }
+.note-box { border: 1px solid var(--c-border); border-left: 3px solid var(--c-accent); border-radius: var(--radius); padding: 10px 12px; background: var(--c-surface); }
+.plain-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }

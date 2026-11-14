@@ -344,6 +344,8 @@ class ConfigCommit(Base):
     restored_from: Mapped[str | None] = mapped_column(String(64))
     # optional git repository sync (app/gitsync.py): commit id in the connected repo
     git_sha: Mapped[str | None] = mapped_column(String(64))
+    # "app" = saved in the app, "git" = imported from a commit made directly in the repository
+    source: Mapped[str] = mapped_column(String(8), default="app", server_default="app")
 
     tags: Mapped[list["ConfigTag"]] = relationship(
         back_populates="commit", cascade="all, delete-orphan", order_by="ConfigTag.id"
@@ -412,6 +414,11 @@ class GitSyncState(Base):
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(Text)
     head_sha: Mapped[str | None] = mapped_column(String(64))
+    # two-way sync: remote commits up to this one have been read back into the app
+    last_imported_sha: Mapped[str | None] = mapped_column(String(64))
+    last_import_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # what the last import did not take over (conflicts, invalid YAML, unknown paths)
+    import_notes: Mapped[list | None] = mapped_column(JSON, default=list)
 
 
 class MaturityAssessment(Base):

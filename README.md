@@ -100,10 +100,24 @@ configuration commit to that repository as a real git commit with the same autho
 message, on `usecases/<L1>/<L2>/<L3>.yaml` (an L2 config is `usecases/<L1>/<L2>/<L2>.yaml`). Tags
 become `<code>/<tag>`, e.g. `AO-CRE-01/verified-2026-11-13`. Sync runs in the background after each
 commit (`GIT_AUTO_SYNC`) and at startup; admins see the state and can sync by hand under
-*Import / Export*. The app stays the source of truth: changes made in the repository are not read
-back. To try it locally: `docker compose --profile gitea up -d` starts Gitea on port 3000 with user
-magma / magma-password and an empty repository `magma/usecases`; use the Gitea values from
-`.env.example`.
+*Import / Export*. To try it locally: `docker compose --profile gitea up -d` starts Gitea on port
+3000 with user magma / magma-password and an empty repository `magma/usecases`; use the Gitea
+values from `.env.example`.
+
+**Two-way sync** (`GIT_PULL=true`, off by default): commits that people push to the branch and
+that change one of these files are read back into the app as new config commits, with the git
+author, date and message and a *from git* badge in the history. The app checks the repository
+every `GIT_PULL_INTERVAL_MINUTES` (5) and at every sync; set `GIT_WEBHOOK_SECRET` and add a push
+webhook to `<BASE_URL>/api/git/webhook` to pick changes up at once (GitHub and Gitea/Forgejo
+signatures, GitLab token header, or `X-Magma-Token: <secret>`). Rules:
+
+- Only valid YAML for an existing use case is taken over; deleting the file clears the config.
+- If the same config was also changed in the app and that change is not in git yet, the app
+  version wins and is pushed on top. The git change stays in the repository history.
+- What was not taken over (conflict, invalid YAML, unknown path) is listed under
+  *Import / Export → Git repository* and in the audit log as `config_import`.
+- The local working copy is a cache: it is reset to the remote branch before every sync, so
+  force-pushes or edits in the repository never block the sync.
 
 ## Lifecycle, history and trends
 

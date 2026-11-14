@@ -1,9 +1,16 @@
-"""Optional one-way sync of the YAML config history to a git repository (PLAN 4a).
+"""Optional sync of the YAML config history with a git repository (PLAN 4a).
 
-The database stays the source of truth. Every config commit becomes a git commit with the same
-author, date and message, on `usecases/<L1>/<L2>/<L3>.yaml` (an L2 config is `<L2>/<L2>.yaml`).
-Config tags become git tags named `<code>/<tag>`. Each exported commit carries a
-`Magma-Commit: <sha>` trailer, so a sync never exports a commit twice, even after a failed push.
+App -> git: every config commit becomes a git commit with the same author, date and message, on
+`usecases/<L1>/<L2>/<L3>.yaml` (an L2 config is `<L2>/<L2>.yaml`). Config tags become git tags
+named `<code>/<tag>`. Each exported commit carries a `Magma-Commit: <sha>` trailer, so a sync never
+exports a commit twice, even after a failed push. The local working copy is only a cache: it is
+reset to the remote branch before each sync and unpushed commits are simply exported again.
+
+Git -> app (two-way sync, `GIT_PULL=true`): commits pushed to the branch by people (no trailer)
+that change a config file become new config commits in the app, with the git author, date and
+message. Each one keeps its git commit id, so it is never exported back. When the same config
+was also changed in the app and that change is not in git yet, the app version wins and is pushed
+on top; the git change stays in the repository history and is listed in the import notes.
 """
 
 import base64
@@ -19,6 +26,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app import audit, configs
 from app.config import Settings
 from app.db import try_job_lock
 from app.models import ConfigCommit, ConfigTag, GitSyncState, L2UseCase, L3UseCase
@@ -41,9 +49,10 @@ def redact(url: str) -> str:
 @dataclass
 class Result:
     exported: int = 0
+    imported: int = 0
     tags: int = 0
     head: str | None = None
-    messages: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
 
 class Repo:
@@ -73,7 +82,9 @@ class Repo:
         # passed per call, never written to .git/config
         return ["-c", f"http.extraHeader=Authorization: Basic {cred}"]
 
-    def git(self, *args: str, env: dict | None = None, remote: bool = False, check=True) -> str:
+    def git(
+        self, *args: str, env: dict | None = None, remote: bool = False, check=True, raw=False
+    ) -> str:
         cmd = ["git", *(self._auth() if remote else []), *args]
         p = subprocess.run(
             cmd,
@@ -86,7 +97,7 @@ class Repo:
         if check and p.returncode != 0:
             msg = (p.stderr or p.stdout).strip().replace(self.s.git_token or "\0", "***")
             raise GitError(f"git {args[0]}: {redact(msg)}")
-        return p.stdout.strip()
+        return p.stdout if raw else p.stdout.strip()
 
     def ok(self, *args: str, remote: bool = False) -> bool:
         return (
@@ -111,16 +122,18 @@ class Repo:
             self.git("remote", "set-url", "origin", self.s.git_remote_url)
         self.git("config", "user.name", "MaGMa UCF")
         self.git("config", "user.email", f"magma@{self.s.git_author_email_domain}")
-        self.git("fetch", "-q", "origin", remote=True)
-        if self.ok("rev-parse", "-q", "--verify", f"refs/remotes/origin/{b}"):
-            if not self.ok("rev-parse", "-q", "--verify", "HEAD"):
-                self.git("checkout", "-q", "-B", b, f"origin/{b}")
-            elif not self.ok("rebase", "-q", f"origin/{b}"):
-                self.git("rebase", "--abort", check=False)
-                raise GitError(
-                    f"Local commits do not apply on top of origin/{b}. Someone changed the same "
-                    "files in the repository; resolve it there or reset the working copy."
-                )
+        self.git("fetch", "-q", "--prune", "--prune-tags", "--force", "origin", remote=True)
+        # The database is the source of truth and the working copy only a cache: start from the
+        # remote branch; commits that were not pushed yet are exported again by sync().
+        if self.remote_head():
+            self.git("checkout", "-q", "-f", "-B", b, f"origin/{b}")
+            self.git("clean", "-q", "-fd")
+
+    def remote_head(self) -> str | None:
+        ref = f"refs/remotes/origin/{self.s.git_branch}"
+        if not self.ok("rev-parse", "-q", "--verify", ref):
+            return None
+        return self.git("rev-parse", ref)
 
     def exported(self) -> dict[str, str]:
         """Magma commit sha -> git commit sha for everything reachable from HEAD."""
@@ -167,8 +180,109 @@ the app appears here as a git commit with the same author, date and message. Tag
 `<use case>/<tag>`, for example `AO-CRE-01/verified-2026-11-13`.
 
 Layout: `usecases/<L1>/<L2>/<L2>.yaml` for an L2 use case and `usecases/<L1>/<L2>/<L3>.yaml`
-for an L3 rule. Changes made directly in this repository are not read back into the app.
+for an L3 rule. When two-way sync is on in the app, commits pushed here that change these files
+are read back into the app (valid YAML only, existing use cases only); otherwise changes made
+directly in this repository are not read back.
 """
+
+
+PATH_RE = re.compile(r"^usecases/([^/]+)/([^/]+)/([^/]+)\.ya?ml$")
+
+
+def owner_for(db: Session, path: str) -> L2UseCase | L3UseCase | None:
+    """The use case a repository path belongs to (the inverse of path_for)."""
+    m = PATH_RE.match(path)
+    if not m:
+        return None
+    l1, l2, name = m.groups()
+    if name == l2:
+        obj = db.scalar(select(L2UseCase).where(L2UseCase.code == l2))
+        return obj if obj and obj.parent.code == l1 else None
+    obj = db.scalar(select(L3UseCase).where(L3UseCase.code == name))
+    return obj if obj and obj.parent.code == l2 and obj.parent.parent.code == l1 else None
+
+
+def import_remote(db: Session, repo: Repo, settings: Settings, res: Result, exported: set) -> None:
+    """Read config changes that people pushed to the branch back into the app (two-way sync)."""
+    st = state(db)
+    head = repo.remote_head()
+    if head is None or head == st.last_imported_sha:
+        return
+    since = st.last_imported_sha
+    if since and not repo.ok("merge-base", "--is-ancestor", since, head):
+        since = None  # history was rewritten: look at everything again (content checks below)
+    rng = f"{since}..{head}" if since else head
+    out = repo.git("log", "--reverse", "--format=%H", rng)
+    shas = out.split()
+
+    # per config file: the people's commits after the last commit the app wrote to it
+    changes: dict[str, list[tuple[str, str]]] = {}
+    for sha in shas:
+        body = repo.git("show", "-s", "--format=%(trailers:key=" + TRAILER + ",valueonly)", sha)
+        files = repo.git(
+            "diff-tree", "--no-commit-id", "--root", "-r", "--name-status", "--no-renames", sha
+        )
+        for line in files.splitlines():
+            status, _, path = line.partition("\t")
+            if not PATH_RE.match(path):
+                continue
+            if body.strip():
+                changes.pop(path, None)  # the app wrote this file later: earlier edits are in it
+            else:
+                changes.setdefault(path, []).append((sha, status))
+
+    unsynced = {
+        (c.l2_id, c.l3_id)
+        for c in db.scalars(select(ConfigCommit).where(ConfigCommit.source != "git"))
+        if c.sha not in exported
+    }
+    for path, commits in changes.items():
+        obj = owner_for(db, path)
+        if obj is None:
+            res.notes.append(f"{path}: no such use case in the app, not imported")
+            continue
+        key = (obj.id, None) if isinstance(obj, L2UseCase) else (None, obj.id)
+        if key in unsynced:
+            res.notes.append(
+                f"{obj.code}: changed in the app and in git ({commits[-1][0][:7]}); "
+                "the app version was kept and pushed on top"
+            )
+            continue
+        for sha, status in commits:
+            content = "" if status == "D" else repo.git("show", f"{sha}:{path}", raw=True)
+            check = configs.check_yaml(content)
+            if not check.valid:
+                where = f" (line {check.line})" if check.line else ""
+                res.notes.append(f"{obj.code}: git commit {sha[:7]} is not valid YAML{where}")
+                continue
+            current = configs.head(db, obj)
+            if (current.content if current else "").strip() == content.strip():
+                continue
+            name, when, subject = repo.git("show", "-s", "--format=%an%x00%aI%x00%s", sha).split(
+                "\0"
+            )
+            c = configs.make_commit(
+                db,
+                obj,
+                content,
+                (subject or "Change in git")[:500],
+                (name or "git")[:64],
+                at=datetime.fromisoformat(when),
+            )
+            c.source, c.git_sha = "git", sha
+            audit.record(
+                db,
+                None,
+                "config_import",
+                "l2" if key[0] else "l3",
+                obj.code,
+                {"git_sha": sha, "rev": c.rev, "author": c.author},
+            )
+            res.imported += 1
+    st.last_imported_sha = head
+    st.last_import_at = datetime.now(UTC)
+    st.import_notes = res.notes[-50:]
+    db.info.pop("git_dirty", None)  # nothing new to export because of the import itself
 
 
 def sync(db: Session, settings: Settings) -> Result:
@@ -176,10 +290,13 @@ def sync(db: Session, settings: Settings) -> Result:
     repo.prepare()
     res = Result()
     done = repo.exported()
+    if settings.git_pull:
+        import_remote(db, repo, settings, res, set(done))
+        db.flush()
     todo = [
         c
         for c in db.scalars(select(ConfigCommit).order_by(ConfigCommit.created_at, ConfigCommit.id))
-        if c.sha not in done
+        if c.sha not in done and c.source != "git"
     ]
     readme = repo.dir / "README.md"
     if not readme.exists():
@@ -234,7 +351,7 @@ def sync(db: Session, settings: Settings) -> Result:
 
     # record the git ids (they can change when a rebase was needed before the push)
     done = repo.exported()
-    for c in db.scalars(select(ConfigCommit)):
+    for c in db.scalars(select(ConfigCommit).where(ConfigCommit.source != "git")):
         if done.get(c.sha) != c.git_sha:
             c.git_sha = done.get(c.sha)
     res.head = repo.git("rev-parse", "HEAD")
@@ -278,8 +395,13 @@ def run(factory: sessionmaker, settings: Settings) -> Result | None:
                 st.last_error = None
                 st.head_sha = res.head
                 db.commit()
-                if res.exported or res.tags:
-                    log.info("Git sync: %d commits, %d tags", res.exported, res.tags)
+                if res.exported or res.tags or res.imported:
+                    log.info(
+                        "Git sync: %d commits out, %d in, %d tags",
+                        res.exported,
+                        res.imported,
+                        res.tags,
+                    )
                 return res
         finally:
             _running.clear()
@@ -303,3 +425,24 @@ def request(factory: sessionmaker, settings: Settings) -> None:
 
 def running() -> bool:
     return _running.is_set()
+
+
+class Poller:
+    """Two-way sync: look for new commits in the repository every few minutes."""
+
+    def __init__(self, factory: sessionmaker, settings: Settings):
+        self.factory, self.settings = factory, settings
+        self._stop = threading.Event()
+
+    def start(self) -> None:
+        s = self.settings
+        if not (s.git_enabled and s.git_pull and s.git_pull_interval_minutes > 0):
+            return
+        threading.Thread(target=self._loop, name="gitpoll", daemon=True).start()
+
+    def _loop(self) -> None:
+        while not self._stop.wait(self.settings.git_pull_interval_minutes * 60):
+            request(self.factory, self.settings)
+
+    def stop(self) -> None:
+        self._stop.set()

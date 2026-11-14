@@ -272,7 +272,46 @@ function GitCard() {
             </dd>
             <dt>{t("Automatic sync")}</dt>
             <dd>{g.auto_sync ? t("After every config commit and tag") : t("Off, sync by hand")}</dd>
+            <dt>{t("Direction")}</dt>
+            <dd>
+              {g.pull ? t("Two-way: changes pushed to the repository are read back") : t("App to git only")}
+              {g.pull && (
+                <span className="muted">
+                  {" · "}
+                  {g.pull_interval_minutes > 0
+                    ? t("checked every {n} min", { n: g.pull_interval_minutes })
+                    : t("checked on sync")}
+                  {g.webhook && ` · ${t("webhook on")}`}
+                </span>
+              )}
+            </dd>
+            {g.pull && (
+              <>
+                <dt>{t("Read back from git")}</dt>
+                <dd>
+                  {t("{n} commits", { n: g.commits_from_git })}
+                  {g.last_import_at && (
+                    <span className="muted">
+                      {" · "}
+                      {t("last check {date}", { date: fmtTime(g.last_import_at) })}
+                    </span>
+                  )}
+                </dd>
+              </>
+            )}
           </dl>
+          {g.pull && g.import_notes.length > 0 && (
+            <div className="note-box">
+              <strong>{t("Not taken over at the last check")}</strong>
+              <ul className="plain-list small">
+                {g.import_notes.map((n) => (
+                  <li key={n} className="mono">
+                    {n}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {g.last_error && (
             <div className="form-error">
               <strong>

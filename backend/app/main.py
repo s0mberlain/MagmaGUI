@@ -104,7 +104,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             scheduler.start()
         if settings.git_enabled:
             gitsync.request(session_factory, settings)
+        poller = gitsync.Poller(session_factory, settings)
+        poller.start()
         yield
+        poller.stop()
         scheduler.stop()
         engine.dispose()
 
@@ -145,6 +148,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifecycle.router,
         snapshots.router,
         gitsync_api.router,
+        gitsync_api.hook,
         growth.router,
         attack_api.router,
         output.router,

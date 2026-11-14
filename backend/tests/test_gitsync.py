@@ -106,3 +106,151 @@ def test_bad_remote_reports_error(settings, tmp_path):
 
 def test_redact():
     assert gitsync.redact("https://u:secret@host/r.git") == "https://***@host/r.git"
+
+
+# ---------------------------------------------------------------- two-way sync (M7)
+
+
+@pytest.fixture
+def pull_admin(settings, remote, tmp_path):
+    settings.git_remote_url = str(remote)
+    settings.git_workdir = tmp_path / "work"
+    settings.git_auto_sync = False
+    settings.git_pull = True
+    settings.git_pull_interval_minutes = 0
+    settings.git_webhook_secret = "hook-secret"
+    with TestClient(create_app(settings)) as c:
+        yield login(c, "admin", ADMIN_PW)
+
+
+def human_push(clone, files: dict[str, str | None], message: str, name="Grace Hopper") -> str:
+    git(clone, "pull", "-q", "--rebase")
+    for rel, text in files.items():
+        p = clone / rel
+        if text is None:
+            git(clone, "rm", "-q", rel)
+            continue
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text)
+        git(clone, "add", rel)
+    git(clone, "-c", f"user.name={name}", "-c", "user.email=g@x", "commit", "-q", "-m", message)
+    git(clone, "push", "-q", "origin", "main")
+    return git(clone, "rev-parse", "HEAD")
+
+
+RULE = "usecases/AO/AO-CRE/AO-CRE-01.yaml"
+
+
+def test_two_way_imports_changes_made_in_git(pull_admin, remote, tmp_path):
+    a = pull_admin
+    a.put("/api/l3/AO-CRE-01/config", json={"content": "threshold: 5\n", "message": "First"})
+    assert a.post("/api/admin/git/sync").json()["last_error"] is None
+    clone = tmp_path / "clone"
+    subprocess.run(["git", "clone", "-q", str(remote), str(clone)], check=True)
+
+    sha = human_push(clone, {RULE: "threshold: 3\n# tuned\n"}, "Lower threshold")
+    s = a.post("/api/admin/git/sync").json()
+    assert s["last_error"] is None, s["last_error"]
+    assert s["commits_from_git"] == 1 and s["last_imported_sha"] == sha and s["import_notes"] == []
+
+    head = a.get("/api/l3/AO-CRE-01/config").json()
+    assert head["content"] == "threshold: 3\n# tuned\n"
+    h = head["head"]
+    assert (h["rev"], h["author"], h["message"]) == (2, "Grace Hopper", "Lower threshold")
+    assert (h["source"], h["git_sha"]) == ("git", sha)
+    audit = a.get("/api/audit").json()
+    assert any(e["action"] == "config_import" and e["entity_key"] == "AO-CRE-01" for e in audit)
+
+    # nothing is exported back and a second sync changes nothing
+    n = len(git(clone, "log", "--format=%H").splitlines())
+    s = a.post("/api/admin/git/sync").json()
+    assert s["commits_unsynced"] == 0 and s["commits_from_git"] == 1
+    git(clone, "pull", "-q")
+    assert len(git(clone, "log", "--format=%H").splitlines()) == n
+
+    # the app builds on the imported version as usual
+    r = a.put(
+        "/api/l3/AO-CRE-01/config",
+        json={"content": "threshold: 4\n", "message": "Back up", "base_sha": h["sha"]},
+    )
+    assert r.status_code == 201
+    a.post("/api/admin/git/sync")
+    git(clone, "pull", "-q")
+    assert (clone / RULE).read_text() == "threshold: 4\n"
+    assert a.get("/api/admin/git").json()["commits_from_git"] == 1
+
+
+def test_two_way_notes_conflicts_invalid_and_unknown(pull_admin, remote, tmp_path):
+    a = pull_admin
+    a.put("/api/l3/AO-CRE-01/config", json={"content": "a: 1\n", "message": "One"})
+    a.put("/api/l2/AO-CRE/config", json={"content": "owner: soc\n", "message": "L2"})
+    a.post("/api/admin/git/sync")
+    clone = tmp_path / "clone"
+    subprocess.run(["git", "clone", "-q", str(remote), str(clone)], check=True)
+
+    # changed in git and (not yet synced) in the app: the app wins
+    human_push(clone, {RULE: "a: 2\n"}, "git edit")
+    head = a.get("/api/l3/AO-CRE-01/config").json()["head"]
+    a.put(
+        "/api/l3/AO-CRE-01/config",
+        json={"content": "a: 3\n", "message": "app edit", "base_sha": head["sha"]},
+    )
+    # invalid YAML, an unknown use case, and a deleted L2 config
+    human_push(
+        clone,
+        {
+            "usecases/AO/AO-CRE/AO-CRE-02.yaml": "key: [unclosed\n",
+            "usecases/XX/XX-YYY/XX-YYY-01.yaml": "x: 1\n",
+            "usecases/AO/AO-CRE/AO-CRE.yaml": None,
+            "notes/readme.txt": "ignored\n",
+        },
+        "misc",
+    )
+    s = a.post("/api/admin/git/sync").json()
+    assert s["last_error"] is None, s["last_error"]
+    notes = "\n".join(s["import_notes"])
+    assert "AO-CRE-01: changed in the app and in git" in notes
+    assert "AO-CRE-02: git commit" in notes and "not valid YAML (line" in notes
+    assert "usecases/XX/XX-YYY/XX-YYY-01.yaml: no such use case" in notes
+
+    assert a.get("/api/l3/AO-CRE-01/config").json()["content"] == "a: 3\n"
+    assert a.get("/api/l3/AO-CRE-02/config").json()["head"] is None
+    l2 = a.get("/api/l2/AO-CRE/config").json()
+    assert l2["content"] == "" and l2["head"]["source"] == "git"
+    git(clone, "pull", "-q")
+    assert (clone / RULE).read_text() == "a: 3\n"  # app version pushed on top
+
+
+def test_one_way_ignores_changes_in_git(git_admin, remote, tmp_path):
+    a = git_admin
+    a.put("/api/l3/AO-CRE-01/config", json={"content": "a: 1\n", "message": "One"})
+    a.post("/api/admin/git/sync")
+    clone = tmp_path / "clone"
+    subprocess.run(["git", "clone", "-q", str(remote), str(clone)], check=True)
+    human_push(clone, {RULE: "a: 2\n"}, "git edit")
+    s = a.post("/api/admin/git/sync").json()
+    assert s["last_error"] is None and not s["pull"] and s["commits_from_git"] == 0
+    assert a.get("/api/l3/AO-CRE-01/config").json()["content"] == "a: 1\n"
+
+
+def test_webhook(pull_admin):
+    import hashlib
+    import hmac
+
+    a = pull_admin
+    body = b'{"ref": "refs/heads/main"}'
+    assert a.post("/api/git/webhook", content=body).status_code == 401
+    bad = {"X-Hub-Signature-256": "sha256=" + "0" * 64}
+    assert a.post("/api/git/webhook", content=body, headers=bad).status_code == 401
+    sig = hmac.new(b"hook-secret", body, hashlib.sha256).hexdigest()
+    ok = {"X-Hub-Signature-256": f"sha256={sig}"}
+    assert a.post("/api/git/webhook", content=body, headers=ok).status_code == 202
+    assert (
+        a.post("/api/git/webhook", headers={"X-Gitea-Signature": sig}, content=body).status_code
+        == 202
+    )
+    assert a.post("/api/git/webhook", headers={"X-Gitlab-Token": "hook-secret"}).status_code == 202
+
+
+def test_webhook_off_by_default(anon):
+    assert anon.post("/api/git/webhook", headers={"X-Magma-Token": "x"}).status_code == 404

@@ -3,6 +3,7 @@ import { api, type TotpSetup } from "../api";
 import { useAuth } from "../auth";
 import { ErrorNote } from "../components/ui";
 import { fmtDate } from "../lib/format";
+import { t } from "../i18n";
 
 const ROLE_TEXT = {
   admin: "Admin: manages users and everything else.",
@@ -18,24 +19,24 @@ export default function Account() {
     <>
       <header className="page-header">
         <div>
-          <h1>Account</h1>
+          <h1>{t("Account")}</h1>
           <div className="subtitle">
-            {user.display_name || user.username} · {local ? "local account" : "single sign-on"}
+            {user.display_name || user.username} · {local ? t("local account") : t("single sign-on")}
           </div>
         </div>
       </header>
       <div className="account-grid">
         <div className="stack-lg">
           <section className="card stack" aria-labelledby="who">
-            <h2 id="who">Profile</h2>
+            <h2 id="who">{t("Profile")}</h2>
             <dl className="facts">
-              <dt>Username</dt>
+              <dt>{t("Username")}</dt>
               <dd className="mono">{user.username}</dd>
-              <dt>Role</dt>
+              <dt>{t("Role")}</dt>
               <dd>{ROLE_TEXT[user.role]}</dd>
-              <dt>Sign-in</dt>
-              <dd>{local ? "Username and password" : "Your organisation's identity provider"}</dd>
-              <dt>Last sign-in</dt>
+              <dt>{t("Sign-in")}</dt>
+              <dd>{local ? t("Username and password") : t("Your organisation's identity provider")}</dd>
+              <dt>{t("Last sign-in")}</dt>
               <dd>{fmtDate(user.last_login_at)}</dd>
             </dl>
           </section>
@@ -45,9 +46,9 @@ export default function Account() {
           <TwoFactor />
         ) : (
           <section className="card stack">
-            <h2>Password and two-factor login</h2>
+            <h2>{t("Password and two-factor login")}</h2>
             <p className="muted" style={{ margin: 0 }}>
-              Your password and second factor are managed by your identity provider.
+              {t("Your password and second factor are managed by your identity provider.")}
             </p>
           </section>
         )}
@@ -69,7 +70,7 @@ function PasswordCard() {
     setError(null);
     setDone(false);
     if (next !== again) {
-      setError("The new passwords do not match.");
+      setError(t("The new passwords do not match."));
       return;
     }
     setBusy(true);
@@ -88,10 +89,10 @@ function PasswordCard() {
 
   return (
     <section className="card stack" aria-labelledby="pw">
-      <h2 id="pw">Password</h2>
+      <h2 id="pw">{t("Password")}</h2>
       <form className="stack" onSubmit={submit}>
         <label className="field">
-          Current password
+          {t("Current password")}
           <input
             className="input"
             type="password"
@@ -103,7 +104,7 @@ function PasswordCard() {
         </label>
         <div className="form-grid two">
           <label className="field">
-            New password
+            {t("New password")}
             <input
               className="input"
               type="password"
@@ -115,7 +116,7 @@ function PasswordCard() {
             />
           </label>
           <label className="field">
-            Repeat new password
+            {t("Repeat new password")}
             <input
               className="input"
               type="password"
@@ -127,10 +128,10 @@ function PasswordCard() {
           </label>
         </div>
         <ErrorNote error={error} />
-        {done && <p className="text-ok small">Password changed.</p>}
+        {done && <p className="text-ok small">{t("Password changed.")}</p>}
         <div className="row-actions start">
           <button type="submit" className="btn" disabled={busy}>
-            Change password
+            {t("Change password")}
           </button>
         </div>
       </form>
@@ -143,8 +144,8 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
   return (
     <div className="stack-sm">
       <div className="form-notice stack-xs">
-        <strong>Save these recovery codes now.</strong>
-        <span>Each code signs you in once if you lose your phone. They are not shown again.</span>
+        <strong>{t("Save these recovery codes now.")}</strong>
+        <span>{t("Each code signs you in once if you lose your phone. They are not shown again.")}</span>
       </div>
       <ul className="recovery-codes mono">
         {codes.map((c) => (
@@ -153,17 +154,17 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
       </ul>
       <div className="row-actions start">
         <button type="button" className="btn" onClick={() => void navigator.clipboard?.writeText(text)}>
-          Copy
+          {t("Copy")}
         </button>
         <a
           className="btn"
           download="magma-recovery-codes.txt"
           href={`data:text/plain;charset=utf-8,${encodeURIComponent(text + "\n")}`}
         >
-          Download .txt
+          {t("Download .txt")}
         </a>
         <button type="button" className="btn btn-primary" onClick={onDone}>
-          I saved them
+          {t("I saved them")}
         </button>
       </div>
     </div>
@@ -203,8 +204,8 @@ function TwoFactor() {
   return (
     <section className="card stack" aria-labelledby="tf">
       <div className="section-head">
-        <h2 id="tf">Two-factor login</h2>
-        <span className={on ? "pill pill-ok" : "pill pill-warn"}>{on ? "On" : "Off"}</span>
+        <h2 id="tf">{t("Two-factor login")}</h2>
+        <span className={on ? "pill pill-ok" : "pill pill-warn"}>{on ? t("On") : t("Off")}</span>
       </div>
       <ErrorNote error={error} />
 
@@ -221,12 +222,13 @@ function TwoFactor() {
       {!on && step === "idle" && (
         <>
           <p className="muted" style={{ margin: 0 }}>
-            Ask for a 6-digit code from an authenticator app (for example Microsoft Authenticator, Google Authenticator,
-            1Password or Aegis) in addition to your password.
+            {t(
+              "Ask for a 6-digit code from an authenticator app (for example Microsoft Authenticator, Google Authenticator, 1Password or Aegis) in addition to your password.",
+            )}
           </p>
           <div className="row-actions start">
             <button type="button" className="btn btn-primary" onClick={() => setStep("password")}>
-              Set up
+              {t("Set up")}
             </button>
           </div>
         </>
@@ -245,7 +247,7 @@ function TwoFactor() {
           }}
         >
           <label className="field">
-            Confirm with your password
+            {t("Confirm with your password")}
             <input
               className="input"
               type="password"
@@ -258,10 +260,10 @@ function TwoFactor() {
           </label>
           <div className="row-actions start">
             <button type="button" className="btn" onClick={reset}>
-              Cancel
+              {t("Cancel")}
             </button>
             <button type="submit" className="btn btn-primary" disabled={busy}>
-              Continue
+              {t("Continue")}
             </button>
           </div>
         </form>
@@ -281,17 +283,18 @@ function TwoFactor() {
             });
           }}
         >
-          <div className="qr" dangerouslySetInnerHTML={{ __html: setup.qr_svg }} aria-label="QR code to scan" />
+          <div className="qr" dangerouslySetInnerHTML={{ __html: setup.qr_svg }} aria-label={t("QR code to scan")} />
           <div className="stack-sm">
             <ol className="steps">
-              <li>Scan the QR code with your authenticator app.</li>
+              <li>{t("Scan the QR code with your authenticator app.")}</li>
               <li>
-                Or type this key: <span className="mono key">{setup.secret.replace(/(.{4})/g, "$1 ").trim()}</span>
+                {t("Or type this key:")}{" "}
+                <span className="mono key">{setup.secret.replace(/(.{4})/g, "$1 ").trim()}</span>
               </li>
-              <li>Enter the 6-digit code the app shows.</li>
+              <li>{t("Enter the 6-digit code the app shows.")}</li>
             </ol>
             <label className="field">
-              Code
+              {t("Code")}
               <input
                 className="input mono"
                 inputMode="numeric"
@@ -305,10 +308,10 @@ function TwoFactor() {
             </label>
             <div className="row-actions start">
               <button type="button" className="btn" onClick={reset}>
-                Cancel
+                {t("Cancel")}
               </button>
               <button type="submit" className="btn btn-primary" disabled={busy}>
-                Turn on
+                {t("Turn on")}
               </button>
             </div>
           </div>
@@ -318,20 +321,21 @@ function TwoFactor() {
       {on && step !== "codes" && (
         <>
           <p className="muted" style={{ margin: 0 }}>
-            You sign in with your password and a code from your authenticator app. Changing this needs your password and
-            a current code (or a recovery code).
+            {t(
+              "You sign in with your password and a code from your authenticator app. Changing this needs your password and a current code (or a recovery code).",
+            )}
           </p>
           {step !== "manage" ? (
             <div className="row-actions start">
               <button type="button" className="btn" onClick={() => setStep("manage")}>
-                Manage
+                {t("Manage")}
               </button>
             </div>
           ) : (
             <form className="stack" onSubmit={(e) => e.preventDefault()}>
               <div className="form-grid two">
                 <label className="field">
-                  Password
+                  {t("Password")}
                   <input
                     className="input"
                     type="password"
@@ -341,7 +345,7 @@ function TwoFactor() {
                   />
                 </label>
                 <label className="field">
-                  Code
+                  {t("Code")}
                   <input
                     className="input mono"
                     autoComplete="one-time-code"
@@ -352,7 +356,7 @@ function TwoFactor() {
               </div>
               <div className="row-actions start">
                 <button type="button" className="btn" onClick={reset}>
-                  Cancel
+                  {t("Cancel")}
                 </button>
                 <button
                   type="button"
@@ -368,7 +372,7 @@ function TwoFactor() {
                     })
                   }
                 >
-                  New recovery codes
+                  {t("New recovery codes")}
                 </button>
                 <button
                   type="button"
@@ -382,7 +386,7 @@ function TwoFactor() {
                     })
                   }
                 >
-                  Turn off
+                  {t("Turn off")}
                 </button>
               </div>
             </form>

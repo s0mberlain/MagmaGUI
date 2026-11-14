@@ -11,6 +11,7 @@ import MaturityPage from "./pages/MaturityPage";
 import Priorities from "./pages/Priorities";
 import ImportExport from "./pages/ImportExport";
 import Login from "./pages/Login";
+import Integrations from "./pages/Integrations";
 import OutputPage from "./pages/OutputPage";
 import Placeholder from "./pages/Placeholder";
 import References from "./pages/References";
@@ -19,6 +20,7 @@ import UseCases from "./pages/UseCases";
 import Users from "./pages/Users";
 import Verification from "./pages/Verification";
 import { NAV_ITEMS } from "./nav";
+import { t } from "./i18n";
 
 export default function App() {
   return (
@@ -44,6 +46,7 @@ export default function App() {
           <Route path="maturity" element={<MaturityPage />} />
           <Route path="attack" element={<AttackPage />} />
           <Route path="output" element={<OutputPage />} />
+          <Route path="integrations" element={<Integrations />} />
           <Route path="account" element={<Account />} />
           <Route
             path="audit"
@@ -68,7 +71,7 @@ export default function App() {
               element={<Placeholder title={n.label} milestone={n.milestone} />}
             />
           ))}
-          <Route path="*" element={<Placeholder title="Page not found" />} />
+          <Route path="*" element={<Placeholder title={t("Page not found")} />} />
         </Route>
       </Routes>
     </AuthProvider>

@@ -3,6 +3,7 @@ import { api, type RefItem, type RefKind } from "../api";
 import { useAuth } from "../auth";
 import { ErrorNote, useLoad } from "../components/ui";
 import { REF_KINDS } from "../lib/format";
+import { t } from "../i18n";
 
 export default function References() {
   const [kind, setKind] = useState<RefKind>("log_source");
@@ -11,11 +12,13 @@ export default function References() {
     <>
       <header className="page-header">
         <div>
-          <h1>Reference lists</h1>
-          <div className="subtitle">Pick lists used by use cases and rules. Renaming an entry updates every rule.</div>
+          <h1>{t("Reference lists")}</h1>
+          <div className="subtitle">
+            {t("Pick lists used by use cases and rules. Renaming an entry updates every rule.")}
+          </div>
         </div>
       </header>
-      <div role="tablist" aria-label="Lists" className="tabs">
+      <div role="tablist" aria-label={t("Lists")} className="tabs">
         {REF_KINDS.map((k) => (
           <button
             key={k.kind}
@@ -68,7 +71,7 @@ function RefList({ kind }: { kind: RefKind }) {
       {editor && (
         <form className="card inline-form" onSubmit={add}>
           <label className="field grow">
-            Name
+            {t("Name")}
             <input
               className="input input-sm"
               required
@@ -77,7 +80,7 @@ function RefList({ kind }: { kind: RefKind }) {
             />
           </label>
           <label className="field grow-2">
-            Description
+            {t("Description")}
             <input
               className="input input-sm"
               value={draft.description}
@@ -85,7 +88,7 @@ function RefList({ kind }: { kind: RefKind }) {
             />
           </label>
           <button type="submit" className="btn btn-primary btn-sm">
-            Add
+            {t("Add")}
           </button>
         </form>
       )}
@@ -93,9 +96,9 @@ function RefList({ kind }: { kind: RefKind }) {
         <table className="table">
           <thead>
             <tr>
-              <th style={{ width: "30%" }}>Name</th>
-              <th>Description</th>
-              {editor && <th className="num">Actions</th>}
+              <th style={{ width: "30%" }}>{t("Name")}</th>
+              <th>{t("Description")}</th>
+              {editor && <th className="num">{t("Actions")}</th>}
             </tr>
           </thead>
           <tbody>
@@ -105,7 +108,7 @@ function RefList({ kind }: { kind: RefKind }) {
                   <td>
                     <input
                       className="input input-sm"
-                      aria-label="Name"
+                      aria-label={t("Name")}
                       value={editing.name}
                       onChange={(e) => setEditing({ ...editing, name: e.target.value })}
                     />
@@ -114,7 +117,7 @@ function RefList({ kind }: { kind: RefKind }) {
                     <input
                       className="input input-sm"
                       style={{ width: "100%" }}
-                      aria-label="Description"
+                      aria-label={t("Description")}
                       value={editing.description}
                       onChange={(e) => setEditing({ ...editing, description: e.target.value })}
                     />
@@ -122,7 +125,7 @@ function RefList({ kind }: { kind: RefKind }) {
                   <td>
                     <div className="row-actions">
                       <button type="button" className="btn btn-sm" onClick={() => setEditing(null)}>
-                        Cancel
+                        {t("Cancel")}
                       </button>
                       <button
                         type="button"
@@ -131,7 +134,7 @@ function RefList({ kind }: { kind: RefKind }) {
                           if (await run(() => api.updateRef(kind, item.id, editing))) setEditing(null);
                         }}
                       >
-                        Save
+                        {t("Save")}
                       </button>
                     </div>
                   </td>
@@ -148,17 +151,21 @@ function RefList({ kind }: { kind: RefKind }) {
                           className="btn btn-sm"
                           onClick={() => setEditing({ id: item.id, name: item.name, description: item.description })}
                         >
-                          Edit
+                          {t("Edit")}
                         </button>
                         <button
                           type="button"
                           className="btn btn-sm"
                           onClick={() => {
-                            if (window.confirm(`Delete "${item.name}"? It is removed from every use case.`))
+                            if (
+                              window.confirm(
+                                t('Delete "{name}"? It is removed from every use case.', { name: item.name }),
+                              )
+                            )
                               void run(() => api.deleteRef(kind, item.id));
                           }}
                         >
-                          Delete
+                          {t("Delete")}
                         </button>
                       </div>
                     </td>

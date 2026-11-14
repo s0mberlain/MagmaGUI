@@ -43,6 +43,7 @@ class Role(enum.StrEnum):
 class AuthSource(enum.StrEnum):
     local = "local"
     sso = "sso"
+    service = "service"  # API token account for integrations (no interactive login)
 
 
 class Lifecycle(enum.StrEnum):
@@ -94,6 +95,8 @@ class User(Base):
     # TOTP second factor for local accounts (app/totp.py). The secret is encrypted with SECRET_KEY.
     totp_secret: Mapped[str | None] = mapped_column(String(255))
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # UI language (en, de, nl); None = follow the browser
+    locale: Mapped[str | None] = mapped_column(String(8))
     totp_last_step: Mapped[int | None] = mapped_column(Integer)
     # sha256 hashes of unused one-time recovery codes
     recovery_codes: Mapped[list[str]] = mapped_column(JSON, default=list)
@@ -273,6 +276,8 @@ class L3UseCase(Base):
     )
     comments: Mapped[str] = mapped_column(Text, default="")
     attack_techniques: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # ids of the rule in the SIEM (saved search name, analytics rule id ...), see app/siem.py
+    siem_rule_ids: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="[]")
     onboarded_at: Mapped[date | None] = mapped_column(Date)
     last_verified_at: Mapped[date | None] = mapped_column(Date)
     last_verified_by: Mapped[str | None] = mapped_column(String(64))
@@ -319,6 +324,11 @@ class ConfigCommit(Base):
     """
 
     __tablename__ = "config_commits"
+    # one revision number per use case, also when two people save at the same moment
+    __table_args__ = (
+        UniqueConstraint("l2_id", "rev", name="uq_config_commits_l2_rev"),
+        UniqueConstraint("l3_id", "rev", name="uq_config_commits_l3_rev"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     l2_id: Mapped[int | None] = mapped_column(
@@ -337,6 +347,8 @@ class ConfigCommit(Base):
     restored_from: Mapped[str | None] = mapped_column(String(64))
     # optional git repository sync (app/gitsync.py): commit id in the connected repo
     git_sha: Mapped[str | None] = mapped_column(String(64))
+    # "app" = saved in the app, "git" = imported from a commit made directly in the repository
+    source: Mapped[str] = mapped_column(String(8), default="app", server_default="app")
 
     tags: Mapped[list["ConfigTag"]] = relationship(
         back_populates="commit", cascade="all, delete-orphan", order_by="ConfigTag.id"
@@ -405,6 +417,11 @@ class GitSyncState(Base):
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(Text)
     head_sha: Mapped[str | None] = mapped_column(String(64))
+    # two-way sync: remote commits up to this one have been read back into the app
+    last_imported_sha: Mapped[str | None] = mapped_column(String(64))
+    last_import_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # what the last import did not take over (conflicts, invalid YAML, unknown paths)
+    import_notes: Mapped[list | None] = mapped_column(JSON, default=list)
 
 
 class MaturityAssessment(Base):
@@ -444,3 +461,62 @@ class OutputMetric(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+
+# ---------------------------------------------------------------- integrations (M7)
+
+
+class ApiToken(Base):
+    """Bearer token of a service account, for scripts and SIEM integrations."""
+
+    __tablename__ = "api_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    prefix: Mapped[str] = mapped_column(String(16))  # shown in the list to recognise a token
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    user: Mapped[User] = relationship()
+
+
+class SiemSource(Base):
+    """A SIEM that pushes its rule inventory or alert counts (Splunk, Sentinel, QRadar ...)."""
+
+    __tablename__ = "siem_sources"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(32), unique=True)
+    inventory_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    inventory_by: Mapped[str | None] = mapped_column(String(64))
+    alerts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    alerts_by: Mapped[str | None] = mapped_column(String(64))
+    # outcome of the last alert push: counts and SIEM rule ids that matched no use case
+    alerts_report: Mapped[dict | None] = mapped_column(JSON, default=dict)
+
+    rules: Mapped[list["SiemRule"]] = relationship(
+        back_populates="source", cascade="all, delete-orphan", order_by="SiemRule.rule_id"
+    )
+
+
+class SiemRule(Base):
+    """One detection rule as the SIEM reported it in its last inventory push."""
+
+    __tablename__ = "siem_rules"
+    __table_args__ = (UniqueConstraint("source_id", "rule_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_id: Mapped[int] = mapped_column(
+        ForeignKey("siem_sources.id", ondelete="CASCADE"), index=True
+    )
+    rule_id: Mapped[str] = mapped_column(String(255))
+    name: Mapped[str] = mapped_column(String(255), default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    severity: Mapped[str] = mapped_column(String(32), default="")
+    techniques: Mapped[list[str]] = mapped_column(JSON, default=list)
+
+    source: Mapped[SiemSource] = relationship(back_populates="rules")

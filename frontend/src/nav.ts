@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { Role } from "./api";
 
 export interface NavItem {
@@ -10,17 +11,18 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard", path: "/" },
-  { label: "Use cases", path: "/usecases" },
-  { label: "Verification", path: "/verification" },
-  { label: "Priorities", path: "/priorities" },
-  { label: "ATT&CK coverage", path: "/attack" },
-  { label: "Output metrics", path: "/output" },
-  { label: "Business drivers", path: "/drivers" },
-  { label: "Reference lists", path: "/references" },
-  { label: "History & trends", path: "/history" },
-  { label: "Maturity", path: "/maturity" },
-  { label: "Import / Export", path: "/import-export" },
-  { label: "Audit log", path: "/audit", roles: ["admin", "auditor"] },
-  { label: "Users", path: "/admin/users", roles: ["admin"] },
+  { label: t("Dashboard"), path: "/" },
+  { label: t("Use cases"), path: "/usecases" },
+  { label: t("Verification"), path: "/verification" },
+  { label: t("Priorities"), path: "/priorities" },
+  { label: t("ATT&CK coverage"), path: "/attack" },
+  { label: t("Output metrics"), path: "/output" },
+  { label: t("Business drivers"), path: "/drivers" },
+  { label: t("Reference lists"), path: "/references" },
+  { label: t("History & trends"), path: "/history" },
+  { label: t("Maturity"), path: "/maturity" },
+  { label: t("Import / Export"), path: "/import-export" },
+  { label: t("Integrations"), path: "/integrations" },
+  { label: t("Audit log"), path: "/audit", roles: ["admin", "auditor"] },
+  { label: t("Users"), path: "/admin/users", roles: ["admin"] },
 ];

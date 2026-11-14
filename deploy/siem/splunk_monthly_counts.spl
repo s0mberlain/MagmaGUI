@@ -1,0 +1,11 @@
+| `comment("Monthly alert counts per correlation search for MaGMa UCF (Splunk Enterprise Security).
+  Run on the 1st of the month for the previous month; export as CSV and push with
+  magma_push.py alerts splunk counts.csv. rule = the correlation search name, which you enter
+  as SIEM rule ID on the MaGMa rule page.")`
+`notable`
+| eval period=strftime(_time, "%Y-%m")
+| eval is_fp=if(match(lower(disposition_label), "false positive"), 1, 0)
+| eval is_incident=if(match(lower(disposition_label), "true positive") OR status_label="Resolved", 1, 0)
+| stats count AS alerts sum(is_incident) AS incidents sum(is_fp) AS false_positives BY search_name period
+| rename search_name AS rule
+| table rule period alerts incidents false_positives

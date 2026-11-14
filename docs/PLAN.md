@@ -326,7 +326,7 @@ Tests: unit tests of the scoring rules in 2.5 with small hand-made cases (includ
 | M4 | Lifecycle, history, git | Lifecycle status, change log with drivers, definition-of-done checklist, snapshots, control-metric trends, optional git repository connection for YAML configs (compose profile `gitea` for local testing) | Trend charts; configs show up in a connected git repo |
 | M5 | Growth | Risk level / target implementation, gap-to-target view, maturity assessment, TOTP for local accounts | v1.1 |
 | M6 | ATT&CK & output metrics | ATT&CK remapping and heatmap, Navigator export, output metrics entry/CSV import, PDF report | v1.2 |
-| M7 | Optional | Postgres hardening, two-way git sync, SIEM integrations, i18n (DE/NL/EN) | as needed |
+| M7 | Optional | Postgres hardening, two-way git sync, SIEM integrations, i18n (DE/NL/EN) | as needed (done: SIEM as push API + API tokens) |
 
 ---
 

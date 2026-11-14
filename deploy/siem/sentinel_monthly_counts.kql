@@ -1,0 +1,20 @@
+// Monthly alert counts per analytics rule for MaGMa UCF (Microsoft Sentinel).
+// rule = the analytics rule name (or use AlertRuleId); enter it as SIEM rule ID on the MaGMa
+// rule page. Export the result as CSV and push with: magma_push.py alerts sentinel counts.csv
+let start = startofmonth(ago(31d));
+let finish = startofmonth(now());
+let alerts = SecurityAlert
+    | where TimeGenerated between (start .. finish)
+    | where ProviderName == "ASI Scheduled Alerts" or ProductName == "Azure Sentinel"
+    | summarize alerts = dcount(SystemAlertId) by rule = AlertName, period = format_datetime(startofmonth(TimeGenerated), "yyyy-MM");
+let incidents = SecurityIncident
+    | where TimeGenerated between (start .. finish)
+    | summarize arg_max(TimeGenerated, Classification, AlertIds) by IncidentNumber
+    | mv-expand AlertId = AlertIds to typeof(string)
+    | join kind=inner (SecurityAlert | project AlertId = SystemAlertId, AlertName, TimeGenerated) on AlertId
+    | summarize incidents = dcountif(IncidentNumber, Classification == "TruePositive"),
+                false_positives = dcountif(AlertId, Classification == "FalsePositive")
+        by rule = AlertName, period = format_datetime(startofmonth(TimeGenerated1), "yyyy-MM");
+alerts
+| join kind=leftouter incidents on rule, period
+| project rule, period, alerts, incidents = coalesce(incidents, 0), false_positives = coalesce(false_positives, 0)

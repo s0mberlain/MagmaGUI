@@ -3,10 +3,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import APIRouter, FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import event
+from sqlalchemy import event, text
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 
 from app import __version__, gitsync
@@ -20,6 +21,7 @@ from app.api import (
     configs,
     gitsync_api,
     growth,
+    integrations,
     lifecycle,
     oidc,
     output,
@@ -41,6 +43,18 @@ system = APIRouter(tags=["system"])
 @system.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@system.get("/ready")
+def ready(request: Request) -> dict[str, str]:
+    """Readiness: the database answers. For load balancers and orchestrators."""
+    engine = request.app.state.engine
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except SQLAlchemyError as e:
+        raise HTTPException(503, "Database not reachable") from e
+    return {"status": "ok", "database": engine.dialect.name}
 
 
 @system.get("/version")
@@ -72,7 +86,7 @@ def _mount_frontend(app: FastAPI, static_dir: Path) -> None:
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
-    engine = make_engine(settings.database_url)
+    engine = make_engine(settings.database_url, settings)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
 
     @event.listens_for(session_factory, "after_commit")
@@ -91,7 +105,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             scheduler.start()
         if settings.git_enabled:
             gitsync.request(session_factory, settings)
+        poller = gitsync.Poller(session_factory, settings)
+        poller.start()
         yield
+        poller.stop()
         scheduler.stop()
         engine.dispose()
 
@@ -102,6 +119,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url="/api/openapi.json",
         lifespan=lifespan,
     )
+
+    @app.exception_handler(IntegrityError)
+    async def _conflict(_: Request, exc: IntegrityError) -> JSONResponse:
+        # e.g. two users saving the same thing at the same moment: a clean 409, not a 500
+        logging.getLogger("magma.db").info("Integrity error: %s", str(exc.orig)[:300])
+        return JSONResponse(
+            {"detail": "This was changed by someone else at the same time. Reload and retry."},
+            status_code=409,
+        )
+
     app.state.engine = engine
     app.state.sessionmaker = session_factory
     app.dependency_overrides[get_settings] = lambda: settings
@@ -122,9 +149,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifecycle.router,
         snapshots.router,
         gitsync_api.router,
+        gitsync_api.hook,
         growth.router,
         attack_api.router,
         output.router,
+        integrations.router,
     ):
         api.include_router(r)
     app.include_router(api)

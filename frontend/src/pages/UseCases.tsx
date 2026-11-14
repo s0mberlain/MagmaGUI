@@ -6,6 +6,7 @@ import ConfigPanel from "../components/ConfigPanel";
 import LifecyclePanel from "../components/LifecyclePanel";
 import { Chips, ErrorNote, GapBadge, Modal, MultiSelect, StatusPill, useLoad } from "../components/ui";
 import { fmtDate, num, pct, STATUS_LABEL } from "../lib/format";
+import { t } from "../i18n";
 
 interface Catalogue {
   l1s: L1[];
@@ -56,23 +57,23 @@ export default function UseCases() {
   };
 
   const total = cat.data
-    ? `${cat.data.l1s.length} L1 · ${cat.data.l2s.length} L2 · ${cat.data.l1s.reduce((a, x) => a + x.l3_count, 0)} L3 rules`
+    ? `${cat.data.l1s.length} L1 · ${cat.data.l2s.length} L2 · ${cat.data.l1s.reduce((a, x) => a + x.l3_count, 0)} ${t("L3 rules")}`
     : "…";
 
   return (
     <>
       <header className="page-header">
         <div>
-          <h1>Use cases</h1>
+          <h1>{t("Use cases")}</h1>
           <div className="subtitle">{total}</div>
         </div>
         {editor && (
           <div className="row-actions">
             <button type="button" className="btn" onClick={() => setDialog("newL2")}>
-              + L2 use case
+              {t("+ L2 use case")}
             </button>
             <button type="button" className="btn btn-primary" disabled={!selected} onClick={() => setDialog("newL3")}>
-              + L3 rule
+              {t("+ L3 rule")}
             </button>
           </div>
         )}
@@ -81,14 +82,14 @@ export default function UseCases() {
       <ErrorNote error={cat.error} />
 
       <div className="split">
-        <section className="card tree" aria-label="Use case tree">
+        <section className="card tree" aria-label={t("Use case tree")}>
           <label className="sr-only" htmlFor="uc-search">
-            Search use cases
+            {t("Search use cases")}
           </label>
           <input
             id="uc-search"
             className="input input-sm"
-            placeholder="Search ID or name"
+            placeholder={t("Search ID or name")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -132,7 +133,7 @@ export default function UseCases() {
                       >
                         <span className="mono small muted tree-code">{l2.code}</span>
                         <span className="grow">{l2.name}</span>
-                        <span className={gap ? "count-gap" : "count"} title={gap ? "Detection gap" : "Rules"}>
+                        <span className={gap ? "count-gap" : "count"} title={gap ? t("Detection gap") : t("Rules")}>
                           {l2.l3_count}
                         </span>
                       </button>
@@ -158,14 +159,15 @@ export default function UseCases() {
           {selected && rules.data && rules.data.length === 0 && (
             <div className="empty">
               <GapBadge />
-              <h3>No L3 rules yet</h3>
+              <h3>{t("No L3 rules yet")}</h3>
               <p>
-                This L2 use case is not scored and counts against framework completeness until at least one operational
-                rule with all three metrics exists.
+                {t(
+                  "This L2 use case is not scored and counts against framework completeness until at least one operational rule with all three metrics exists.",
+                )}
               </p>
               {editor && (
                 <button type="button" className="btn btn-primary" onClick={() => setDialog("newL3")}>
-                  + Add first rule
+                  {t("+ Add first rule")}
                 </button>
               )}
             </div>
@@ -222,12 +224,12 @@ function L2Header({
   onVerify: () => void;
 }) {
   const stats = [
-    { label: "Status", value: STATUS_LABEL[l2.lifecycle_status] },
-    { label: "Rules (scored)", value: `${score?.rules ?? l2.l3_count} (${score?.scored_rules ?? 0})` },
-    { label: "Weight", value: num(score?.weight ?? null) },
-    { label: "Potential", value: num(score?.potential ?? null) },
-    { label: "Onboarded", value: fmtDate(l2.onboarded_at) },
-    { label: "Last verified", value: fmtDate(l2.last_verified_at) },
+    { label: t("Status"), value: STATUS_LABEL[l2.lifecycle_status] },
+    { label: t("Rules (scored)"), value: `${score?.rules ?? l2.l3_count} (${score?.scored_rules ?? 0})` },
+    { label: t("Weight"), value: num(score?.weight ?? null) },
+    { label: t("Potential"), value: num(score?.potential ?? null) },
+    { label: t("Onboarded"), value: fmtDate(l2.onboarded_at) },
+    { label: t("Last verified"), value: fmtDate(l2.last_verified_at) },
   ];
   return (
     <div className="card l2-head">
@@ -250,18 +252,24 @@ function L2Header({
               {b}
             </span>
           ))}
-          {l2.risk_level && <span className="chip chip-neutral">Risk {l2.risk_level}/5</span>}
+          {l2.risk_level && (
+            <span className="chip chip-neutral">
+              {t("Risk")} {l2.risk_level}/5
+            </span>
+          )}
           {l2.target_implementation !== null && (
-            <span className="chip chip-neutral">Target impl. {pct(l2.target_implementation)}</span>
+            <span className="chip chip-neutral">
+              {t("Target impl.")} {pct(l2.target_implementation)}
+            </span>
           )}
         </div>
         {editor && (
           <div className="row-actions start">
             <button type="button" className="btn btn-sm" onClick={onEdit}>
-              Edit use case
+              {t("Edit use case")}
             </button>
             <button type="button" className="btn btn-sm" onClick={onVerify}>
-              Verify now
+              {t("Verify now")}
             </button>
           </div>
         )}
@@ -284,15 +292,15 @@ function RuleTable({ rules, heads }: { rules: L3[]; heads: Record<string, Config
       <table className="table">
         <thead>
           <tr>
-            <th>Rule</th>
-            <th>Status</th>
-            <th className="num">Eff</th>
-            <th className="num">Impl</th>
-            <th className="num">Cov</th>
-            <th className="num">Weight</th>
-            <th>Data sources</th>
-            <th>Last verified</th>
-            <th>Config</th>
+            <th>{t("Rule")}</th>
+            <th>{t("Status")}</th>
+            <th className="num">{t("Eff")}</th>
+            <th className="num">{t("Impl")}</th>
+            <th className="num">{t("Cov")}</th>
+            <th className="num">{t("Weight")}</th>
+            <th>{t("Data sources")}</th>
+            <th>{t("Last verified")}</th>
+            <th>{t("Config")}</th>
           </tr>
         </thead>
         <tbody>
@@ -313,7 +321,9 @@ function RuleTable({ rules, heads }: { rules: L3[]; heads: Record<string, Config
               <td className="num">{pct(r.effectiveness)}</td>
               <td className="num">{pct(r.implementation)}</td>
               <td className="num">{pct(r.coverage)}</td>
-              <td className="num strong">{r.assessed ? num(r.weight) : <span className="muted">not assessed</span>}</td>
+              <td className="num strong">
+                {r.assessed ? num(r.weight) : <span className="muted">{t("not assessed")}</span>}
+              </td>
               <td>
                 <Chips items={r.log_sources} />
               </td>
@@ -343,11 +353,14 @@ function RuleTable({ rules, heads }: { rules: L3[]; heads: Record<string, Config
 export function VerifiedCell({ rule }: { rule: L3 }) {
   const scoredState = rule.lifecycle_status === "operational" || rule.lifecycle_status === "maintenance";
   if (!rule.last_verified_at)
-    return scoredState ? <span className="badge-gap">Never</span> : <span className="muted">–</span>;
+    return scoredState ? <span className="badge-gap">{t("Never")}</span> : <span className="muted">–</span>;
   return (
-    <span className={rule.verification_overdue ? "badge-gap" : ""} title={`Due ${fmtDate(rule.verification_due)}`}>
+    <span
+      className={rule.verification_overdue ? "badge-gap" : ""}
+      title={t("Due {date}", { date: fmtDate(rule.verification_due) })}
+    >
       {fmtDate(rule.last_verified_at)}
-      {rule.verification_overdue && " · overdue"}
+      {rule.verification_overdue && t(" · overdue")}
     </span>
   );
 }
@@ -403,15 +416,15 @@ function EditL2Dialog({ l2, onClose, onSaved }: { l2: L2; onClose: () => void; o
 
   const d = lists.data;
   return (
-    <Modal title={`Edit ${l2.code}`} open onClose={onClose} wide>
+    <Modal title={t("Edit {code}", { code: l2.code })} open onClose={onClose} wide>
       <form className="stack" onSubmit={submit}>
         <ErrorNote error={error ?? lists.error} />
         <label className="field">
-          Name
+          {t("Name")}
           <input className="input" required value={form.name} onChange={(e) => set({ name: e.target.value })} />
         </label>
         <label className="field">
-          Description
+          {t("Description")}
           <textarea
             className="input textarea"
             rows={3}
@@ -421,16 +434,16 @@ function EditL2Dialog({ l2, onClose, onSaved }: { l2: L2; onClose: () => void; o
         </label>
         <div className="form-grid">
           <label className="field">
-            Risk level (1–5)
+            {t("Risk level (1–5)")}
             <select className="input" value={form.risk_level} onChange={(e) => set({ risk_level: e.target.value })}>
-              <option value="">Not set</option>
+              <option value="">{t("Not set")}</option>
               {[1, 2, 3, 4, 5].map((n) => (
                 <option key={n}>{n}</option>
               ))}
             </select>
           </label>
           <label className="field">
-            Target implementation (%)
+            {t("Target implementation (%)")}
             <input
               className="input"
               type="number"
@@ -441,7 +454,7 @@ function EditL2Dialog({ l2, onClose, onSaved }: { l2: L2; onClose: () => void; o
             />
           </label>
           <label className="field">
-            Onboarded on
+            {t("Onboarded on")}
             <input
               className="input"
               type="date"
@@ -453,19 +466,19 @@ function EditL2Dialog({ l2, onClose, onSaved }: { l2: L2; onClose: () => void; o
         {d && (
           <div className="form-grid">
             <MultiSelect
-              label="Threat actors"
+              label={t("Threat actors")}
               options={d.actors.map((a) => ({ value: a.name, label: a.name }))}
               value={form.actors}
               onChange={(v) => set({ actors: v })}
             />
             <MultiSelect
-              label="Business drivers"
+              label={t("Business drivers")}
               options={d.drivers.map((b) => ({ value: b.code, label: `${b.code} ${b.name}` }))}
               value={form.business_drivers}
               onChange={(v) => set({ business_drivers: v })}
             />
             <MultiSelect
-              label="Compliance drivers"
+              label={t("Compliance drivers")}
               options={d.compliance.flatMap((s) =>
                 s.drivers.map((c) => ({ value: String(c.id), label: `${c.ref} ${c.name}` })),
               )}
@@ -476,10 +489,10 @@ function EditL2Dialog({ l2, onClose, onSaved }: { l2: L2; onClose: () => void; o
         )}
         <div className="row-actions">
           <button type="button" className="btn" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button type="submit" className="btn btn-primary" disabled={busy}>
-            Save
+            {t("Save")}
           </button>
         </div>
       </form>
@@ -519,35 +532,36 @@ export function VerifyDialog({
   }
 
   return (
-    <Modal title={`Verify ${code}`} open onClose={onClose}>
+    <Modal title={t("Verify {code}", { code })} open onClose={onClose}>
       <form className="stack" onSubmit={submit}>
         <p className="muted small" style={{ margin: 0 }}>
-          Record that the detection was tested, for example with a purple team exercise or replayed logs.
+          {t("Record that the detection was tested, for example with a purple team exercise or replayed logs.")}
         </p>
         <ErrorNote error={error} />
         <fieldset className="radio-row">
-          <legend>Result</legend>
+          <legend>{t("Result")}</legend>
           <label>
-            <input type="radio" checked={result === "ok"} onChange={() => setResult("ok")} /> Works as expected
+            <input type="radio" checked={result === "ok"} onChange={() => setResult("ok")} /> {t("Works as expected")}
           </label>
           <label>
-            <input type="radio" checked={result === "issues"} onChange={() => setResult("issues")} /> Issues found
+            <input type="radio" checked={result === "issues"} onChange={() => setResult("issues")} />{" "}
+            {t("Issues found")}
           </label>
         </fieldset>
         <label className="field">
-          Note
+          {t("Note")}
           <textarea className="input textarea" rows={3} value={note} onChange={(e) => setNote(e.target.value)} />
         </label>
         <label className="field">
-          Date (leave empty for today)
+          {t("Date (leave empty for today)")}
           <input className="input" type="date" value={when} onChange={(e) => setWhen(e.target.value)} />
         </label>
         <div className="row-actions">
           <button type="button" className="btn" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button type="submit" className="btn btn-primary" disabled={busy}>
-            Save verification
+            {t("Save verification")}
           </button>
         </div>
       </form>
@@ -583,12 +597,12 @@ function NewL2Dialog({
   }
 
   return (
-    <Modal title="New L2 use case" open onClose={onClose}>
+    <Modal title={t("New L2 use case")} open onClose={onClose}>
       <form className="stack" onSubmit={submit}>
         <ErrorNote error={error} />
         <div className="form-grid">
           <label className="field">
-            L1 use case
+            {t("L1 use case")}
             <select className="input" value={l1} onChange={(e) => setL1(e.target.value)}>
               {l1s.map((x) => (
                 <option key={x.code} value={x.code}>
@@ -598,7 +612,7 @@ function NewL2Dialog({
             </select>
           </label>
           <label className="field">
-            ID suffix (3 letters or digits)
+            {t("ID suffix (3 letters or digits)")}
             <input
               className="input mono"
               required
@@ -606,20 +620,20 @@ function NewL2Dialog({
               maxLength={3}
               value={suffix}
               onChange={(e) => setSuffix(e.target.value)}
-              placeholder="e.g. LAT"
+              placeholder={t("e.g. LAT")}
             />
           </label>
         </div>
         <label className="field">
-          Name
+          {t("Name")}
           <input className="input" required value={name} onChange={(e) => setName(e.target.value)} />
         </label>
         <div className="row-actions">
           <button type="button" className="btn" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button type="submit" className="btn btn-primary">
-            Create {l1}-{suffix.toUpperCase() || "___"}
+            {t("Create")} {l1}-{suffix.toUpperCase() || "___"}
           </button>
         </div>
       </form>
@@ -645,32 +659,32 @@ function NewL3Dialog({ l2, onClose, onCreated }: { l2: L2; onClose: () => void; 
   }
 
   return (
-    <Modal title={`New rule in ${l2.code}`} open onClose={onClose}>
+    <Modal title={t("New rule in {code}", { code: l2.code })} open onClose={onClose}>
       <form className="stack" onSubmit={submit}>
         <ErrorNote error={error ?? next.error} />
         <label className="field">
-          Rule ID
+          {t("Rule ID")}
           <input className="input mono" required value={value} onChange={(e) => setCode(e.target.value)} />
         </label>
         <label className="field">
-          Name
+          {t("Name")}
           <input
             className="input"
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Detect credential dumping attempt"
+            placeholder={t("e.g. Detect credential dumping attempt")}
           />
         </label>
         <p className="muted small" style={{ margin: 0 }}>
-          The rule starts in onboarding. Set metrics, data sources and status on the next page.
+          {t("The rule starts in onboarding. Set metrics, data sources and status on the next page.")}
         </p>
         <div className="row-actions">
           <button type="button" className="btn" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button type="submit" className="btn btn-primary" disabled={!value}>
-            Create rule
+            {t("Create rule")}
           </button>
         </div>
       </form>

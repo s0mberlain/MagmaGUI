@@ -1,3 +1,4 @@
+import type { Lang } from "./i18n";
 export type Role = "admin" | "analyst" | "auditor";
 
 export interface User {
@@ -6,9 +7,10 @@ export interface User {
   display_name: string;
   email: string | null;
   role: Role;
-  auth_source: "local" | "sso";
+  auth_source: "local" | "sso" | "service";
   active: boolean;
   totp_enabled: boolean;
+  locale: Lang | null;
   last_login_at: string | null;
   created_at: string;
 }
@@ -153,6 +155,7 @@ export interface L3 {
   lifecycle_status: Lifecycle;
   comments: string;
   attack_techniques: string[];
+  siem_rule_ids?: string[];
   onboarded_at: string | null;
   last_verified_at: string | null;
   last_verified_by: string | null;
@@ -247,6 +250,8 @@ export interface ConfigCommit {
   created_at: string;
   restored_from: string | null;
   git_sha?: string | null;
+  /** "git" when the commit was made directly in the connected repository (two-way sync). */
+  source?: "app" | "git";
   tags: ConfigTag[];
 }
 export interface ConfigState {
@@ -370,6 +375,54 @@ export interface GitStatus {
   head_sha: string | null;
   commits_total: number;
   commits_unsynced: number;
+  pull: boolean;
+  pull_interval_minutes: number;
+  webhook: boolean;
+  commits_from_git: number;
+  last_import_at: string | null;
+  last_imported_sha: string | null;
+  import_notes: string[];
+}
+
+export interface ApiTokenInfo {
+  id: number;
+  name: string;
+  prefix: string;
+  role: Role;
+  username: string;
+  created_by: string;
+  created_at: string;
+  expires_at: string | null;
+  last_used_at: string | null;
+}
+export interface ApiTokenCreated extends ApiTokenInfo {
+  token: string;
+}
+export interface SiemUnlinked {
+  rule_id: string;
+  name: string;
+  enabled: boolean;
+  severity: string;
+  techniques: string[];
+  suggestions: string[];
+}
+export interface SiemSourceInfo {
+  name: string;
+  inventory_at: string | null;
+  inventory_by: string | null;
+  alerts_at: string | null;
+  alerts_by: string | null;
+  alerts_report: { created?: number; updated?: number; matched?: number; unmatched?: string[]; errors?: string[] };
+  rules_total: number;
+  enabled: number;
+  linked: number;
+  unlinked: SiemUnlinked[];
+  disabled_but_operational: { rule_id: string; name: string; code: string }[];
+}
+export interface SiemOverview {
+  sources: SiemSourceInfo[];
+  missing_in_siem: { code: string; name: string; rule_id: string; status: Lifecycle }[];
+  linked_rules: number;
 }
 
 export interface GapRow {
@@ -580,6 +633,13 @@ export const api = {
     request<User>("POST", "/api/auth/login", { username, password, ...(otp ? { otp } : {}) }),
   logout: () => request<void>("POST", "/api/auth/logout"),
   me: () => request<User>("GET", "/api/auth/me"),
+  apiTokens: () => request<ApiTokenInfo[]>("GET", "/api/integrations/tokens"),
+  createApiToken: (body: { name: string; role: "analyst" | "auditor"; expires_days: number | null }) =>
+    request<ApiTokenCreated>("POST", "/api/integrations/tokens", body),
+  revokeApiToken: (id: number) => request<void>("DELETE", `/api/integrations/tokens/${id}`),
+  siem: () => request<SiemOverview>("GET", "/api/integrations/siem"),
+  deleteSiemSource: (name: string) => request<void>("DELETE", `/api/integrations/siem/${enc(name)}`),
+  setLocale: (locale: Lang | null) => request<User>("PUT", "/api/auth/me/locale", { locale }),
   changePassword: (current_password: string, new_password: string) =>
     request<void>("POST", "/api/auth/me/password", { current_password, new_password }),
   summary: () => request<CatalogueSummary>("GET", "/api/catalogue/summary"),

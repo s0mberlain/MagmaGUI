@@ -81,3 +81,14 @@ def test_last_admin_is_protected(admin):
     r = admin.patch(f"/api/users/{me['id']}", json={"role": "analyst"})
     assert r.status_code == 409
     assert admin.delete(f"/api/users/{me['id']}").status_code == 409
+
+
+def test_user_locale(admin, make_user):
+    assert admin.get("/api/auth/me").json()["locale"] is None
+    r = admin.put("/api/auth/me/locale", json={"locale": "de"})
+    assert r.status_code == 200 and r.json()["locale"] == "de"
+    assert admin.get("/api/auth/me").json()["locale"] == "de"
+    assert admin.put("/api/auth/me/locale", json={"locale": "fr"}).status_code == 422
+    auditor = make_user("auditor")
+    assert auditor.put("/api/auth/me/locale", json={"locale": "nl"}).json()["locale"] == "nl"
+    assert admin.put("/api/auth/me/locale", json={"locale": None}).json()["locale"] is None

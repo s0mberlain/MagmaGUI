@@ -2,7 +2,7 @@
 
 Web application for the FI-ISAC **MaGMa Use Case Framework**: manage SIEM / SOC use cases across the business, threat (L1/L2) and implementation (L3) layers, score them, track verification and keep versioned YAML configs per use case.
 
-Status: **M5**: MVP (catalogue, scoring, verification, YAML configs with history, Excel import/export, local login and SSO) plus lifecycle change log, history and trends, optional git sync, risk-based priorities, maturity assessment and two-factor login. See [docs/PLAN.md](docs/PLAN.md) for the full plan and milestones, and [docs/design/](docs/design/) for the approved desktop design draft.
+Status: **M7**: MVP (catalogue, scoring, verification, YAML configs with history, Excel import/export, local login and SSO) plus lifecycle change log, history and trends, optional git sync, risk-based priorities, maturity assessment, two-factor login, ATT&CK coverage, output metrics, PostgreSQL support, German and Dutch UI, two-way git sync and a SIEM push API. See [docs/PLAN.md](docs/PLAN.md) for the full plan and milestones, and [docs/design/](docs/design/) for the approved desktop design draft.
 
 ## Run with Docker
 
@@ -15,6 +15,45 @@ Open http://localhost:8080 and sign in as `admin`. Set `ADMIN_PASSWORD` in `.env
 
 On first start the database is created, migrated and filled with the default MaGMa catalogue (12 L1 + Weaponization (not applicable), 62 L2, 169 L3, reference lists, business drivers). Data is stored in the `magma-data` volume (`/data` in the container). API docs: http://localhost:8080/api/docs
 
+## PostgreSQL
+
+SQLite (one file in the volume) is fine for a small team. For more users or several app
+replicas, use PostgreSQL:
+
+```bash
+echo "POSTGRES_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')" >> .env
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --build
+```
+
+Or point `DATABASE_URL` at your own server (`postgresql+psycopg://user:pw@host:5432/db`;
+`postgres://` URLs work too). What the app does on PostgreSQL:
+
+- Waits up to `DB_WAIT_SECONDS` (60) for the database on startup, then migrates.
+- Several replicas can share one database: migrations and seeding run under an advisory lock,
+  and the scheduled snapshot and the git sync run on one replica at a time.
+- Connection pool with health checks (`DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, `DB_POOL_RECYCLE`), all
+  sessions in UTC, optional `DB_STATEMENT_TIMEOUT_MS`.
+- Two saves of the same YAML config at the same moment cannot get the same revision; the loser
+  gets a 409 and reloads.
+- `GET /api/ready` checks the database (503 when it is down), `GET /api/health` only the process.
+- CI runs the full test suite on SQLite and on PostgreSQL 16, and checks that the migrations
+  match the models on both.
+
+**Moving from SQLite to PostgreSQL.** Start the Postgres stack once so the database exists, stop the
+app (`docker compose … stop magma`), then copy everything (users, history, configs, snapshots …)
+from the old volume:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml run --rm magma \
+  magma db-copy --source sqlite:////data/magma.db \
+  --target "postgresql+psycopg://magma:$POSTGRES_PASSWORD@postgres:5432/magma" --replace
+```
+
+`--replace` is needed because the first start already seeded the catalogue and the first admin.
+Ids are kept and the sequences are moved past them. An empty or
+mistyped source is refused, so `--replace` cannot wipe the target by accident. Other commands: `magma migrate` and
+`magma demo-data --seed 42`.
+
 ## Develop
 
 Backend (Python 3.12+, FastAPI):
@@ -25,6 +64,8 @@ python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 uvicorn app.main:app --reload --port 8000
 pytest && ruff check . && ruff format --check .
+# the same tests on PostgreSQL (the database is emptied before each test):
+TEST_DATABASE_URL=postgresql+psycopg://user:pw@localhost/magma_test pytest
 ```
 
 Frontend (Node 22, React + Vite + TypeScript), proxies `/api` to port 8000:
@@ -61,10 +102,24 @@ configuration commit to that repository as a real git commit with the same autho
 message, on `usecases/<L1>/<L2>/<L3>.yaml` (an L2 config is `usecases/<L1>/<L2>/<L2>.yaml`). Tags
 become `<code>/<tag>`, e.g. `AO-CRE-01/verified-2026-11-13`. Sync runs in the background after each
 commit (`GIT_AUTO_SYNC`) and at startup; admins see the state and can sync by hand under
-*Import / Export*. The app stays the source of truth: changes made in the repository are not read
-back. To try it locally: `docker compose --profile gitea up -d` starts Gitea on port 3000 with user
-magma / magma-password and an empty repository `magma/usecases`; use the Gitea values from
-`.env.example`.
+*Import / Export*. To try it locally: `docker compose --profile gitea up -d` starts Gitea on port
+3000 with user magma / magma-password and an empty repository `magma/usecases`; use the Gitea
+values from `.env.example`.
+
+**Two-way sync** (`GIT_PULL=true`, off by default): commits that people push to the branch and
+that change one of these files are read back into the app as new config commits, with the git
+author, date and message and a *from git* badge in the history. The app checks the repository
+every `GIT_PULL_INTERVAL_MINUTES` (5) and at every sync; set `GIT_WEBHOOK_SECRET` and add a push
+webhook to `<BASE_URL>/api/git/webhook` to pick changes up at once (GitHub and Gitea/Forgejo
+signatures, GitLab token header, or `X-Magma-Token: <secret>`). Rules:
+
+- Only valid YAML for an existing use case is taken over; deleting the file clears the config.
+- If the same config was also changed in the app and that change is not in git yet, the app
+  version wins and is pushed on top. The git change stays in the repository history.
+- What was not taken over (conflict, invalid YAML, unknown path) is listed under
+  *Import / Export → Git repository* and in the audit log as `config_import`.
+- The local working copy is a cache: it is reset to the remote branch before every sync, so
+  force-pushes or edits in the repository never block the sync.
 
 ## Lifecycle, history and trends
 
@@ -118,6 +173,24 @@ positives.
 **Download PDF report** on the dashboard creates a management report: KPIs, the SOC score trend, detection per
 L1, top priorities, ATT&CK coverage per tactic, the noisiest rules and overdue verifications.
 
+## SIEM integration
+
+There is no live SIEM connector; instead the SIEM side pushes data to the app (see
+[deploy/siem/](deploy/siem/) for a small client and Splunk / Sentinel searches):
+
+- **API tokens** (*Integrations*, admin): each token is its own service account with the analyst
+  or auditor role, sent as `Authorization: Bearer mgm_…`. Revoking it disables the account; what
+  it did stays in the audit log.
+- **Rule inventory** `PUT /api/integrations/siem/<source>/rules`: the SIEM's full rule list. The
+  *Integrations* page shows SIEM rules without a use case (with suggestions by ATT&CK technique),
+  rules disabled in the SIEM but operational in the app, and linked ids no SIEM reports.
+- **Alert counts** `POST /api/integrations/siem/<source>/alerts`: alerts, incidents and false
+  positives per SIEM rule and month become the output metrics of the linked L3 rules
+  (`mode: replace` for month totals, `add` for daily pushes, `?dry_run=true` to check).
+
+A SIEM rule is linked through the field *SIEM rule IDs* on the rule page, or by using the L3 code
+as the SIEM rule id.
+
 ## Excel import / export
 
 *Import / Export* writes the classic MaGMa UCF Tool layout (L1 UC, L2 UC, L3 UC, Drivers,
@@ -145,6 +218,18 @@ sidebar): scan the QR code with any authenticator app, confirm a code, and save 
 one-time recovery codes. The secret is stored encrypted with `SECRET_KEY` (changing that key
 turns existing second factors unusable; an admin can then reset them under *Users*). SSO
 accounts use the second factor of the identity provider.
+
+## Languages
+
+The interface is available in English, German and Dutch. Pick the language at the bottom of the
+sidebar (or on the sign-in page); it is saved on your account and follows you to other browsers.
+Without a choice the browser language is used. The data itself (use case names, descriptions, the
+ATT&CK catalogue) stays as entered; the Excel export keeps the classic English sheet layout.
+
+Texts live in `frontend/src/locales/{de,nl}.json`, keyed by the English text used in
+`t("...")`. `npm run i18n:check` (also in CI) fails when a text has no German or Dutch entry or a
+`{placeholder}` got lost. Labels sent by the API (definition of done, change drivers, CMMI levels,
+trend metrics) are listed in `frontend/src/serverTexts.ts` so they are translated too.
 
 ## Roles
 

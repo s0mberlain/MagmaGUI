@@ -35,6 +35,7 @@ class CommitOut(BaseModel):
     created_at: datetime
     restored_from: str | None
     git_sha: str | None = None
+    source: str = "app"
     tags: list[TagOut]
 
 
@@ -93,6 +94,7 @@ def commit_out(c: ConfigCommit) -> CommitOut:
         created_at=c.created_at,
         restored_from=c.restored_from,
         git_sha=c.git_sha,
+        source=c.source or "app",
         tags=[
             TagOut(name=t.name, created_by=t.created_by, created_at=t.created_at) for t in c.tags
         ],

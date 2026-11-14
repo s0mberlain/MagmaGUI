@@ -3,6 +3,7 @@ import { api, type Maturity } from "../api";
 import { useAuth } from "../auth";
 import { ErrorNote, Modal, useLoad } from "../components/ui";
 import { fmtDate, today } from "../lib/format";
+import { t } from "../i18n";
 
 export default function MaturityPage() {
   const { can } = useAuth();
@@ -13,7 +14,7 @@ export default function MaturityPage() {
   const cur = d?.current ?? null;
 
   async function remove(id: number) {
-    if (!window.confirm("Delete this assessment?")) return;
+    if (!window.confirm(t("Delete this assessment?"))) return;
     try {
       await api.deleteMaturity(id);
       void m.reload();
@@ -26,15 +27,15 @@ export default function MaturityPage() {
     <>
       <header className="page-header">
         <div>
-          <h1>Maturity</h1>
+          <h1>{t("Maturity")}</h1>
           <div className="subtitle">
-            Self-assessment of the use case process on the CMMI scale, as in the MaGMa framework.
+            {t("Self-assessment of the use case process on the CMMI scale, as in the MaGMa framework.")}
           </div>
         </div>
         {can("admin", "analyst") && (
           <div className="row-actions">
             <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>
-              New assessment
+              {t("New assessment")}
             </button>
           </div>
         )}
@@ -44,14 +45,14 @@ export default function MaturityPage() {
       <div className="split">
         <section className="card split-main stack" aria-labelledby="lh">
           <div className="section-head">
-            <h2 id="lh">Current level</h2>
+            <h2 id="lh">{t("Current level")}</h2>
             {cur && (
               <span className="small muted">
-                Assessed {fmtDate(cur.assessed_at)} by {cur.assessed_by}
+                {t("Assessed")} {fmtDate(cur.assessed_at)} {t("by")} {cur.assessed_by}
               </span>
             )}
           </div>
-          {d && !cur && <p className="muted">No assessment yet. Start with where the SOC stands today.</p>}
+          {d && !cur && <p className="muted">{t("No assessment yet. Start with where the SOC stands today.")}</p>}
           <ol className="ladder">
             {d?.levels
               .slice()
@@ -65,11 +66,11 @@ export default function MaturityPage() {
                     <span className="ladder-n">{l.level}</span>
                     <span className="stack-xs grow">
                       <span className="strong-500">
-                        {l.name}
-                        {isCur && <span className="pill pill-ok ladder-tag">Current</span>}
-                        {isTarget && <span className="pill pill-warn ladder-tag">Target</span>}
+                        {t(l.name)}
+                        {isCur && <span className="pill pill-ok ladder-tag">{t("Current")}</span>}
+                        {isTarget && <span className="pill pill-warn ladder-tag">{t("Target")}</span>}
                       </span>
-                      <span className="small ink-2">{l.description}</span>
+                      <span className="small ink-2">{t(l.description)}</span>
                     </span>
                   </li>
                 );
@@ -77,12 +78,15 @@ export default function MaturityPage() {
           </ol>
           {cur && Object.keys(cur.aspects).length > 0 && d && (
             <div className="stack-sm">
-              <h3 className="h-sm">Per aspect</h3>
+              <h3 className="h-sm">{t("Per aspect")}</h3>
               <div className="aspects">
                 {Object.entries(d.aspects).map(([k, label]) => (
                   <div key={k} className="aspect">
-                    <span className="small muted">{label}</span>
-                    <div className="dots" aria-label={`${label}: level ${cur.aspects[k] ?? "not rated"}`}>
+                    <span className="small muted">{t(label)}</span>
+                    <div
+                      className="dots"
+                      aria-label={t("{label}: level {n}", { label: t(label), n: cur.aspects[k] ?? t("not rated") })}
+                    >
                       {[1, 2, 3, 4, 5].map((n) => (
                         <i key={n} className={n <= (cur.aspects[k] ?? 0) ? "on" : ""} />
                       ))}
@@ -101,16 +105,21 @@ export default function MaturityPage() {
         </section>
 
         <section className="card split-side stack-sm" aria-labelledby="hh">
-          <h2 id="hh">History</h2>
-          {d && !d.history.length && <p className="muted small">Nothing yet.</p>}
+          <h2 id="hh">{t("History")}</h2>
+          {d && !d.history.length && <p className="muted small">{t("Nothing yet.")}</p>}
           <ul className="history">
             {d?.history.map((a) => (
               <li key={a.id}>
                 <span className="level-badge">{a.level}</span>
                 <span className="stack-xs grow">
                   <span className="strong-500">
-                    {d.levels.find((l) => l.level === a.level)?.name}
-                    {a.target_level && <span className="muted"> → target {a.target_level}</span>}
+                    {t(d.levels.find((l) => l.level === a.level)?.name ?? "")}
+                    {a.target_level && (
+                      <span className="muted">
+                        {" "}
+                        {t("→ target")} {a.target_level}
+                      </span>
+                    )}
                   </span>
                   {a.notes && <span className="small ink-2">{a.notes}</span>}
                   <span className="small muted">
@@ -119,13 +128,13 @@ export default function MaturityPage() {
                 </span>
                 {can("admin") && (
                   <button type="button" className="link-btn small text-err" onClick={() => void remove(a.id)}>
-                    Delete
+                    {t("Delete")}
                   </button>
                 )}
               </li>
             ))}
           </ul>
-          <p className="small muted">The level is also a trend line on History &amp; trends.</p>
+          <p className="small muted">{t("The level is also a trend line on History & trends.")}</p>
         </section>
       </div>
 
@@ -172,72 +181,72 @@ function AssessDialog({ m, onClose, onSaved }: { m: Maturity; onClose: () => voi
   }
 
   return (
-    <Modal title="New maturity assessment" open onClose={onClose} wide>
+    <Modal title={t("New maturity assessment")} open onClose={onClose} wide>
       <form className="stack" onSubmit={submit}>
         <ErrorNote error={error} />
         <fieldset className="field fieldset">
-          <legend>Overall level</legend>
+          <legend>{t("Overall level")}</legend>
           <div className="level-pick">
             {m.levels.map((l) => (
               <label key={l.level} className={level === l.level ? "on" : ""}>
                 <input type="radio" name="level" checked={level === l.level} onChange={() => setLevel(l.level)} />
                 <span className="ladder-n">{l.level}</span>
-                <span className="small">{l.name}</span>
+                <span className="small">{t(l.name)}</span>
               </label>
             ))}
           </div>
-          <span className="small muted">{m.levels.find((l) => l.level === level)?.description}</span>
+          <span className="small muted">{t(m.levels.find((l) => l.level === level)?.description ?? "")}</span>
         </fieldset>
         <div className="form-grid">
           {Object.entries(m.aspects).map(([k, label]) => (
             <label key={k} className="field">
-              {label}
+              {t(label)}
               <select
                 className="input"
                 value={aspects[k]}
                 onChange={(e) => setAspects((a) => ({ ...a, [k]: e.target.value }))}
               >
-                <option value="">Not rated</option>
+                <option value="">{t("Not rated")}</option>
                 {m.levels.map((l) => (
                   <option key={l.level} value={l.level}>
-                    {l.level} · {l.name}
+                    {l.level} · {t(l.name)}
                   </option>
                 ))}
               </select>
             </label>
           ))}
           <label className="field">
-            Target level
+            {t("Target level")}
             <select className="input" value={target} onChange={(e) => setTarget(e.target.value)}>
-              <option value="">None</option>
+              <option value="">{t("None")}</option>
               {m.levels.map((l) => (
                 <option key={l.level} value={l.level}>
-                  {l.level} · {l.name}
+                  {l.level} · {t(l.name)}
                 </option>
               ))}
             </select>
           </label>
           <label className="field">
-            Assessed on
+            {t("Assessed on")}
             <input className="input" type="date" max={today()} value={when} onChange={(e) => setWhen(e.target.value)} />
           </label>
         </div>
         <label className="field">
-          Notes
+          {t("Notes")}
           <textarea
             className="input textarea"
             rows={3}
             value={notes}
-            placeholder="What supports this level, what is missing for the next one"
+            placeholder={t("What supports this level, what is missing for the next one")}
             onChange={(e) => setNotes(e.target.value)}
           />
         </label>
         <div className="row-actions">
           <button type="button" className="btn" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button type="submit" className="btn btn-primary" disabled={busy}>
-            Save assessment
+            {t("Save assessment")}
           </button>
         </div>
       </form>

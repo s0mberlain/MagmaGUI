@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, type Role, type User } from "../api";
 import { ROLE_LABEL, useAuth } from "../auth";
+import { t } from "../i18n";
 
 const ROLES: Role[] = ["admin", "analyst", "auditor"];
 
@@ -32,29 +33,31 @@ export default function Users() {
       setNotice(ok);
       reload();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed");
+      setError(e instanceof Error ? e.message : t("Failed"));
     }
   }
 
   async function create(e: FormEvent) {
     e.preventDefault();
-    await run(() => api.createUser(form), `User ${form.username} created`);
+    await run(() => api.createUser(form), t("User {user} created", { user: form.username }));
     setForm({ username: "", display_name: "", role: "analyst", password: "" });
   }
 
   function resetPassword(u: User) {
-    const pw = window.prompt(`New password for ${u.username} (at least 12 characters)`);
-    if (pw) void run(() => api.updateUser(u.id, { password: pw }), `Password of ${u.username} changed`);
+    const pw = window.prompt(t("New password for {user} (at least 12 characters)", { user: u.username }));
+    if (pw)
+      void run(() => api.updateUser(u.id, { password: pw }), t("Password of {user} changed", { user: u.username }));
   }
 
   return (
     <>
       <header className="page-header">
         <div>
-          <h1>Users</h1>
+          <h1>{t("Users")}</h1>
           <div className="subtitle">
-            Local accounts and roles. SSO users appear after their first login; their role comes from the IdP groups and
-            is updated at every sign-in.
+            {t(
+              "Local accounts and roles. SSO users appear after their first login; their role comes from the IdP groups and is updated at every sign-in.",
+            )}
           </div>
         </div>
       </header>
@@ -70,16 +73,16 @@ export default function Users() {
         </p>
       )}
 
-      <section className="card table-card" aria-label="User list">
+      <section className="card table-card" aria-label={t("User list")}>
         <table className="table">
           <thead>
             <tr>
-              <th>User</th>
-              <th>Role</th>
-              <th>Login</th>
-              <th>Last login</th>
-              <th>Status</th>
-              <th aria-label="Actions" />
+              <th>{t("User")}</th>
+              <th>{t("Role")}</th>
+              <th>{t("Login")}</th>
+              <th>{t("Last login")}</th>
+              <th>{t("Status")}</th>
+              <th aria-label={t("Actions")} />
             </tr>
           </thead>
           <tbody>
@@ -93,7 +96,7 @@ export default function Users() {
                 </td>
                 <td>
                   <label className="sr-only" htmlFor={`role-${u.id}`}>
-                    Role of {u.username}
+                    {t("Role of")} {u.username}
                   </label>
                   <select
                     id={`role-${u.id}`}
@@ -102,7 +105,7 @@ export default function Users() {
                     onChange={(e) =>
                       void run(
                         () => api.updateUser(u.id, { role: e.target.value as Role }),
-                        `Role of ${u.username} changed`,
+                        t("Role of {user} changed", { user: u.username }),
                       )
                     }
                   >
@@ -114,20 +117,20 @@ export default function Users() {
                   </select>
                 </td>
                 <td>
-                  {u.auth_source === "sso" ? "SSO" : "Local"}
+                  {u.auth_source === "sso" ? "SSO" : u.auth_source === "service" ? t("API token") : t("Local")}
                   {u.totp_enabled && <span className="chip chip-info chip-2fa">2FA</span>}
                 </td>
                 <td>{fmt(u.last_login_at)}</td>
                 <td>
                   <span className={"pill " + (u.active ? "pill-ok" : "pill-warn")}>
-                    {u.active ? "Active" : "Disabled"}
+                    {u.active ? t("Active") : t("Disabled")}
                   </span>
                 </td>
                 <td>
                   <div className="row-actions">
                     {u.auth_source === "local" && (
                       <button type="button" className="btn btn-sm" onClick={() => resetPassword(u)}>
-                        Reset password
+                        {t("Reset password")}
                       </button>
                     )}
                     {u.totp_enabled && u.id !== me?.id && (
@@ -135,11 +138,14 @@ export default function Users() {
                         type="button"
                         className="btn btn-sm"
                         onClick={() => {
-                          if (!window.confirm(`Turn off two-factor login for ${u.username}?`)) return;
-                          void run(() => api.resetTotp(u.id), `Two-factor login of ${u.username} turned off`);
+                          if (!window.confirm(t("Turn off two-factor login for {user}?", { user: u.username }))) return;
+                          void run(
+                            () => api.resetTotp(u.id),
+                            t("Two-factor login of {user} turned off", { user: u.username }),
+                          );
                         }}
                       >
-                        Reset 2FA
+                        {t("Reset 2FA")}
                       </button>
                     )}
                     {u.id !== me?.id && (
@@ -153,7 +159,7 @@ export default function Users() {
                           )
                         }
                       >
-                        {u.active ? "Disable" : "Enable"}
+                        {u.active ? t("Disable") : t("Enable")}
                       </button>
                     )}
                   </div>
@@ -166,11 +172,11 @@ export default function Users() {
 
       <section className="card" aria-labelledby="new-user">
         <h2 id="new-user" style={{ marginBottom: 14 }}>
-          Add local user
+          {t("Add local user")}
         </h2>
         <form className="form-grid" onSubmit={create}>
           <label className="field">
-            Username
+            {t("Username")}
             <input
               className="input"
               value={form.username}
@@ -180,7 +186,7 @@ export default function Users() {
             />
           </label>
           <label className="field">
-            Display name
+            {t("Display name")}
             <input
               className="input"
               value={form.display_name}
@@ -188,7 +194,7 @@ export default function Users() {
             />
           </label>
           <label className="field">
-            Role
+            {t("Role")}
             <select
               className="input"
               value={form.role}
@@ -202,7 +208,7 @@ export default function Users() {
             </select>
           </label>
           <label className="field">
-            Initial password
+            {t("Initial password")}
             <input
               className="input"
               type="password"
@@ -215,21 +221,22 @@ export default function Users() {
           </label>
           <div style={{ display: "flex", alignItems: "flex-end" }}>
             <button type="submit" className="btn btn-primary">
-              Add user
+              {t("Add user")}
             </button>
           </div>
         </form>
       </section>
 
       <section className="card stack" aria-labelledby="demo-h">
-        <h2 id="demo-h">Demo data</h2>
+        <h2 id="demo-h">{t("Demo data")}</h2>
         <p className="muted" style={{ margin: 0 }}>
-          Fills the catalogue with random but reproducible metrics, statuses, data sources, dates and verification
-          history, and adds sample rules to empty L2 use cases. Existing values of these fields are overwritten.
+          {t(
+            "Fills the catalogue with random but reproducible metrics, statuses, data sources, dates and verification history, and adds sample rules to empty L2 use cases. Existing values of these fields are overwritten.",
+          )}
         </p>
         <div className="inline-form-plain">
           <label className="field">
-            Seed
+            {t("Seed")}
             <input
               className="input input-sm"
               type="number"
@@ -242,14 +249,14 @@ export default function Users() {
             type="button"
             className="btn btn-sm"
             onClick={() => {
-              if (window.confirm("Overwrite use case data with generated demo data?"))
+              if (window.confirm(t("Overwrite use case data with generated demo data?")))
                 void run(
                   () => api.demoData(seed),
-                  `Demo data applied (seed ${seed}). Open the dashboard to see the scores.`,
+                  t("Demo data applied (seed {seed}). Open the dashboard to see the scores.", { seed }),
                 );
             }}
           >
-            Load demo data
+            {t("Load demo data")}
           </button>
         </div>
       </section>

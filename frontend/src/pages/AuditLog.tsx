@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type AuditEntry } from "../api";
+import { t } from "../i18n";
 
 function summarize(changes: Record<string, unknown>): string {
   return Object.entries(changes)
@@ -25,8 +26,8 @@ export default function AuditLog() {
     <>
       <header className="page-header">
         <div>
-          <h1>Audit log</h1>
-          <div className="subtitle">Every change and sign-in, newest first (last 200 entries).</div>
+          <h1>{t("Audit log")}</h1>
+          <div className="subtitle">{t("Every change and sign-in, newest first (last 200 entries).")}</div>
         </div>
       </header>
       {error && <p className="form-error">{error}</p>}
@@ -34,11 +35,11 @@ export default function AuditLog() {
         <table className="table">
           <thead>
             <tr>
-              <th>When</th>
-              <th>User</th>
-              <th>Action</th>
-              <th>Object</th>
-              <th>Changes</th>
+              <th>{t("When")}</th>
+              <th>{t("User")}</th>
+              <th>{t("Action")}</th>
+              <th>{t("Object")}</th>
+              <th>{t("Changes")}</th>
             </tr>
           </thead>
           <tbody>

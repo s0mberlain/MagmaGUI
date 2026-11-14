@@ -11,6 +11,13 @@ class Settings(BaseSettings):
 
     app_name: str = "Magma UCF"
     database_url: str = "sqlite:////data/magma.db"
+    # PostgreSQL connection pool and limits (ignored for SQLite).
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
+    db_pool_recycle: int = 1800
+    db_statement_timeout_ms: int = 0
+    # How long startup waits for the database to accept connections.
+    db_wait_seconds: int = 60
     secret_key: str = "change-me"
     base_url: str = "http://localhost:8080"
     # Directory with the built frontend (index.html + assets). Empty or missing = API only.
@@ -52,6 +59,12 @@ class Settings(BaseSettings):
     git_author_email_domain: str = "magma.local"
     # Push automatically after each config commit and tag (in the background).
     git_auto_sync: bool = True
+    # Two-way sync: also read config changes made directly in the repository back into the app.
+    git_pull: bool = False
+    # How often to look for changes in the repository (minutes, 0 = only via webhook / by hand).
+    git_pull_interval_minutes: int = 5
+    # Shared secret for POST /api/git/webhook (GitHub, Gitea, GitLab push events). Empty = off.
+    git_webhook_secret: str | None = None
 
     # SSO via OpenID Connect (see app/oidc.py). Enabled when issuer and client id are set.
     oidc_issuer: str | None = None

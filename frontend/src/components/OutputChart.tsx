@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useState } from "react";
 
 export interface MonthBar {
@@ -55,7 +56,11 @@ export default function OutputChart({ data, height = 140 }: { data: MonthBar[]; 
               key={d.period}
               className={"out-col" + (hover === i ? " hover" : "")}
               onMouseEnter={() => setHover(i)}
-              aria-label={`${monthLabel(d.period, true)}: ${d.alerts} alerts, ${d.false_positives} false positives`}
+              aria-label={t("{month}: {alerts} alerts, {fp} false positives", {
+                month: monthLabel(d.period, true),
+                alerts: d.alerts,
+                fp: d.false_positives,
+              })}
             >
               <div className="out-stack" style={{ height: `${(d.alerts / top) * 100}%` }}>
                 <div className="fp" style={{ flexGrow: d.false_positives }} />
@@ -69,10 +74,10 @@ export default function OutputChart({ data, height = 140 }: { data: MonthBar[]; 
           <div className="chart-tip out-tip" style={{ left: `${((hover + 0.5) / data.length) * 100}%` }} role="status">
             <strong>{monthLabel(h.period, true)}</strong>
             <span>
-              {h.alerts} alerts · {h.incidents} incidents
+              {h.alerts} {t("alerts ·")} {h.incidents} {t("incidents")}
             </span>
             <span>
-              {h.false_positives} false positives
+              {h.false_positives} {t("false positives")}
               {h.alerts ? ` (${Math.round((h.false_positives / h.alerts) * 100)} %)` : ""}
             </span>
           </div>
@@ -87,11 +92,11 @@ export function OutputLegend() {
     <div className="legend">
       <span>
         <i className="out-tp" />
-        Alerts that were not false positives
+        {t("Alerts that were not false positives")}
       </span>
       <span>
         <i className="out-fp" />
-        False positives
+        {t("False positives")}
       </span>
     </div>
   );

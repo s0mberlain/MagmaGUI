@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, StringConstraints
 
 from app.models import AuthSource, Lifecycle, RefKind, Role
 
@@ -37,6 +37,7 @@ class UserOut(ORM):
     auth_source: AuthSource
     active: bool
     totp_enabled: bool = False
+    locale: str | None = None
     last_login_at: datetime | None
     created_at: datetime
 
@@ -206,6 +207,12 @@ class L2Out(BaseModel):
     l3_count: int
 
 
+SiemRuleId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
+SiemRuleIds = Annotated[
+    list[SiemRuleId], Field(max_length=50), AfterValidator(lambda v: list(dict.fromkeys(v)))
+]
+
+
 class L3Create(TrackingFields):
     code: L3Code
     name: Name
@@ -215,6 +222,7 @@ class L3Create(TrackingFields):
     coverage: Metric | None = None
     comments: str = ""
     attack_techniques: list[AttackId] = []
+    siem_rule_ids: SiemRuleIds = []
     verification_interval_days: Annotated[int, Field(ge=1, le=3650)] | None = None
     risk_level: Annotated[int, Field(ge=1, le=5)] | None = None
     target_implementation: Metric | None = None
@@ -231,6 +239,7 @@ class L3Update(TrackingFields):
     coverage: Metric | None = None
     comments: str | None = None
     attack_techniques: list[AttackId] | None = None
+    siem_rule_ids: SiemRuleIds | None = None
     verification_interval_days: Annotated[int, Field(ge=1, le=3650)] | None = None
     risk_level: Annotated[int, Field(ge=1, le=5)] | None = None
     target_implementation: Metric | None = None
@@ -252,6 +261,7 @@ class L3Out(BaseModel):
     lifecycle_status: Lifecycle
     comments: str
     attack_techniques: list[str]
+    siem_rule_ids: list[str] = []
     onboarded_at: date | None
     last_verified_at: date | None
     last_verified_by: str | None

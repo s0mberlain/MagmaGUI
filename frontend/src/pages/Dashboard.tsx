@@ -3,34 +3,35 @@ import { api, type DueRule, type Kpis, type RecentCommit, type Scores } from "..
 import { useAuth } from "../auth";
 import { ErrorNote, GapBadge, MetricBars, MetricLegend, useLoad } from "../components/ui";
 import { fmtDate, num, pct } from "../lib/format";
+import { t } from "../i18n";
 
 function kpiTiles(k: Kpis) {
   return [
-    { label: "SOC detection score", value: k.soc_detection_score, sub: "Average weight of applicable L1" },
-    { label: "Growth potential", value: k.growth_potential, sub: "Average effectiveness − weight" },
-    { label: "Detection gap", value: k.detection_gap, sub: "1 − detection score", invert: true },
+    { label: t("SOC detection score"), value: k.soc_detection_score, sub: t("Average weight of applicable L1") },
+    { label: t("Growth potential"), value: k.growth_potential, sub: t("Average effectiveness − weight") },
+    { label: t("Detection gap"), value: k.detection_gap, sub: t("1 − detection score"), invert: true },
     {
-      label: "Framework completeness",
+      label: t("Framework completeness"),
       value: k.framework_completeness,
-      sub: `${k.l2_with_scored_rules} of ${k.applicable_l2} L2 have scored rules`,
+      sub: t("{a} of {b} L2 have scored rules", { a: k.l2_with_scored_rules, b: k.applicable_l2 }),
     },
     {
-      label: "Assessment coverage",
+      label: t("Assessment coverage"),
       value: k.assessment_coverage,
-      sub: `${k.assessed_rules} of ${k.active_rules} active rules assessed`,
+      sub: t("{a} of {b} active rules assessed", { a: k.assessed_rules, b: k.active_rules }),
     },
     {
-      label: "Verification health",
+      label: t("Verification health"),
       value: k.verification_health,
-      sub: `${k.verification_overdue} of ${k.operational_rules} rules overdue`,
+      sub: t("{a} of {b} rules overdue", { a: k.verification_overdue, b: k.operational_rules }),
     },
   ];
 }
 
 export function DueBadge({ d }: { d: Pick<DueRule, "due" | "overdue" | "days_left"> }) {
-  if (!d.due) return <span className="badge-gap">Never verified</span>;
-  if (d.overdue) return <span className="badge-gap">{-(d.days_left ?? 0)} days overdue</span>;
-  return <span className="pill pill-ok">due in {d.days_left} days</span>;
+  if (!d.due) return <span className="badge-gap">{t("Never verified")}</span>;
+  if (d.overdue) return <span className="badge-gap">{t("{n} days overdue", { n: -(d.days_left ?? 0) })}</span>;
+  return <span className="pill pill-ok">{t("due in {n} days", { n: d.days_left })}</span>;
 }
 
 export default function Dashboard() {
@@ -44,19 +45,20 @@ export default function Dashboard() {
     <>
       <header className="page-header">
         <div>
-          <h1>Dashboard</h1>
+          <h1>{t("Dashboard")}</h1>
           <div className="subtitle">
-            Workspace: Default SOC
-            {s && ` · ${s.l1.length} L1 · ${s.l2.length} L2 · ${s.l1.reduce((a, x) => a + x.rules, 0)} L3 rules`}
+            {t("Workspace: Default SOC")}
+            {s &&
+              ` · ${s.l1.length} L1 · ${s.l2.length} L2 · ${s.l1.reduce((a, x) => a + x.rules, 0)} ${t("L3 rules")}`}
           </div>
         </div>
         <div className="row-actions">
           <a className="btn" href="/api/report.pdf" download>
-            Download PDF report
+            {t("Download PDF report")}
           </a>
           {can("admin", "analyst") && (
             <Link className="btn btn-primary" to="/usecases">
-              Edit use cases
+              {t("Edit use cases")}
             </Link>
           )}
         </div>
@@ -64,7 +66,7 @@ export default function Dashboard() {
 
       <ErrorNote error={scores.error} />
 
-      <section className="kpi-grid" aria-label="Key figures">
+      <section className="kpi-grid" aria-label={t("Key figures")}>
         {(s ? kpiTiles(s.kpis) : kpiTiles({} as Kpis)).map((k) => (
           <div className="card kpi" key={k.label}>
             <span className="kpi-label">{k.label}</span>
@@ -80,19 +82,19 @@ export default function Dashboard() {
       <div className="split">
         <section className="card split-main" aria-labelledby="l1h">
           <div className="section-head">
-            <h2 id="l1h">Detection per L1 use case</h2>
+            <h2 id="l1h">{t("Detection per L1 use case")}</h2>
             <MetricLegend />
           </div>
           <div className="scroll-x">
             <table className="table table-plain">
               <thead>
                 <tr>
-                  <th>L1 use case</th>
+                  <th>{t("L1 use case")}</th>
                   <th className="num">L2</th>
                   <th className="num">L3</th>
-                  <th style={{ width: "34%" }}>Eff / Impl / Cov</th>
-                  <th className="num">Weight</th>
-                  <th className="num">Potential</th>
+                  <th style={{ width: "34%" }}>{t("Eff / Impl / Cov")}</th>
+                  <th className="num">{t("Weight")}</th>
+                  <th className="num">{t("Potential")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -110,9 +112,11 @@ export default function Dashboard() {
                     <td className="num">{r.rules}</td>
                     <td>
                       {!r.applicable ? (
-                        <span className="muted">Not applicable</span>
+                        <span className="muted">{t("Not applicable")}</span>
                       ) : r.weight === null ? (
-                        <GapBadge>Detection gap · {r.rules ? "no scored rules" : "no rules yet"}</GapBadge>
+                        <GapBadge>
+                          {t("Detection gap ·")} {r.rules ? t("no scored rules") : t("no rules yet")}
+                        </GapBadge>
                       ) : (
                         <MetricBars e={r.effectiveness} i={r.implementation} c={r.coverage} />
                       )}
@@ -125,21 +129,22 @@ export default function Dashboard() {
             </table>
           </div>
           <p className="muted small">
-            L2 column: use cases with scored rules / all. Only operational and maintenance rules with all three metrics
-            count.
+            {t(
+              "L2 column: use cases with scored rules / all. Only operational and maintenance rules with all three metrics count.",
+            )}
           </p>
         </section>
 
         <div className="split-side stack-lg">
           <section className="card stack-sm" aria-labelledby="vh">
             <div className="section-head">
-              <h2 id="vh">Verification due</h2>
+              <h2 id="vh">{t("Verification due")}</h2>
               <Link to="/verification" className="small">
-                All {due.data?.length ?? ""}
+                {t("All")} {due.data?.length ?? ""}
               </Link>
             </div>
             <ErrorNote error={due.error} />
-            {due.data && !due.data.length && <p className="muted">Nothing is due in the next 30 days.</p>}
+            {due.data && !due.data.length && <p className="muted">{t("Nothing is due in the next 30 days.")}</p>}
             <ul className="link-list">
               {due.data?.slice(0, 7).map((d) => (
                 <li key={d.code}>
@@ -148,7 +153,9 @@ export default function Dashboard() {
                       <span className="mono small muted">{d.code}</span>
                       <span className="strong-500">{d.name}</span>
                       {d.last_verified_at && (
-                        <span className="small muted">Last verified {fmtDate(d.last_verified_at)}</span>
+                        <span className="small muted">
+                          {t("Last verified")} {fmtDate(d.last_verified_at)}
+                        </span>
                       )}
                     </span>
                     <DueBadge d={d} />
@@ -159,8 +166,8 @@ export default function Dashboard() {
           </section>
 
           <section className="card stack-sm" aria-labelledby="ch">
-            <h2 id="ch">Recent config commits</h2>
-            {commits.data && !commits.data.length && <p className="muted small">No configurations yet.</p>}
+            <h2 id="ch">{t("Recent config commits")}</h2>
+            {commits.data && !commits.data.length && <p className="muted small">{t("No configurations yet.")}</p>}
             <ul className="link-list">
               {commits.data?.map((c) => (
                 <li key={c.sha}>

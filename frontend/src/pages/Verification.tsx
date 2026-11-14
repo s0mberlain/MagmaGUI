@@ -6,11 +6,12 @@ import { ErrorNote, StatusPill, useLoad } from "../components/ui";
 import { fmtDate } from "../lib/format";
 import { DueBadge } from "./Dashboard";
 import { VerifyDialog } from "./UseCases";
+import { t } from "../i18n";
 
 const WINDOWS = [
-  { days: 0, label: "Overdue only" },
-  { days: 30, label: "Next 30 days" },
-  { days: 90, label: "Next 90 days" },
+  { days: 0, label: t("Overdue only") },
+  { days: 30, label: t("Next 30 days") },
+  { days: 90, label: t("Next 90 days") },
 ];
 
 export default function Verification() {
@@ -29,42 +30,44 @@ export default function Verification() {
     <>
       <header className="page-header">
         <div>
-          <h1>Verification</h1>
+          <h1>{t("Verification")}</h1>
           <div className="subtitle">
-            Operational and maintenance rules must be re-tested regularly
-            {k && ` (default every ${k.default_verification_days} days, per-rule override on the rule page)`}.
+            {t("Operational and maintenance rules must be re-tested regularly")}
+            {k &&
+              ` ${t("(default every {n} days, per-rule override on the rule page)", { n: k.default_verification_days })}`}
+            .
           </div>
         </div>
       </header>
 
-      <section className="kpi-grid" aria-label="Verification figures">
+      <section className="kpi-grid" aria-label={t("Verification figures")}>
         <div className="card kpi">
-          <span className="kpi-label">Verification health</span>
+          <span className="kpi-label">{t("Verification health")}</span>
           <span className="kpi-value">
             {k?.verification_health == null ? "–" : `${Math.round(k.verification_health * 100)} %`}
           </span>
           <span className="kpi-sub">
-            {k ? `${k.verified_in_time} of ${k.operational_rules} rules verified in time` : "…"}
+            {k ? t("{a} of {b} rules verified in time", { a: k.verified_in_time, b: k.operational_rules }) : "…"}
           </span>
         </div>
         <div className="card kpi">
-          <span className="kpi-label">Never verified</span>
+          <span className="kpi-label">{t("Never verified")}</span>
           <span className="kpi-value">{due.data ? never : "–"}</span>
-          <span className="kpi-sub">Count as overdue</span>
+          <span className="kpi-sub">{t("Count as overdue")}</span>
         </div>
         <div className="card kpi">
-          <span className="kpi-label">Overdue</span>
+          <span className="kpi-label">{t("Overdue")}</span>
           <span className="kpi-value">{due.data ? overdue : "–"}</span>
-          <span className="kpi-sub">Past their due date</span>
+          <span className="kpi-sub">{t("Past their due date")}</span>
         </div>
         <div className="card kpi">
-          <span className="kpi-label">Due soon</span>
+          <span className="kpi-label">{t("Due soon")}</span>
           <span className="kpi-value">{due.data ? rows.length - never - overdue : "–"}</span>
-          <span className="kpi-sub">Within the chosen window</span>
+          <span className="kpi-sub">{t("Within the chosen window")}</span>
         </div>
       </section>
 
-      <div role="group" aria-label="Window" className="chips">
+      <div role="group" aria-label={t("Window")} className="chips">
         {WINDOWS.map((w) => (
           <button
             key={w.days}
@@ -83,12 +86,12 @@ export default function Verification() {
         <table className="table">
           <thead>
             <tr>
-              <th>Rule</th>
-              <th>Status</th>
-              <th>Last verified</th>
-              <th>Due</th>
-              <th>State</th>
-              {editor && <th className="sr-only">Actions</th>}
+              <th>{t("Rule")}</th>
+              <th>{t("Status")}</th>
+              <th>{t("Last verified")}</th>
+              <th>{t("Due")}</th>
+              <th>{t("State")}</th>
+              {editor && <th className="sr-only">{t("Actions")}</th>}
             </tr>
           </thead>
           <tbody>
@@ -114,7 +117,7 @@ export default function Verification() {
                 {editor && (
                   <td className="num">
                     <button type="button" className="btn btn-sm" onClick={() => setVerifying(d.code)}>
-                      Verify now
+                      {t("Verify now")}
                     </button>
                   </td>
                 )}
@@ -123,7 +126,7 @@ export default function Verification() {
             {due.data && !rows.length && (
               <tr>
                 <td colSpan={6} className="muted">
-                  Nothing to verify in this window.
+                  {t("Nothing to verify in this window.")}
                 </td>
               </tr>
             )}

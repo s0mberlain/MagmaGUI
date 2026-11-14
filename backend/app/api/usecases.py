@@ -184,6 +184,7 @@ def l3_out(
         lifecycle_status=l3.lifecycle_status,
         comments=l3.comments,
         attack_techniques=l3.attack_techniques or [],
+        siem_rule_ids=l3.siem_rule_ids or [],
         onboarded_at=l3.onboarded_at,
         last_verified_at=l3.last_verified_at,
         last_verified_by=l3.last_verified_by,

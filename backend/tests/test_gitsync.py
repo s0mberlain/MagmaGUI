@@ -233,10 +233,12 @@ def test_one_way_ignores_changes_in_git(git_admin, remote, tmp_path):
     assert a.get("/api/l3/AO-CRE-01/config").json()["content"] == "a: 1\n"
 
 
-def test_webhook(pull_admin):
+def test_webhook(pull_admin, monkeypatch):
     import hashlib
     import hmac
 
+    calls = []
+    monkeypatch.setattr(gitsync, "request", lambda *args: calls.append(args))
     a = pull_admin
     body = b'{"ref": "refs/heads/main"}'
     assert a.post("/api/git/webhook", content=body).status_code == 401
@@ -250,6 +252,7 @@ def test_webhook(pull_admin):
         == 202
     )
     assert a.post("/api/git/webhook", headers={"X-Gitlab-Token": "hook-secret"}).status_code == 202
+    assert len(calls) == 3
 
 
 def test_webhook_off_by_default(anon):

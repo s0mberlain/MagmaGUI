@@ -21,6 +21,7 @@ from app.api import (
     configs,
     gitsync_api,
     growth,
+    integrations,
     lifecycle,
     oidc,
     output,
@@ -152,6 +153,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         growth.router,
         attack_api.router,
         output.router,
+        integrations.router,
     ):
         api.include_router(r)
     app.include_router(api)

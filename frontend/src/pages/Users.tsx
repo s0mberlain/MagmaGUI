@@ -117,7 +117,7 @@ export default function Users() {
                   </select>
                 </td>
                 <td>
-                  {u.auth_source === "sso" ? "SSO" : t("Local")}
+                  {u.auth_source === "sso" ? "SSO" : u.auth_source === "service" ? t("API token") : t("Local")}
                   {u.totp_enabled && <span className="chip chip-info chip-2fa">2FA</span>}
                 </td>
                 <td>{fmt(u.last_login_at)}</td>

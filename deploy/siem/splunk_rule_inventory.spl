@@ -1,0 +1,9 @@
+| `comment("Rule inventory for MaGMa UCF: all correlation searches with enabled state and ATT&CK
+  annotations. Convert to JSON ({id, name, enabled, severity, techniques}) and push with
+  magma_push.py rules splunk rules.json.")`
+| rest /servicesNS/-/-/saved/searches splunk_server=local
+| search action.correlationsearch.enabled=1
+| eval id=title, name='action.correlationsearch.label', enabled=if(disabled=0, "true", "false")
+| eval severity='alert.severity'
+| spath input=action.correlationsearch.annotations path=mitre_attack{} output=techniques
+| table id name enabled severity techniques

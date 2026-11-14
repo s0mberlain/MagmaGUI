@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api, type GitStatus, type ImportReport } from "../api";
 import { useAuth } from "../auth";
 import { ErrorNote, useLoad } from "../components/ui";
-import { fmtDate } from "../lib/format";
+import { fmtTime } from "../lib/format";
 import { t } from "../i18n";
 
 const ENTITY_LABEL: Record<string, string> = {
@@ -200,12 +200,6 @@ export default function ImportExport() {
       {can("admin") && <GitCard />}
     </>
   );
-}
-
-function fmtTime(iso: string | null) {
-  if (!iso) return "never";
-  const d = new Date(iso);
-  return `${fmtDate(iso)} ${d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
 }
 
 function GitCard() {

@@ -31,6 +31,7 @@ interface Form {
   detection_technologies: string[];
   scopes: string[];
   attack: string;
+  siem: string;
   onboarded_at: string;
   interval: string;
   risk: string;
@@ -49,6 +50,7 @@ function toForm(r: L3): Form {
     detection_technologies: r.detection_technologies,
     scopes: r.scopes,
     attack: r.attack_techniques.join(", "),
+    siem: (r.siem_rule_ids ?? []).join("; "),
     onboarded_at: r.onboarded_at ?? "",
     interval: r.verification_interval_days?.toString() ?? "",
     risk: r.risk_level?.toString() ?? "",
@@ -118,6 +120,10 @@ export default function RuleDetail() {
         attack_techniques: form.attack
           .split(/[\s,;]+/)
           .map((tt) => tt.trim().toUpperCase())
+          .filter(Boolean),
+        siem_rule_ids: form.siem
+          .split(/[;\n]+/)
+          .map((x) => x.trim())
           .filter(Boolean),
         onboarded_at: form.onboarded_at || null,
         verification_interval_days: form.interval ? Number(form.interval) : null,
@@ -393,6 +399,17 @@ export default function RuleDetail() {
                     disabled={!editor}
                     value={form.attack}
                     onChange={(ev) => set({ attack: ev.target.value })}
+                  />
+                </label>
+                <label className="field">
+                  {t("SIEM rule IDs")}
+                  <input
+                    className="input mono"
+                    placeholder={t("Saved search or rule id; separate with ;")}
+                    title={t("Links this rule to the SIEM rule inventory and alert counts (Integrations page)")}
+                    disabled={!editor}
+                    value={form.siem}
+                    onChange={(ev) => set({ siem: ev.target.value })}
                   />
                 </label>
               </div>

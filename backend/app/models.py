@@ -43,6 +43,7 @@ class Role(enum.StrEnum):
 class AuthSource(enum.StrEnum):
     local = "local"
     sso = "sso"
+    service = "service"  # API token account for integrations (no interactive login)
 
 
 class Lifecycle(enum.StrEnum):
@@ -275,6 +276,8 @@ class L3UseCase(Base):
     )
     comments: Mapped[str] = mapped_column(Text, default="")
     attack_techniques: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # ids of the rule in the SIEM (saved search name, analytics rule id ...), see app/siem.py
+    siem_rule_ids: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="[]")
     onboarded_at: Mapped[date | None] = mapped_column(Date)
     last_verified_at: Mapped[date | None] = mapped_column(Date)
     last_verified_by: Mapped[str | None] = mapped_column(String(64))
@@ -458,3 +461,62 @@ class OutputMetric(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+
+# ---------------------------------------------------------------- integrations (M7)
+
+
+class ApiToken(Base):
+    """Bearer token of a service account, for scripts and SIEM integrations."""
+
+    __tablename__ = "api_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    prefix: Mapped[str] = mapped_column(String(16))  # shown in the list to recognise a token
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    user: Mapped[User] = relationship()
+
+
+class SiemSource(Base):
+    """A SIEM that pushes its rule inventory or alert counts (Splunk, Sentinel, QRadar ...)."""
+
+    __tablename__ = "siem_sources"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(32), unique=True)
+    inventory_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    inventory_by: Mapped[str | None] = mapped_column(String(64))
+    alerts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    alerts_by: Mapped[str | None] = mapped_column(String(64))
+    # outcome of the last alert push: counts and SIEM rule ids that matched no use case
+    alerts_report: Mapped[dict | None] = mapped_column(JSON, default=dict)
+
+    rules: Mapped[list["SiemRule"]] = relationship(
+        back_populates="source", cascade="all, delete-orphan", order_by="SiemRule.rule_id"
+    )
+
+
+class SiemRule(Base):
+    """One detection rule as the SIEM reported it in its last inventory push."""
+
+    __tablename__ = "siem_rules"
+    __table_args__ = (UniqueConstraint("source_id", "rule_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_id: Mapped[int] = mapped_column(
+        ForeignKey("siem_sources.id", ondelete="CASCADE"), index=True
+    )
+    rule_id: Mapped[str] = mapped_column(String(255))
+    name: Mapped[str] = mapped_column(String(255), default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    severity: Mapped[str] = mapped_column(String(32), default="")
+    techniques: Mapped[list[str]] = mapped_column(JSON, default=list)
+
+    source: Mapped[SiemSource] = relationship(back_populates="rules")

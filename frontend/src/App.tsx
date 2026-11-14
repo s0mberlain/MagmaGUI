@@ -11,6 +11,7 @@ import MaturityPage from "./pages/MaturityPage";
 import Priorities from "./pages/Priorities";
 import ImportExport from "./pages/ImportExport";
 import Login from "./pages/Login";
+import Integrations from "./pages/Integrations";
 import OutputPage from "./pages/OutputPage";
 import Placeholder from "./pages/Placeholder";
 import References from "./pages/References";
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="maturity" element={<MaturityPage />} />
           <Route path="attack" element={<AttackPage />} />
           <Route path="output" element={<OutputPage />} />
+          <Route path="integrations" element={<Integrations />} />
           <Route path="account" element={<Account />} />
           <Route
             path="audit"

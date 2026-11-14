@@ -22,6 +22,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: t("History & trends"), path: "/history" },
   { label: t("Maturity"), path: "/maturity" },
   { label: t("Import / Export"), path: "/import-export" },
+  { label: t("Integrations"), path: "/integrations" },
   { label: t("Audit log"), path: "/audit", roles: ["admin", "auditor"] },
   { label: t("Users"), path: "/admin/users", roles: ["admin"] },
 ];

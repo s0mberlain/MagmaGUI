@@ -19,6 +19,13 @@ export function fmtDate(iso: string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? iso : DATE_FMT.format(d);
 }
 
+/** Date and time, e.g. "14 Nov 2026 09:05"; null → "never". */
+export function fmtTime(iso: string | null | undefined): string {
+  if (!iso) return t("never");
+  const d = new Date(iso);
+  return `${fmtDate(iso)} ${d.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" })}`;
+}
+
 export function today(): string {
   const d = new Date();
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);

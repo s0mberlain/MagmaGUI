@@ -2,7 +2,7 @@
 
 Web application for the FI-ISAC **MaGMa Use Case Framework**: manage SIEM / SOC use cases across the business, threat (L1/L2) and implementation (L3) layers, score them, track verification and keep versioned YAML configs per use case.
 
-Status: **M5**: MVP (catalogue, scoring, verification, YAML configs with history, Excel import/export, local login and SSO) plus lifecycle change log, history and trends, optional git sync, risk-based priorities, maturity assessment and two-factor login. See [docs/PLAN.md](docs/PLAN.md) for the full plan and milestones, and [docs/design/](docs/design/) for the approved desktop design draft.
+Status: **M7**: MVP (catalogue, scoring, verification, YAML configs with history, Excel import/export, local login and SSO) plus lifecycle change log, history and trends, optional git sync, risk-based priorities, maturity assessment, two-factor login, ATT&CK coverage, output metrics, PostgreSQL support, German and Dutch UI, two-way git sync and a SIEM push API. See [docs/PLAN.md](docs/PLAN.md) for the full plan and milestones, and [docs/design/](docs/design/) for the approved desktop design draft.
 
 ## Run with Docker
 
@@ -170,6 +170,24 @@ positives.
 
 **Download PDF report** on the dashboard creates a management report: KPIs, the SOC score trend, detection per
 L1, top priorities, ATT&CK coverage per tactic, the noisiest rules and overdue verifications.
+
+## SIEM integration
+
+There is no live SIEM connector; instead the SIEM side pushes data to the app (see
+[deploy/siem/](deploy/siem/) for a small client and Splunk / Sentinel searches):
+
+- **API tokens** (*Integrations*, admin): each token is its own service account with the analyst
+  or auditor role, sent as `Authorization: Bearer mgm_…`. Revoking it disables the account; what
+  it did stays in the audit log.
+- **Rule inventory** `PUT /api/integrations/siem/<source>/rules`: the SIEM's full rule list. The
+  *Integrations* page shows SIEM rules without a use case (with suggestions by ATT&CK technique),
+  rules disabled in the SIEM but operational in the app, and linked ids no SIEM reports.
+- **Alert counts** `POST /api/integrations/siem/<source>/alerts`: alerts, incidents and false
+  positives per SIEM rule and month become the output metrics of the linked L3 rules
+  (`mode: replace` for month totals, `add` for daily pushes, `?dry_run=true` to check).
+
+A SIEM rule is linked through the field *SIEM rule IDs* on the rule page, or by using the L3 code
+as the SIEM rule id.
 
 ## Excel import / export
 

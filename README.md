@@ -2,7 +2,7 @@
 
 Web application for the FI-ISAC **MaGMa Use Case Framework**: manage SIEM / SOC use cases across the business, threat (L1/L2) and implementation (L3) layers, score them, track verification and keep versioned YAML configs per use case.
 
-Status: **M7**: MVP (catalogue, scoring, verification, YAML configs with history, Excel import/export, local login and SSO) plus lifecycle change log, history and trends, optional git sync, risk-based priorities, two-factor login, ATT&CK coverage, output metrics, PostgreSQL support, German and Dutch UI, two-way git sync and a SIEM push API. See [docs/PLAN.md](docs/PLAN.md) for the full plan and milestones, and [docs/design/](docs/design/) for the approved desktop design draft.
+Status: **M7**: MVP (catalogue, scoring, verification, JSON configs with history, Excel import/export, local login and SSO) plus lifecycle change log, history and trends, optional git sync, risk-based priorities, two-factor login, ATT&CK coverage, output metrics, PostgreSQL support, German and Dutch UI, two-way git sync and a SIEM push API. See [docs/PLAN.md](docs/PLAN.md) for the full plan and milestones, and [docs/design/](docs/design/) for the approved desktop design draft.
 
 ## Run with Docker
 
@@ -53,7 +53,7 @@ Or point `DATABASE_URL` at your own server (`postgresql+psycopg://user:pw@host:5
   and the scheduled snapshot and the git sync run on one replica at a time.
 - Connection pool with health checks (`DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, `DB_POOL_RECYCLE`), all
   sessions in UTC, optional `DB_STATEMENT_TIMEOUT_MS`.
-- Two saves of the same YAML config at the same moment cannot get the same revision; the loser
+- Two saves of the same rule config at the same moment cannot get the same revision; the loser
   gets a 409 and reloads.
 - `GET /api/ready` checks the database (503 when it is down), `GET /api/health` only the process.
 - CI runs the full test suite on SQLite and on PostgreSQL 16, and checks that the migrations
@@ -112,19 +112,35 @@ npm run build
   *Import / Export*. Loading deletes the verification, lifecycle and configuration history, so
   leave both off in production.
 
-## YAML configurations
+## JSON configurations
 
-Every L2 use case and L3 rule can keep a free-form YAML configuration (query, thresholds, owner …).
+Every L3 rule can keep a free-form JSON configuration (query, thresholds, owner …). L2 use cases
+only group rules and have no configuration.
 It works like git without needing git: each save is an immutable commit (sha, author, message),
 with history, diff between any two versions, restore (a new commit with the old content) and tags.
 "Verify now" tags the current version as `verified-<date>`. If someone else saved in between,
-your save is refused with a diff and you merge by hand. The only check is that the text is valid YAML.
+your save is refused with a diff and you merge by hand. The only check is that the text is valid JSON
+(an empty text means no configuration). Upload and download use `.json` files.
+
+Configurations were YAML before; on upgrade (migration 0014) the latest YAML version of each rule
+gets a JSON commit with the same data on top (author `system`, YAML comments are dropped). The
+YAML versions stay in the history. Old L2 configurations stay in the database and the JSON
+backup but are no longer shown.
+
+### SIEM name of rules
+
+Each rule page shows the rule's name as it should appear in the SIEM, with a Copy button. Admins
+set the format under *Setup → Settings*, e.g. `$companyName:$ucID:$ucName` with the variable
+`companyName = MYCORP` gives `MYCORP:IA-CMT-LOG-02:Failed Login Monitoring`. `$ucID`, `$ucName`,
+`$l2ID` and `$l1ID` come from the rule; unknown `$names` stay as they are. The default format is
+`$ucID:$ucName`. Settings are stored in the database (`app_settings`, migration 0015).
 
 ### Git repository (optional)
 
 Set `GIT_REMOTE_URL` plus `GIT_TOKEN` (HTTPS) or `GIT_SSH_KEY_FILE` (SSH) and the app pushes every
 configuration commit to that repository as a real git commit with the same author, date and
-message, on `usecases/<L1>/<L2>/<L3>.yaml` (an L2 config is `usecases/<L1>/<L2>/<L2>.yaml`). Tags
+message, on `usecases/<L1>/<L2>/<L3>.json` (a `.yaml` file written by older versions is replaced
+by the `.json` file at the rule's next export). Tags
 become `<code>/<tag>`, e.g. `AO-CRE-01/verified-2026-11-13`. Sync runs in the background after each
 commit (`GIT_AUTO_SYNC`) and at startup; admins see the state and can sync by hand under
 *Import / Export*. To try it locally: `docker compose --profile gitea up -d` starts Gitea on port
@@ -138,10 +154,10 @@ every `GIT_PULL_INTERVAL_MINUTES` (5) and at every sync; set `GIT_WEBHOOK_SECRET
 webhook to `<BASE_URL>/api/git/webhook` to pick changes up at once (GitHub and Gitea/Forgejo
 signatures, GitLab token header, or `X-Magma-Token: <secret>`). Rules:
 
-- Only valid YAML for an existing use case is taken over; deleting the file clears the config.
+- Only valid JSON in a `.json` file of an existing rule is taken over; deleting the file clears the config.
 - If the same config was also changed in the app and that change is not in git yet, the app
   version wins and is pushed on top. The git change stays in the repository history.
-- What was not taken over (conflict, invalid YAML, unknown path) is listed under
+- What was not taken over (conflict, invalid JSON, unknown path) is listed under
   *Import / Export → Git repository* and in the audit log as `config_import`.
 - The local working copy is a cache: it is reset to the remote branch before every sync, so
   force-pushes or edits in the repository never block the sync.

@@ -248,8 +248,9 @@ for _level in ("l2", "l3"):
                 if obj.last_verified_at is None or when >= obj.last_verified_at:
                     obj.last_verified_at = when
                     obj.last_verified_by = user.username
-                # Tag the configuration version that was verified (PLAN 4a)
-                tag = configs.tag_verified(db, obj, when, user.username)
+                # Tag the configuration version that was verified (PLAN 4a); only rules have one
+                if level == "l3":
+                    tag = configs.tag_verified(db, obj, when, user.username)
             audit.record(
                 db,
                 user,

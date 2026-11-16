@@ -1,4 +1,4 @@
-"""YAML configuration history: commits, diffs and tags (docs/PLAN.md section 4a).
+"""JSON configuration history of L3 rules: commits, diffs and tags (docs/PLAN.md section 4a).
 
 Works like git without exposing git: every save is an immutable commit with the full text,
 a restore is a new commit with old content, and a save based on an outdated commit is refused.
@@ -6,11 +6,11 @@ a restore is a new commit with old content, and a save based on an outdated comm
 
 import difflib
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
-import yaml
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -21,30 +21,26 @@ TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
 
 
 @dataclass
-class YamlCheck:
+class ConfigCheck:
     valid: bool
     error: str | None = None
     line: int | None = None
     column: int | None = None
 
 
-def check_yaml(content: str) -> YamlCheck:
-    """Free-form YAML: the only rule is that it parses (all documents of a stream)."""
+def check_json(content: str) -> ConfigCheck:
+    """Free-form JSON: the only rule is that it parses. An empty text means "no configuration"."""
     if len(content.encode()) > MAX_CONFIG_BYTES:
-        return YamlCheck(False, f"Configuration is larger than {MAX_CONFIG_BYTES // 1024} KB")
+        return ConfigCheck(False, f"Configuration is larger than {MAX_CONFIG_BYTES // 1024} KB")
+    if not content.strip():
+        return ConfigCheck(True)
     try:
-        for _ in yaml.safe_load_all(content):
-            pass
-    except yaml.YAMLError as e:
-        mark = getattr(e, "problem_mark", None) or getattr(e, "context_mark", None)
-        problem = getattr(e, "problem", None) or str(e)
-        return YamlCheck(
-            False,
-            problem,
-            mark.line + 1 if mark else None,
-            mark.column + 1 if mark else None,
-        )
-    return YamlCheck(True)
+        json.loads(content)
+    except json.JSONDecodeError as e:
+        return ConfigCheck(False, e.msg, e.lineno, e.colno)
+    except RecursionError:
+        return ConfigCheck(False, "The JSON is nested too deeply")
+    return ConfigCheck(True)
 
 
 def commit_sha(parent: str | None, author: str, at: datetime, message: str, content: str) -> str:

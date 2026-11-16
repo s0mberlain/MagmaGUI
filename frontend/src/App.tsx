@@ -17,6 +17,7 @@ import References from "./pages/References";
 import RuleDetail from "./pages/RuleDetail";
 import UseCases from "./pages/UseCases";
 import Users from "./pages/Users";
+import Settings from "./pages/Settings";
 import Verification from "./pages/Verification";
 import { NAV_ITEMS } from "./nav";
 import { t } from "./i18n";
@@ -53,6 +54,14 @@ export default function App() {
             element={
               <RequireAuth roles={["admin", "auditor"]}>
                 <AuditLog />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="settings"
+            element={
+              <RequireAuth roles={["admin"]}>
+                <Settings />
               </RequireAuth>
             }
           />

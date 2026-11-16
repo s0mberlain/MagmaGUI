@@ -137,3 +137,41 @@ def test_copy_refuses_empty_source(tmp_path, db_url):
 
     with pytest.raises(CopyError, match="empty"):
         copy_database(f"sqlite:///{tmp_path}/typo.db", db_url, replace=True)
+
+
+def test_migration_0014_converts_yaml_configs_to_json(db_url):
+    """Issue #28: the latest YAML config of a rule gets a JSON commit on top; history stays."""
+    import json
+
+    from alembic import command
+
+    from app.startup import alembic_config
+
+    s = Settings(database_url=db_url, admin_password="admin-password-123", snapshot_schedule="off")
+    engine = make_engine(db_url)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    initialize(engine, factory, s)
+    with factory() as db:
+        from app import configs
+
+        a, b = db.scalars(select(L3UseCase).order_by(L3UseCase.id).limit(2))
+        configs.make_commit(db, a, "# comment\nthreshold: 5\nowner: soc\n", "Old", "x")
+        configs.make_commit(db, b, '{"already": "json"}\n', "New", "x")
+        db.commit()
+        a_id, b_id = a.id, b.id
+
+    cfg = alembic_config(str(engine.url.render_as_string(hide_password=False)))
+    with engine.begin() as conn:
+        cfg.attributes["connection"] = conn
+        command.downgrade(cfg, "0013")
+    migrate(engine)
+
+    with factory() as db:
+        ca = list(db.scalars(select(ConfigCommit).where(ConfigCommit.l3_id == a_id)))
+        assert [c.rev for c in ca] == [1, 2]
+        assert ca[1].parent_sha == ca[0].sha and ca[1].author == "system"
+        assert json.loads(ca[1].content) == {"threshold": 5, "owner": "soc"}
+        assert ca[0].content.startswith("# comment")  # the YAML version stays in the history
+        n_b = db.scalar(select(func.count()).where(ConfigCommit.l3_id == b_id))
+        assert n_b == 1  # JSON already: nothing added
+    engine.dispose()

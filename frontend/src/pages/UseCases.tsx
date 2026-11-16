@@ -12,7 +12,6 @@ import {
   type Scores,
 } from "../api";
 import { useAuth } from "../auth";
-import ConfigPanel from "../components/ConfigPanel";
 import { Markdown, MarkdownField } from "../components/Markdown";
 import { BusinessChips, ComplianceChips, DriverBlock, DriverPickers, EditDriversDialog } from "../components/Drivers";
 import LifecyclePanel from "../components/LifecyclePanel";
@@ -37,6 +36,7 @@ import {
   REF_KIND_PARAM,
   REF_PARAM,
   STATUS_LABEL,
+  today,
 } from "../lib/format";
 import { t } from "../i18n";
 
@@ -484,12 +484,8 @@ export default function UseCases() {
               )}
             </div>
           )}
-          {selected && (
-            <div className="two-col">
-              <LifecyclePanel key={selected.code} level="l2" code={selected.code} onChanged={refresh} />
-              <ConfigPanel key={"cfg" + selected.code} level="l2" code={selected.code} editor={editor} />
-            </div>
-          )}
+          {/* L2 use cases only group rules: no configuration here, rules have it (issue #25) */}
+          {selected && <LifecyclePanel key={selected.code} level="l2" code={selected.code} onChanged={refresh} />}
         </section>
       </div>
       )}
@@ -1265,13 +1261,14 @@ function NewL3Dialog({ l2, onClose, onCreated }: { l2: L2; onClose: () => void; 
   const next = useLoad(() => api.nextL3Code(l2.code), [l2.code]);
   const [code, setCode] = useState<string | null>(null);
   const [name, setName] = useState("");
+  const [onboarded, setOnboarded] = useState(today()); // issue #27: defaults to today
   const [error, setError] = useState<string | null>(null);
   const value = code ?? next.data?.code ?? "";
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     try {
-      await api.createL3({ code: value, name, lifecycle_status: "onboarding" });
+      await api.createL3({ code: value, name, lifecycle_status: "onboarding", onboarded_at: onboarded || null });
       onCreated(value);
     } catch (err) {
       setError((err as Error).message);
@@ -1308,6 +1305,16 @@ function NewL3Dialog({ l2, onClose, onCreated }: { l2: L2; onClose: () => void; 
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={t("e.g. Detect credential dumping attempt")}
+          />
+        </label>
+        <label className="field">
+          {t("Onboarded on")}
+          <input
+            type="date"
+            className="input"
+            value={onboarded}
+            max={today()}
+            onChange={(e) => setOnboarded(e.target.value)}
           />
         </label>
         <p className="muted small" style={{ margin: 0 }}>

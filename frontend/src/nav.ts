@@ -32,4 +32,5 @@ export const NAV_ITEMS: NavItem[] = [
   { label: t("Integrations"), path: "/integrations", group: "admin" },
   { label: t("Audit log"), path: "/audit", roles: ["admin", "auditor"], group: "admin" },
   { label: t("Users"), path: "/admin/users", roles: ["admin"], group: "admin" },
+  { label: t("Settings"), path: "/settings", roles: ["admin"], group: "admin" },
 ];

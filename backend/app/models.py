@@ -319,7 +319,8 @@ class Verification(Base):
 
 
 class ConfigCommit(Base):
-    """One immutable version of the free-form YAML configuration of an L2 use case or L3 rule.
+    """One immutable version of the free-form JSON configuration of an L3 rule (older rows may
+    belong to an L2 use case and hold YAML, from before issues #25 and #28).
 
     Commits are never changed or deleted (docs/PLAN.md section 4a). `sha` is a SHA-256 over the
     parent, author, time, message and content, like a git commit id.
@@ -524,3 +525,19 @@ class SiemAlertBatch(Base):
     batch_id: Mapped[str] = mapped_column(String(128))
     applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     applied_by: Mapped[str] = mapped_column(String(64))
+
+
+class AppSetting(Base):
+    """Settings admins change in the app (not in the environment), one JSON value per key.
+
+    `rule_name`: format and variables of the SIEM name shown on each rule (issue #29).
+    """
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+    updated_by: Mapped[str] = mapped_column(String(64), default="system")

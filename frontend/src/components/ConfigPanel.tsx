@@ -6,7 +6,7 @@ import {
   type ConfigDiff,
   type DiffLine,
   type Level,
-  type YamlCheck,
+  type ConfigCheck,
 } from "../api";
 import { fmtDate } from "../lib/format";
 import { confirmDialog, ErrorNote, useLoad } from "./ui";
@@ -98,13 +98,16 @@ function CodeEditor({
   );
 }
 
-const TEMPLATE = `# Free-form YAML: store whatever describes this detection,
-# e.g. the query, thresholds, schedule, owner or response playbook.
-owner: soc
-severity: medium
-detection:
-  query: ""
-  threshold: 1
+// Free-form JSON: store whatever describes this detection, e.g. the query, thresholds,
+// schedule, owner or response playbook.
+const TEMPLATE = `{
+  "owner": "soc",
+  "severity": "medium",
+  "detection": {
+    "query": "",
+    "threshold": 1
+  }
+}
 `;
 
 export default function ConfigPanel({ level, code, editor }: { level: Level; code: string; editor: boolean }) {
@@ -114,7 +117,7 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
   const [text, setText] = useState("");
   const [base, setBase] = useState<string | null>(null);
   const [message, setMessage] = useState("");
-  const [check, setCheck] = useState<YamlCheck | null>(null);
+  const [check, setCheck] = useState<ConfigCheck | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [conflict, setConflict] = useState<ConflictError | null>(null);
@@ -133,12 +136,12 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.data]);
 
-  // debounced YAML check while typing
+  // debounced JSON check while typing
   useEffect(() => {
     if (!editor) return;
     const tt = setTimeout(() => {
       api
-        .validateYaml(text)
+        .validateConfig(text)
         .then(setCheck)
         .catch(() => setCheck(null));
     }, 350);
@@ -218,7 +221,7 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
     <section className="card config" aria-labelledby={`cfg-${code}`}>
       <div className="config-head">
         <div className="stack-xs">
-          <h2 id={`cfg-${code}`}>{t("Configuration (YAML)")}</h2>
+          <h2 id={`cfg-${code}`}>{t("Configuration (JSON)")}</h2>
           <span className="small muted">
             {head
               ? `HEAD r${head.rev} · ${head.short} · ${head.author}, ${when(head.created_at)}${tagsLine ? ` · ${t("tag")} ${tagsLine}` : ""}`
@@ -228,7 +231,7 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
         <div className="row-actions">
           {head && (
             <a className="btn btn-sm" href={api.configDownloadUrl(level, code)} download>
-              {t("Download .yaml")}
+              {t("Download .json")}
             </a>
           )}
           {editor && (
@@ -239,7 +242,7 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
               <input
                 ref={fileInput}
                 type="file"
-                accept=".yaml,.yml,text/yaml,text/plain"
+                accept=".json,application/json,text/plain"
                 hidden
                 onChange={(e) => {
                   const f = e.target.files?.[0];
@@ -324,7 +327,7 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
                 onChange={setText}
                 readOnly={!editor}
                 errorLine={check && !check.valid ? check.line : null}
-                label={t("YAML configuration of {code}", { code })}
+                label={t("JSON configuration of {code}", { code })}
               />
             )}
             {editor && (
@@ -333,7 +336,7 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
                   {check === null
                     ? t("Checking…")
                     : check.valid
-                      ? `✓ ${t("Valid YAML")}${head ? ` · ${t("based on r{rev} ({short})", { rev: head.rev, short: head.short })}` : ""}`
+                      ? `✓ ${t("Valid JSON")}${head ? ` · ${t("based on r{rev} ({short})", { rev: head.rev, short: head.short })}` : ""}`
                       : `✗ ${check.line ? `${t("Line {n}", { n: check.line })}: ` : ""}${check.error}`}
                 </span>
                 <label className="sr-only" htmlFor={`msg-${code}`}>
@@ -413,7 +416,7 @@ export default function ConfigPanel({ level, code, editor }: { level: Level; cod
                     </button>
                   )}
                   <a className="btn btn-sm" href={api.configDownloadUrl(level, code, c.sha)} download>
-                    {t(".yaml")}
+                    {t(".json")}
                   </a>
                   {editor && (
                     <>

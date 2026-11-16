@@ -9,6 +9,7 @@ Only use case fields are overwritten; the catalogue itself (IDs, names) is kept.
 """
 
 import argparse
+import json
 import logging
 import random
 from datetime import UTC, date, datetime, time, timedelta
@@ -102,32 +103,28 @@ CONFIG_CHANGES = [
 ]
 
 
-def _config_yaml(rule, cfg: dict) -> str:
-    lines = [
-        f"# Detection configuration for {rule.code}",
-        f"rule: {rule.code}",
-        f"title: {rule.name}",
-        f"owner: {cfg['owner']}",
-        f"severity: {cfg['severity']}",
-        "schedule:",
-        f"  interval: {cfg['interval']}",
-        f"  window: {cfg['window']}",
-        "detection:",
-        f'  query: {cfg["field"]} == "{cfg["value"]}"',
-        f"  threshold: {cfg['threshold']}",
-    ]
+def _config_json(rule, cfg: dict) -> str:
+    doc = {
+        "rule": rule.code,
+        "title": rule.name,
+        "owner": cfg["owner"],
+        "severity": cfg["severity"],
+        "schedule": {"interval": cfg["interval"], "window": cfg["window"]},
+        "detection": {
+            "query": f'{cfg["field"]} == "{cfg["value"]}"',
+            "threshold": cfg["threshold"],
+        },
+    }
     if rule.attack_techniques:
-        lines.append("attack:")
-        lines += [f"  - {t}" for t in rule.attack_techniques]
+        doc["attack"] = list(rule.attack_techniques)
     if cfg["exclusions"]:
-        lines.append("exclusions:")
-        lines += [f"  - host: {h}" for h in cfg["exclusions"]]
-    lines += ["response:", f"  playbook: PB-{cfg['playbook']:03d}", "  notify: soc-l1"]
-    return "\n".join(lines) + "\n"
+        doc["exclusions"] = [{"host": h} for h in cfg["exclusions"]]
+    doc["response"] = {"playbook": f"PB-{cfg['playbook']:03d}", "notify": "soc-l1"}
+    return json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
 
 
 def _demo_configs(db: Session, rnd: random.Random, rules, users, today: date) -> int:
-    """A YAML config with 1-4 commits for about 40 % of the operational rules."""
+    """A JSON config with 1-4 commits for about 40 % of the operational rules."""
     n = 0
     for rule in rules:
         if rule.lifecycle_status not in (Lifecycle.operational, Lifecycle.maintenance):
@@ -170,7 +167,7 @@ def _demo_configs(db: Session, rnd: random.Random, rules, users, today: date) ->
             )
             made.append(
                 configs.make_commit(
-                    db, rule, _config_yaml(rule, cfg), msg, rnd.choice(users), at=at
+                    db, rule, _config_json(rule, cfg), msg, rnd.choice(users), at=at
                 )
             )
             n += 1

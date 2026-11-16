@@ -16,6 +16,7 @@ from app import __version__, gitsync
 from app import snapshots as snapshot_jobs
 from app.api import (
     admin,
+    app_settings,
     attack_api,
     audit_log,
     auth,
@@ -202,6 +203,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         attack_api.router,
         output.router,
         integrations.router,
+        app_settings.router,
     ):
         api.include_router(r)
     app.include_router(api)

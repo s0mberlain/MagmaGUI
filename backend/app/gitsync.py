@@ -1,10 +1,13 @@
-"""Optional sync of the YAML config history with a git repository (PLAN 4a).
+"""Optional sync of the JSON config history of L3 rules with a git repository (PLAN 4a).
 
 App -> git: every config commit becomes a git commit with the same author, date and message, on
-`usecases/<L1>/<L2>/<L3>.yaml` (an L2 config is `<L2>/<L2>.yaml`). Config tags become git tags
-named `<code>/<tag>`. Each exported commit carries a `Magma-Commit: <sha>` trailer, so a sync never
-exports a commit twice, even after a failed push. The local working copy is only a cache: it is
-reset to the remote branch before each sync and unpushed commits are simply exported again.
+`usecases/<L1>/<L2>/<L3>.json`. Configurations used to be YAML in `<L3>.yaml`; the first export
+of a rule after that change moves the file to `.json`. Configurations of L2 use cases (no longer
+used, issue #25) are not exported any more; what is in git already stays there. Config tags
+become git tags named `<code>/<tag>`. Each exported commit carries a `Magma-Commit: <sha>`
+trailer, so a sync never exports a commit twice, even after a failed push. The local working
+copy is only a cache: it is reset to the remote branch before each sync and unpushed commits
+are simply exported again.
 
 Git -> app (two-way sync, `GIT_PULL=true`): commits pushed to the branch by people (no trailer)
 that change a config file become new config commits in the app, with the git author, date and
@@ -169,12 +172,18 @@ def path_for(db: Session, c: ConfigCommit) -> tuple[str, str]:
         l3 = db.get(L3UseCase, c.l3_id)
         l2 = l3.parent
         code = l3.code
-        rel = f"usecases/{l2.parent.code}/{l2.code}/{l3.code}.yaml"
+        rel = f"usecases/{l2.parent.code}/{l2.code}/{l3.code}.json"
     else:
+        # L2 configurations from before issue #25: only kept for commits already in git
         l2 = db.get(L2UseCase, c.l2_id)
         code = l2.code
         rel = f"usecases/{l2.parent.code}/{l2.code}/{l2.code}.yaml"
     return code, rel
+
+
+def legacy_path(rel: str) -> str | None:
+    """Where the same configuration was stored while configurations were YAML."""
+    return rel[: -len(".json")] + ".yaml" if rel.endswith(".json") else None
 
 
 README = """# MaGMa use case configurations
@@ -183,14 +192,13 @@ This repository is written by the MaGMa UCF web application. Every configuration
 the app appears here as a git commit with the same author, date and message. Tags are named
 `<use case>/<tag>`, for example `AO-CRE-01/verified-2026-11-13`.
 
-Layout: `usecases/<L1>/<L2>/<L2>.yaml` for an L2 use case and `usecases/<L1>/<L2>/<L3>.yaml`
-for an L3 rule. When two-way sync is on in the app, commits pushed here that change these files
-are read back into the app (valid YAML only, existing use cases only); otherwise changes made
-directly in this repository are not read back.
+Layout: `usecases/<L1>/<L2>/<L3>.json` for an L3 rule. When two-way sync is on in the app,
+commits pushed here that change these files are read back into the app (valid JSON only,
+existing rules only); otherwise changes made directly in this repository are not read back.
 """
 
 
-PATH_RE = re.compile(r"^usecases/([^/]+)/([^/]+)/([^/]+)\.ya?ml$")
+PATH_RE = re.compile(r"^usecases/([^/]+)/([^/]+)/([^/]+)\.json$")
 
 
 def owner_for(db: Session, path: str) -> L2UseCase | L3UseCase | None:
@@ -199,9 +207,6 @@ def owner_for(db: Session, path: str) -> L2UseCase | L3UseCase | None:
     if not m:
         return None
     l1, l2, name = m.groups()
-    if name == l2:
-        obj = db.scalar(select(L2UseCase).where(L2UseCase.code == l2))
-        return obj if obj and obj.parent.code == l1 else None
     obj = db.scalar(select(L3UseCase).where(L3UseCase.code == name))
     return obj if obj and obj.parent.code == l2 and obj.parent.parent.code == l1 else None
 
@@ -257,10 +262,10 @@ def import_remote(db: Session, repo: Repo, settings: Settings, res: Result, expo
             continue
         for sha, status in commits:
             content = "" if status == "D" else repo.git("show", f"{sha}:{path}", raw=True)
-            check = configs.check_yaml(content)
+            check = configs.check_json(content)
             if not check.valid:
                 where = f" (line {check.line})" if check.line else ""
-                res.notes.append(f"{obj.code}: git commit {sha[:7]} is not valid YAML{where}")
+                res.notes.append(f"{obj.code}: git commit {sha[:7]} is not valid JSON{where}")
                 continue
             current = configs.head(db, obj)
             if (current.content if current else "").strip() == content.strip():
@@ -304,10 +309,12 @@ def verified_exports(db: Session, repo: Repo, done: dict[str, str], res: Result)
             out[c.sha] = git_sha
             continue
         _, rel = path_for(db, c)
-        if repo.ok("cat-file", "-e", f"{git_sha}:{rel}"):
-            content = repo.git("show", f"{git_sha}:{rel}", raw=True)
-        else:
-            content = ""
+        content = ""
+        # commits exported while configurations were YAML are in the .yaml file
+        for path in (rel, legacy_path(rel)):
+            if path and repo.ok("cat-file", "-e", f"{git_sha}:{path}"):
+                content = repo.git("show", f"{git_sha}:{path}", raw=True)
+                break
         if content.strip() == c.content.strip():
             out[c.sha] = git_sha
         else:
@@ -330,7 +337,7 @@ def sync(db: Session, settings: Settings) -> Result:
     todo = [
         c
         for c in db.scalars(select(ConfigCommit).order_by(ConfigCommit.created_at, ConfigCommit.id))
-        if c.sha not in done and c.source != "git"
+        if c.sha not in done and c.source != "git" and c.l3_id is not None
     ]
     readme = repo.dir / "README.md"
     if not readme.exists():
@@ -340,6 +347,9 @@ def sync(db: Session, settings: Settings) -> Result:
     for c in todo:
         code, rel = path_for(db, c)
         f = repo.dir / rel
+        old = legacy_path(rel)
+        if old and (repo.dir / old).exists():
+            repo.git("rm", "-q", "--", old)  # the YAML file of this rule becomes the .json file
         if c.content.strip():
             f.parent.mkdir(parents=True, exist_ok=True)
             f.write_text(c.content if c.content.endswith("\n") else c.content + "\n")

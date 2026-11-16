@@ -358,6 +358,8 @@ section.split-side { display: flex; flex-direction: column; gap: 12px; }
 .multi-list { position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); margin: 0; background: var(--c-surface); border: 1px solid var(--c-border-strong); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(22, 24, 29, 0.12); padding: 6px; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; }
 .multi-list label { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 8px; border-radius: var(--radius-sm); font-weight: 400; cursor: pointer; }
 .multi-list label:hover { background: var(--c-subtle); }
+.multi-add { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; border-top: 1px solid var(--c-border); margin: 4px -6px -6px; padding: 6px 8px; position: sticky; bottom: -6px; background: var(--c-surface); }
+.multi-add .form-error { flex-basis: 100%; margin: 0; }
 
 /* modal */
 .modal { border: 0; border-radius: var(--radius-lg); padding: 22px 24px; width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 48px); color: var(--c-ink); box-shadow: 0 20px 60px rgba(22, 24, 29, 0.3); }
@@ -404,7 +406,7 @@ section.split-side { display: flex; flex-direction: column; gap: 12px; }
 .title-input { width: 100%; }
 .mini-stats dd { font-size: 18px; }
 
-/* M3: YAML configuration */
+/* M3: JSON configuration of rules */
 .config { padding: 0; display: flex; flex-direction: column; }
 .config-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 22px 0; }
 .config-tabs { padding: 10px 22px 0; }
@@ -733,3 +735,11 @@ th.num .sort-btn { text-align: right; }
 .md table { border-collapse: collapse; display: block; overflow-x: auto; }
 .md th, .md td { border: 1px solid var(--c-border); padding: 3px 8px; text-align: left; }
 .md a { color: var(--c-accent-hover); }
+
+/* Settings: SIEM name of rules (issue #29) */
+.var-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.var-name { display: flex; align-items: center; gap: 4px; font-family: var(--font-mono, monospace); }
+.var-name .input { width: 14rem; max-width: 60vw; }
+.rule-name-preview { display: flex; align-items: center; background: var(--c-subtle); overflow-x: auto; white-space: pre; }
+.siem-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.siem-name code { background: var(--c-subtle); border-radius: var(--radius-sm); padding: 4px 8px; user-select: all; overflow-wrap: anywhere; }

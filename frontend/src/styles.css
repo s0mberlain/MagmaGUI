@@ -404,7 +404,7 @@ section.split-side { display: flex; flex-direction: column; gap: 12px; }
 .title-input { width: 100%; }
 .mini-stats dd { font-size: 18px; }
 
-/* M3: YAML configuration */
+/* M3: JSON configuration of rules */
 .config { padding: 0; display: flex; flex-direction: column; }
 .config-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 22px 0; }
 .config-tabs { padding: 10px 22px 0; }

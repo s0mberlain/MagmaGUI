@@ -12,7 +12,6 @@ import {
   type Scores,
 } from "../api";
 import { useAuth } from "../auth";
-import ConfigPanel from "../components/ConfigPanel";
 import { Markdown, MarkdownField } from "../components/Markdown";
 import { BusinessChips, ComplianceChips, DriverBlock, DriverPickers, EditDriversDialog } from "../components/Drivers";
 import LifecyclePanel from "../components/LifecyclePanel";
@@ -484,12 +483,8 @@ export default function UseCases() {
               )}
             </div>
           )}
-          {selected && (
-            <div className="two-col">
-              <LifecyclePanel key={selected.code} level="l2" code={selected.code} onChanged={refresh} />
-              <ConfigPanel key={"cfg" + selected.code} level="l2" code={selected.code} editor={editor} />
-            </div>
-          )}
+          {/* L2 use cases only group rules: no configuration here, rules have it (issue #25) */}
+          {selected && <LifecyclePanel key={selected.code} level="l2" code={selected.code} onChanged={refresh} />}
         </section>
       </div>
       )}

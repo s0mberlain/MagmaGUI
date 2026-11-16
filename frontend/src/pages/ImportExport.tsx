@@ -132,7 +132,7 @@ export default function ImportExport() {
         <h2 id="exp-h">{t("Export")}</h2>
         <p className="muted" style={{ margin: 0 }}>
           {t(
-            "The Excel file has the classic sheets (L1 UC, L2 UC, L3 UC, Drivers, References) with the original formulas, so it still works as the classic tool. Fields the classic tool does not know, such as lifecycle status and verification dates, are in extra columns on the right. The JSON export also contains verifications, status changes, output metrics and the full YAML configuration history. It is meant for other tools and cannot be imported again: back up the database to be able to restore.",
+            "The Excel file has the classic sheets (L1 UC, L2 UC, L3 UC, Drivers, References) with the original formulas, so it still works as the classic tool. Fields the classic tool does not know, such as lifecycle status and verification dates, are in extra columns on the right. The JSON export also contains verifications, status changes, output metrics and the full JSON configuration history. It is meant for other tools and cannot be imported again: back up the database to be able to restore.",
           )}
         </p>
         <div className="row-actions start">
@@ -239,7 +239,7 @@ function GitCard() {
       {g && !g.enabled && (
         <p className="muted" style={{ margin: 0 }}>
           {t(
-            "The YAML configurations can also be pushed to a git repository, one commit per configuration commit, with tags as",
+            "The JSON configurations can also be pushed to a git repository, one commit per configuration commit, with tags as",
           )}{" "}
           <span className="mono">{t("<use case>/<tag>")}</span>
           {t(". Set")} <span className="mono">GIT_REMOTE_URL</span>{" "}
@@ -348,7 +348,7 @@ function DemoCard() {
         <ul className="confirm-list">
           <li>{t("All verifications are deleted.")}</li>
           <li>{t("All status changes (lifecycle log) are deleted.")}</li>
-          <li>{t("The whole YAML configuration history is deleted.")}</li>
+          <li>{t("The whole JSON configuration history is deleted.")}</li>
           <li>{t("Metrics, statuses, data sources and dates of every rule are overwritten.")}</li>
         </ul>
       ),

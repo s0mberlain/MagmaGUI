@@ -40,7 +40,9 @@ class GitStatus(BaseModel):
 
 
 def _count(db: DB, *where) -> int:
-    return db.scalar(select(func.count()).select_from(ConfigCommit).where(*where)) or 0
+    # only rule configurations are synced (L2 configurations are no longer used, issue #25)
+    q = select(func.count()).select_from(ConfigCommit).where(ConfigCommit.l3_id.is_not(None))
+    return db.scalar(q.where(*where)) or 0
 
 
 def _status(db: DB, settings: SettingsDep) -> GitStatus:

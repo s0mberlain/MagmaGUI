@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     # Automatic snapshots for trend charts: off | daily | weekly | monthly (app/snapshots.py).
     snapshot_schedule: str = "monthly"
 
-    # Optional git repository for the YAML configs (app/gitsync.py). Off when the URL is empty.
+    # Optional git repository for the JSON configs (app/gitsync.py). Off when the URL is empty.
     git_remote_url: str = ""
     git_branch: str = "main"
     git_username: str = "magma"

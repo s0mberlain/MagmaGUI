@@ -1,4 +1,8 @@
-"""YAML configuration of L2 use cases and L3 rules with git-like history (PLAN section 4a)."""
+"""JSON configuration of L3 rules with git-like history (PLAN section 4a).
+
+L2 use cases only group rules and have no technical implementation, so they have no
+configuration (issue #25). Configurations L2 use cases got before that stay in the database
+and in the JSON backup, but are no longer shown or edited."""
 
 from datetime import datetime
 from typing import Annotated
@@ -11,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app import audit, configs
 from app.api.deps import DB
-from app.models import ConfigCommit, ConfigTag, L2UseCase, L3UseCase
+from app.models import ConfigCommit, ConfigTag, L3UseCase
 from app.security import Admin, Editor, Reader
 
 router = APIRouter(tags=["configuration"])
@@ -105,11 +109,10 @@ def _with_content(c: ConfigCommit) -> CommitWithContent:
     return CommitWithContent(**commit_out(c).model_dump(), content=c.content)
 
 
-def _owner(db: Session, level: str, code: str):
-    model = {"l2": L2UseCase, "l3": L3UseCase}[level]
-    obj = db.scalar(select(model).where(model.code == code))
+def _owner(db: Session, level: str, code: str) -> L3UseCase:
+    obj = db.scalar(select(L3UseCase).where(L3UseCase.code == code))
     if obj is None:
-        raise HTTPException(404, f"{level.upper()} use case not found")
+        raise HTTPException(404, "L3 rule not found")
     return obj
 
 
@@ -121,27 +124,30 @@ def _commit_or_404(db: Session, obj, ref: str) -> ConfigCommit:
 
 
 def _check(content: str) -> None:
-    res = configs.check_yaml(content)
+    res = configs.check_json(content)
     if not res.valid:
         where = f" (line {res.line}, column {res.column})" if res.line else ""
-        raise HTTPException(422, f"Invalid YAML{where}: {res.error}")
+        raise HTTPException(422, f"Invalid JSON{where}: {res.error}")
 
 
 @router.post("/config/validate", response_model=ValidateOut)
 def validate(body: ValidateIn, _: Reader) -> ValidateOut:
-    r = configs.check_yaml(body.content)
+    r = configs.check_json(body.content)
     return ValidateOut(valid=r.valid, error=r.error, line=r.line, column=r.column)
 
 
 @router.get("/config/recent", response_model=list[RecentOut])
 def recent(_: Reader, db: DB, limit: int = Query(6, ge=1, le=50)) -> list[RecentOut]:
-    q = select(ConfigCommit).order_by(ConfigCommit.created_at.desc(), ConfigCommit.id.desc())
+    q = (
+        select(ConfigCommit)
+        .where(ConfigCommit.l3_id.is_not(None))
+        .order_by(ConfigCommit.created_at.desc(), ConfigCommit.id.desc())
+    )
     out = []
     for c in db.scalars(q.limit(limit)):
-        level = "l3" if c.l3_id else "l2"
-        obj = db.get(L3UseCase if c.l3_id else L2UseCase, c.l3_id or c.l2_id)
+        obj = db.get(L3UseCase, c.l3_id)
         out.append(
-            RecentOut(**commit_out(c).model_dump(), level=level, code=obj.code, name=obj.name)
+            RecentOut(**commit_out(c).model_dump(), level="l3", code=obj.code, name=obj.name)
         )
     return out
 
@@ -149,7 +155,7 @@ def recent(_: Reader, db: DB, limit: int = Query(6, ge=1, le=50)) -> list[Recent
 @router.get("/config/heads/{level}", response_model=dict[str, CommitOut])
 def heads(level: str, _: Reader, db: DB, prefix: str = "") -> dict[str, CommitOut]:
     """Latest commit per use case code, optionally only codes starting with `prefix`."""
-    model = {"l2": L2UseCase, "l3": L3UseCase}.get(level)
+    model = {"l3": L3UseCase}.get(level)
     if model is None:
         raise HTTPException(404, "Unknown level")
     rows = list(db.execute(select(model.id, model.code).where(model.code.startswith(prefix))))
@@ -157,7 +163,7 @@ def heads(level: str, _: Reader, db: DB, prefix: str = "") -> dict[str, CommitOu
     return {r.code: commit_out(by_id[r.id]) for r in rows if r.id in by_id}
 
 
-for _level in ("l2", "l3"):
+for _level in ("l3",):
 
     def _make(level: str) -> None:
         base = f"/{level}/{{code}}/config"
@@ -294,8 +300,8 @@ for _level in ("l2", "l3"):
             suffix = "" if c.rev == configs.head(db, obj).rev else f"-r{c.rev}"
             return Response(
                 c.content,
-                media_type="application/yaml",
-                headers={"Content-Disposition": f'attachment; filename="{code}{suffix}.yaml"'},
+                media_type="application/json",
+                headers={"Content-Disposition": f'attachment; filename="{code}{suffix}.json"'},
             )
 
     _make(_level)

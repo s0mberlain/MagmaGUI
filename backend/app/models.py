@@ -319,7 +319,8 @@ class Verification(Base):
 
 
 class ConfigCommit(Base):
-    """One immutable version of the free-form YAML configuration of an L2 use case or L3 rule.
+    """One immutable version of the free-form JSON configuration of an L3 rule (older rows may
+    belong to an L2 use case and hold YAML, from before issues #25 and #28).
 
     Commits are never changed or deleted (docs/PLAN.md section 4a). `sha` is a SHA-256 over the
     parent, author, time, message and content, like a git commit id.

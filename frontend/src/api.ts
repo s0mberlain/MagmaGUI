@@ -356,7 +356,7 @@ export interface RecentCommit extends ConfigCommit {
   code: string;
   name: string;
 }
-export interface YamlCheck {
+export interface ConfigCheck {
   valid: boolean;
   error: string | null;
   line: number | null;
@@ -812,7 +812,7 @@ export const api = {
     request<ConfigCommit>("POST", `${cfgUrl(level, code)}/tags`, { name, ref }),
   configDownloadUrl: (level: Level, code: string, ref?: string) =>
     `${cfgUrl(level, code)}/download${ref ? `?ref=${enc(ref)}` : ""}`,
-  validateYaml: (content: string) => request<YamlCheck>("POST", "/api/config/validate", { content }),
+  validateConfig: (content: string) => request<ConfigCheck>("POST", "/api/config/validate", { content }),
   recentCommits: (limit = 6) => request<RecentCommit[]>("GET", `/api/config/recent?limit=${limit}`),
   configHeads: (level: Level, prefix = "") =>
     request<Record<string, ConfigCommit>>("GET", `/api/config/heads/${level}?prefix=${enc(prefix)}`),

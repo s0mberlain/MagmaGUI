@@ -11,7 +11,7 @@ RULE = "AO-CRE-01"
 
 def test_check_with_issues_does_not_count_as_verified(admin):
     admin.patch(f"/api/l3/{RULE}", json={"lifecycle_status": "operational"})
-    admin.put(f"/api/l3/{RULE}/config", json={"content": "a: 1\n", "message": "first"})
+    admin.put(f"/api/l3/{RULE}/config", json={"content": '{"a": 1}\n', "message": "first"})
     r = admin.post(f"/api/l3/{RULE}/verify", json={"result": "issues", "note": "does not fire"})
     assert r.status_code == 201 and r.json()["config_tag"] is None
     rule = admin.get(f"/api/l3/{RULE}").json()
@@ -68,7 +68,7 @@ def test_demo_data_needs_the_setting(app, settings, admin):
     assert admin.get("/api/admin/demo-data").json() == {"allowed": True}
     settings.allow_demo_data = False
     assert admin.get("/api/admin/demo-data").json() == {"allowed": False}
-    admin.put(f"/api/l3/{RULE}/config", json={"content": "a: 1\n", "message": "keep me"})
+    admin.put(f"/api/l3/{RULE}/config", json={"content": '{"a": 1}\n', "message": "keep me"})
     r = admin.post("/api/admin/demo-data", json={})
     assert r.status_code == 409 and "ALLOW_DEMO_DATA" in r.json()["detail"]
     assert admin.get(f"/api/l3/{RULE}/config").json()["commits"] == 1

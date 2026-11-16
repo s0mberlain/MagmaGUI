@@ -6,7 +6,12 @@ import { ErrorNote, StatusPill, useLoad } from "../components/ui";
 import { num, pct } from "../lib/format";
 import { t } from "../i18n";
 
-const SOURCE_LABEL: Record<string, string> = { rule: t("own value"), l2: t("from L2"), risk: t("from risk level") };
+const SOURCE_LABEL: Record<string, string> = {
+  rule: t("own value"),
+  l2: t("from L2"),
+  risk: t("from risk level"),
+  system: t("from system"),
+};
 
 /** Implementation bar with a marker at the target. */
 function TargetBar({ impl, target }: { impl: number | null; target: number | null }) {
@@ -24,7 +29,11 @@ function RiskBadge({ r }: { r: GapRow }) {
   return (
     <span
       className={`risk risk-${r.risk}`}
-      title={t("Risk {r} ({source})", { r: r.risk, source: SOURCE_LABEL[r.risk_source ?? ""] ?? "" })}
+      title={
+        r.risk_source === "system"
+          ? t("Risk {r} from system {name}", { r: r.risk, name: r.risk_system ?? "" })
+          : t("Risk {r} ({source})", { r: r.risk, source: SOURCE_LABEL[r.risk_source ?? ""] ?? "" })
+      }
     >
       {r.risk}
     </span>
@@ -238,6 +247,11 @@ export default function Priorities() {
                   </td>
                   <td className="num">
                     <RiskBadge r={r} />
+                    {r.risk_source === "system" && (
+                      <div className="small muted nowrap" title={t("Risk level raised by a business owner interview")}>
+                        {r.risk_system}
+                      </div>
+                    )}
                   </td>
                   <td>
                     <TargetBar impl={r.implementation} target={r.target} />

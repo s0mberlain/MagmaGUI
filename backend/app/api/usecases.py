@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app import audit, drivers, growth, lifecycle
 from app.api.deps import DB, SettingsDep
+from app.interviews import system_risk_by_l2
 from app.models import (
     BusinessDriver,
     ComplianceDriver,
@@ -20,6 +21,7 @@ from app.models import (
     ReferenceItem,
     RefKind,
     Role,
+    System,
     User,
 )
 from app.schemas import (
@@ -33,6 +35,7 @@ from app.schemas import (
     L3Create,
     L3Out,
     L3Update,
+    LinkedSystem,
 )
 from app.scoring import RuleInput, score_rule
 from app.security import Admin, Editor, Reader, as_utc
@@ -182,6 +185,9 @@ def l2_out(l2: L2UseCase, l3_count: int | None = None) -> L2Out:
         compliance_driver_ids=sorted(c.id for c in l2.compliance_drivers),
         compliance_drivers=drivers.compliance_refs(l2.compliance_drivers),
         l3_count=len(l2.children) if l3_count is None else l3_count,
+        systems=[
+            LinkedSystem(id=x.id, name=x.name, archived=x.archived) for x in l2.linked_systems
+        ],
     )
 
 
@@ -190,6 +196,7 @@ def l3_out(
     default_interval: int = 180,
     targets: dict[int, float] | None = None,
     issues: dict[int, date] | None = None,
+    system_risks: dict[int, tuple[int, str]] | None = None,
 ) -> L3Out:
     score = score_rule(
         RuleInput(
@@ -205,7 +212,12 @@ def l3_out(
         date.today(),
         default_interval,
     )
-    eff = growth.effective(l3, targets or growth.DEFAULT_RISK_TARGETS, score.potential)
+    eff = growth.effective(
+        l3,
+        targets or growth.DEFAULT_RISK_TARGETS,
+        score.potential,
+        (system_risks or {}).get(l3.l2_id),
+    )
     by_kind: dict[RefKind, list[str]] = {k: [] for k in RefKind}
     for r in l3.references:
         by_kind[r.kind].append(r.name)
@@ -231,6 +243,7 @@ def l3_out(
         target_implementation=l3.target_implementation,
         effective_risk=eff.risk,
         risk_source=eff.risk_source,
+        risk_system=eff.risk_system,
         effective_target=eff.target,
         target_source=eff.target_source,
         implementation_gap=eff.gap,
@@ -354,6 +367,7 @@ def _l2_query():
         selectinload(L2UseCase.actors),
         selectinload(L2UseCase.business_drivers),
         selectinload(L2UseCase.compliance_drivers).selectinload(ComplianceDriver.source),
+        selectinload(L2UseCase.linked_systems),
     )
 
 
@@ -383,6 +397,7 @@ def list_l2(
     business_driver: str | None = Query(None, description="Business driver code"),
     compliance_driver: int | None = Query(None, description="Compliance driver id"),
     compliance_source: int | None = Query(None, description="Compliance source id"),
+    system: int | None = Query(None, description="System id (L2 linked by its last interview)"),
 ) -> list[L2Out]:
     q = _l2_query().order_by(L2UseCase.code)
     if l1:
@@ -397,6 +412,8 @@ def list_l2(
                 ComplianceDriver.source.has(ComplianceSource.id == compliance_source)
             )
         )
+    if system is not None:
+        q = q.where(L2UseCase.linked_systems.any(System.id == system))
     counts = _pairs(db.execute(select(L3UseCase.l2_id, func.count()).group_by(L3UseCase.l2_id)))
     return [l2_out(x, counts.get(x.id, 0)) for x in db.scalars(q)]
 
@@ -494,13 +511,22 @@ def list_l3(
         q = q.where(L3UseCase.lifecycle_status == status_)
     targets = settings.risk_target_map
     issues = _issues(db)
-    return [l3_out(x, settings.default_verification_days, targets, issues) for x in db.scalars(q)]
+    risks = system_risk_by_l2(db)
+    return [
+        l3_out(x, settings.default_verification_days, targets, issues, risks) for x in db.scalars(q)
+    ]
 
 
 @router.get("/l3/{code}", response_model=L3Out)
 def get_l3(code: str, _: Reader, db: DB, settings: SettingsDep) -> L3Out:
     l3 = _by_code(db, L3UseCase, code, "L3 rule")
-    return l3_out(l3, settings.default_verification_days, settings.risk_target_map, _issues(db))
+    return l3_out(
+        l3,
+        settings.default_verification_days,
+        settings.risk_target_map,
+        _issues(db),
+        system_risk_by_l2(db),
+    )
 
 
 @router.post("/l3", response_model=L3Out, status_code=201)
@@ -521,7 +547,13 @@ def create_l3(body: L3Create, user: Editor, db: DB, settings: SettingsDep) -> L3
     _status_change(db, l3, None, user)
     audit.record(db, user, "create", "l3", l3.code, body.model_dump())
     db.commit()
-    return l3_out(l3, settings.default_verification_days, settings.risk_target_map, _issues(db))
+    return l3_out(
+        l3,
+        settings.default_verification_days,
+        settings.risk_target_map,
+        _issues(db),
+        system_risk_by_l2(db),
+    )
 
 
 @router.patch("/l3/{code}", response_model=L3Out)
@@ -534,7 +566,13 @@ def update_l3(code: str, body: L3Update, user: Editor, db: DB, settings: Setting
     _status_change(db, l3, old, user)
     audit.record(db, user, "update", "l3", code, changes)
     db.commit()
-    return l3_out(l3, settings.default_verification_days, settings.risk_target_map, _issues(db))
+    return l3_out(
+        l3,
+        settings.default_verification_days,
+        settings.risk_target_map,
+        _issues(db),
+        system_risk_by_l2(db),
+    )
 
 
 @router.delete("/l3/{code}", status_code=204)

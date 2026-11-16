@@ -159,6 +159,14 @@ export interface L2 {
   compliance_driver_ids: number[];
   compliance_drivers: ComplianceRef[];
   l3_count: number;
+  /** systems whose latest completed interview linked this use case */
+  systems?: LinkedSystem[];
+}
+
+export interface LinkedSystem {
+  id: number;
+  name: string;
+  archived: boolean;
 }
 
 export interface L3 {
@@ -182,7 +190,9 @@ export interface L3 {
   risk_level: number | null;
   target_implementation: number | null;
   effective_risk: number | null;
-  risk_source: "rule" | "l2" | null;
+  risk_source: "rule" | "l2" | "system" | null;
+  /** the system that raised the risk level (risk_source "system") */
+  risk_system?: string | null;
   effective_target: number | null;
   target_source: "rule" | "l2" | "risk" | null;
   implementation_gap: number | null;
@@ -529,6 +539,7 @@ export interface GapRow {
   potential: number | null;
   risk: number | null;
   risk_source: string | null;
+  risk_system?: string | null;
   target: number | null;
   target_source: string | null;
   gap: number | null;
@@ -649,6 +660,238 @@ export interface CsvReport {
   created: number;
   updated: number;
   errors: string[];
+}
+
+/* ------------------------------------------------------------------ systems and interviews (#17) */
+
+export type Stride =
+  | "spoofing"
+  | "tampering"
+  | "repudiation"
+  | "information_disclosure"
+  | "denial_of_service"
+  | "elevation_of_privilege";
+export type ThreatState = "applies" | "does_not_apply" | "not_discussed";
+export type Classification = "public" | "internal" | "confidential" | "restricted";
+export type InterviewStatus = "draft" | "completed" | "confirmed";
+
+export interface SystemInput {
+  name: string;
+  description: string;
+  owner_name: string;
+  owner_department: string;
+  owner_email: string | null;
+  criticality: number;
+  internet_facing: boolean;
+  data_classification: Classification;
+  review_interval_months: number;
+  archived: boolean;
+}
+
+export interface SystemRow extends SystemInput {
+  id: number;
+  updated_at: string | null;
+  linked: number;
+  coverage: number | null;
+  gaps: number;
+  last_interview: string | null;
+  next_due: string | null;
+  state: "none" | "due" | "ok";
+  draft_id: number | null;
+  can_delete: boolean;
+}
+
+export interface SystemLinkInfo {
+  l2_id: number;
+  code: string;
+  name: string;
+  weight: number | null;
+  risk_score: number;
+  risk_level: number | null;
+  sources: { component: string; category: Stride; score: number | null }[];
+}
+
+export interface InterviewRow {
+  id: number;
+  status: InterviewStatus;
+  interview_date: string;
+  analyst: string;
+  completed_at: string | null;
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+  previous_id: number | null;
+}
+
+export interface SystemDetail extends SystemRow {
+  links: SystemLinkInfo[];
+  gap_no_rules: { code: string; name: string }[];
+  gap_log_sources: { l2_code: string; rule_code: string; rule_name: string; missing: string[]; components: string[] }[];
+  gap_requests: { text: string; component: string; category: Stride }[];
+  interviews: InterviewRow[];
+}
+
+export interface ThreatView {
+  category: Stride;
+  state: ThreatState;
+  description: string;
+  likelihood: number | null;
+  impact: number | null;
+  score: number | null;
+  complete: boolean;
+}
+
+export interface ComponentView {
+  key: string;
+  name: string;
+  description: string;
+  log_sources: { id: number; name: string }[];
+  threats: ThreatView[];
+}
+
+export interface ThreatRef {
+  component: string;
+  category: Stride;
+}
+
+export interface ProposalRule {
+  code: string;
+  name: string;
+  lifecycle_status: Lifecycle;
+  log_sources: string[];
+  missing: string[];
+  unknown: boolean;
+}
+
+export interface Proposal {
+  l2_id: number;
+  code: string;
+  name: string;
+  l1_code: string;
+  l1_applicable: boolean;
+  risk_score: number | null;
+  sources: { component: string; component_name: string; category: Stride; score: number | null }[];
+  auto: boolean;
+  manual: boolean;
+  rules: ProposalRule[];
+  reason?: string;
+  /** completed interviews: the use case was deleted since */
+  deleted?: boolean;
+}
+
+export interface InterviewView {
+  threshold: number;
+  mapping_empty: boolean;
+  components: ComponentView[];
+  incomplete: { component: string; category: Stride }[];
+  proposals: Proposal[];
+  removed: Proposal[];
+  below_threshold: {
+    component: string;
+    component_name: string;
+    category: Stride;
+    score: number;
+    l2s: { l2_id: number; code: string; name: string; l1_code: string; l1_applicable: boolean }[];
+  }[];
+  added: { l2_id: number; threats: ThreatRef[] }[];
+  removed_ids: number[];
+  requests: { key: string; text: string; component: string; component_name: string; category: Stride }[];
+  log_source_gaps: { l2_code: string; rule_code: string; rule_name: string; missing: string[] }[];
+  /** #36: proposals are limited to L2s whose rules use a log source of the component */
+  log_source_filter: boolean;
+  /** #36: L2s the filter held back */
+  log_source_mismatch: {
+    l2_id: number;
+    code: string;
+    name: string;
+    l1_code: string;
+    l1_applicable: boolean;
+    risk_score: number | null;
+    log_sources: string[];
+    sources: {
+      component: string;
+      component_name: string;
+      category: Stride;
+      score: number | null;
+      component_log_sources: string[];
+    }[];
+  }[];
+}
+
+/** Evidence file of an interview (#34). */
+export interface InterviewAttachment {
+  id: number;
+  interview_id: number;
+  filename: string;
+  content_type: string;
+  size: number;
+  sha256: string;
+  uploaded_by: string;
+  uploaded_at: string;
+  viewable: boolean;
+  kind: "pdf" | "image" | "diagram" | "threat_model";
+}
+
+export interface Interview {
+  id: number;
+  system_id: number;
+  system_name: string;
+  owner_name: string;
+  archived: boolean;
+  status: InterviewStatus;
+  interview_date: string;
+  participants: string;
+  notes: string;
+  analyst: string;
+  version: number;
+  updated_by: string;
+  updated_at: string | null;
+  completed_at: string | null;
+  completed_by: string | null;
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+  confirmation_recorded_by: string | null;
+  previous_id: number | null;
+  min_date: string | null;
+  view: InterviewView;
+  attachments: InterviewAttachment[];
+}
+
+export interface InterviewSave {
+  expected_version: number;
+  interview_date: string;
+  participants: string;
+  notes: string;
+  components: {
+    key: string;
+    name: string;
+    description: string;
+    log_source_ids: number[];
+    threats: { category: Stride; state: ThreatState; description: string; likelihood: number | null; impact: number | null }[];
+  }[];
+  added: { l2_id: number; threats: ThreatRef[] }[];
+  removed: { l2_id: number; reason: string }[];
+  requests: { key: string; text: string; threat: ThreatRef }[];
+}
+
+export interface InterviewCompare {
+  previous_id: number;
+  previous_date: string;
+  components_added: string[];
+  components_removed: string[];
+  threats_added: { component: string; category: Stride }[];
+  threats_removed: { component: string; category: Stride }[];
+  threats_rerated: { component: string; category: Stride; old_score: number | null; new_score: number | null }[];
+  use_cases_added: { code: string; name: string }[];
+  use_cases_removed: { code: string; name: string }[];
+}
+
+export interface StrideMapping {
+  threshold: number;
+  log_source_filter: boolean;
+  categories: {
+    category: Stride;
+    l2s: { l2_id: number; code: string; name: string; l1_applicable: boolean }[];
+  }[];
 }
 
 export class ConflictError extends Error {
@@ -897,6 +1140,51 @@ export const api = {
     if (!res.ok) throw new ApiError(res.status, detailMessage(data) ?? `${res.status} ${res.statusText}`, data);
     return data as CsvReport;
   },
+
+  systems: (f: { archived?: boolean; due?: boolean } = {}) =>
+    request<SystemRow[]>(
+      "GET",
+      `/api/systems?${new URLSearchParams({ archived: String(!!f.archived), due: String(!!f.due) })}`,
+    ),
+  systemsDue: () => request<{ due: number }>("GET", "/api/systems/due-count"),
+  system: (id: number) => request<SystemDetail>("GET", `/api/systems/${id}`),
+  createSystem: (body: SystemInput) => request<SystemDetail>("POST", "/api/systems", body),
+  updateSystem: (id: number, body: SystemInput) => request<SystemDetail>("PATCH", `/api/systems/${id}`, body),
+  deleteSystem: (id: number) => request<void>("DELETE", `/api/systems/${id}`),
+  startInterview: (systemId: number) => request<Interview>("POST", `/api/systems/${systemId}/interviews`),
+  interview: (id: number) => request<Interview>("GET", `/api/interviews/${id}`),
+  saveInterview: (id: number, body: InterviewSave) => request<Interview>("PUT", `/api/interviews/${id}`, body),
+  deleteInterview: (id: number) => request<void>("DELETE", `/api/interviews/${id}`),
+  completeInterview: (id: number, version: number) =>
+    request<Interview>("POST", `/api/interviews/${id}/complete`, { expected_version: version }),
+  confirmInterview: (id: number, body: { confirmed_by: string; confirmed_at: string }) =>
+    request<Interview>("PUT", `/api/interviews/${id}/confirmation`, body),
+  unconfirmInterview: (id: number) => request<Interview>("DELETE", `/api/interviews/${id}/confirmation`),
+  compareInterview: (id: number) => request<InterviewCompare>("GET", `/api/interviews/${id}/compare`),
+  interviewPdfUrl: (id: number, lang: Lang) => `/api/interviews/${id}/pdf?lang=${lang}`,
+  strideMapping: () => request<StrideMapping>("GET", "/api/stride-mapping"),
+  setStrideMapping: (category: Stride, l2_ids: number[]) =>
+    request<StrideMapping>("PUT", `/api/stride-mapping/${category}`, { l2_ids }),
+  setProposalThreshold: (value: number) =>
+    request<StrideMapping>("PUT", "/api/stride-mapping/threshold", { proposal_threshold: value }),
+  setLogSourceFilter: (enabled: boolean) =>
+    request<StrideMapping>("PUT", "/api/stride-mapping/log-source-filter", { enabled }),
+  uploadAttachment: async (interviewId: number, file: File): Promise<InterviewAttachment> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch(`/api/interviews/${interviewId}/attachments`, {
+      method: "POST",
+      body: fd,
+      credentials: "same-origin",
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new ApiError(res.status, detailMessage(data) ?? `${res.status} ${res.statusText}`, data);
+    return data as InterviewAttachment;
+  },
+  deleteAttachment: (id: number) => request<void>("DELETE", `/api/interview-attachments/${id}`),
+  attachmentUrl: (id: number, download = false) =>
+    `/api/interview-attachments/${id}/content${download ? "?download=1" : ""}`,
+  resetStrideMapping: () => request<StrideMapping>("POST", "/api/stride-mapping/reset"),
 
   demoDataAllowed: () => request<{ allowed: boolean }>("GET", "/api/admin/demo-data"),
   demoData: (seed: number) => request<Record<string, number>>("POST", "/api/admin/demo-data", { seed }),

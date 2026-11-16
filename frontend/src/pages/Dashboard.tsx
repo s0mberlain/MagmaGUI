@@ -52,6 +52,7 @@ export default function Dashboard() {
   const due = useLoad<DueRule[]>(() => api.due(30));
   const commits = useLoad<RecentCommit[]>(() => api.recentCommits(5));
   const drivers = useLoad<DriverCoverageReport>(() => api.driverCoverage());
+  const interviewsDue = useLoad(() => api.systemsDue());
   const s = scores.data;
 
   return (
@@ -94,6 +95,16 @@ export default function Dashboard() {
           </div>
         ))}
       </section>
+
+      {interviewsDue.data && interviewsDue.data.due > 0 && (
+        <Link className="notice-bar interviews-due" to="/systems?due=1">
+          <div>
+            <strong>{t("Interviews due: {n}", { n: interviewsDue.data.due })}</strong>{" "}
+            {t("Systems without a business owner interview or whose review interval has passed.")}
+          </div>
+          <span className="btn btn-sm">{t("Show systems")}</span>
+        </Link>
+      )}
 
       <div className="split">
         <section className="card split-main" aria-labelledby="l1h">

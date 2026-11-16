@@ -148,6 +148,10 @@ export default function AttackPage() {
                 <i className="tt-unscored" />
                 {t("Rule, not scored")}
               </span>
+              <span>
+                <span className="tech-count">n</span>
+                {t("Number of rules")}
+              </span>
               <span className="ramp">
                 {t("Weight")}
                 {RAMP.map((r, i) => (
@@ -180,7 +184,7 @@ export default function AttackPage() {
                       title={`${x.id} ${x.name}${x.rules.length ? ` · ${t("{n} rule(s)", { n: x.rules.length })}` : ""}`}
                     >
                       <span className="tech-name">{x.name}</span>
-                      {x.subs.length > 0 && <span className="tech-subs">{x.subs.length}</span>}
+                      <TechNumbers tt={x} />
                     </button>
                   ))}
                   {!techs.length && <span className="small muted tech-empty">{t("No match")}</span>}
@@ -207,6 +211,25 @@ export default function AttackPage() {
             void cov.reload();
           }}
         />
+      )}
+    </>
+  );
+}
+
+/** Number of rules on the technique and, for a parent, sub-techniques with a rule (#32). */
+function TechNumbers({ tt }: { tt: AttackTech }) {
+  const subsCovered = tt.subs.filter((s) => s.rules.length > 0).length;
+  return (
+    <>
+      {tt.subs.length > 0 && (
+        <span className="tech-subs" title={t("{n} of {total} sub-techniques have a rule", { n: subsCovered, total: tt.subs.length })}>
+          {subsCovered}/{tt.subs.length}
+        </span>
+      )}
+      {tt.rules.length > 0 && (
+        <span className="tech-count" title={t("{n} rule(s)", { n: tt.rules.length })}>
+          {tt.rules.length}
+        </span>
       )}
     </>
   );
@@ -257,7 +280,9 @@ function TechDetail({ tt, onPick }: { tt: AttackTech; onPick: (tt: AttackTech) =
                 onClick={() => onPick(s)}
                 title={`${s.id} ${s.name}`}
               >
-                <span className="mono tech-id">{s.id}</span>
+                <span className="mono tech-id">
+                  {s.id} {s.rules.length > 0 && <span className="tech-count">{s.rules.length}</span>}
+                </span>
                 <span className="tech-name">{s.name}</span>
               </button>
             ))}

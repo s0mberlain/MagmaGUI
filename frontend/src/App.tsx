@@ -18,6 +18,10 @@ import RuleDetail from "./pages/RuleDetail";
 import UseCases from "./pages/UseCases";
 import Users from "./pages/Users";
 import Settings from "./pages/Settings";
+import Systems from "./pages/Systems";
+import SystemDetail from "./pages/SystemDetail";
+import Interview from "./pages/Interview";
+import StrideMappingPage from "./pages/StrideMappingPage";
 import Verification from "./pages/Verification";
 import { NAV_ITEMS } from "./nav";
 import { t } from "./i18n";
@@ -41,6 +45,10 @@ export default function App() {
           <Route path="usecases/l3/:code" element={<RuleDetail />} />
           <Route path="verification" element={<Verification />} />
           <Route path="drivers" element={<Drivers />} />
+          <Route path="systems" element={<Systems />} />
+          <Route path="systems/:id" element={<SystemDetail />} />
+          <Route path="interviews/:id" element={<Interview />} />
+          <Route path="stride-mapping" element={<StrideMappingPage />} />
           <Route path="references" element={<References />} />
           <Route path="import-export" element={<ImportExport />} />
           <Route path="history" element={<History />} />

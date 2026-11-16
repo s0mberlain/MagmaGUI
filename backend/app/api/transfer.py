@@ -8,7 +8,7 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app import audit, excel
+from app import audit, excel, interviews
 from app.api.deps import DB
 from app.models import (
     BusinessDriver,
@@ -21,6 +21,9 @@ from app.models import (
     OutputMetric,
     ReferenceItem,
     Role,
+    StrideMapping,
+    System,
+    SystemLink,
     Verification,
 )
 from app.security import Editor, Reader
@@ -43,7 +46,8 @@ def export_excel(_: Reader, db: DB) -> Response:
 @router.get("/export/json")
 def export_json(_: Reader, db: DB) -> dict:
     """Export of the catalogue with its history (verifications, lifecycle changes, output
-    metrics, configurations) for other tools. It is not a backup: users, API tokens, snapshots
+    metrics, configurations, systems with their interviews and the STRIDE mapping) for other
+    tools. It is not a backup: users, API tokens, snapshots
     and the audit log are not in it and it cannot be imported; back up the database for that."""
 
     def rows(model, *fields):
@@ -61,7 +65,7 @@ def export_json(_: Reader, db: DB) -> dict:
     l3_code = dict(db.execute(select(L3UseCase.id, L3UseCase.code)).all())
     return {
         "format": "magma-ucf-export",
-        "version": 2,
+        "version": 3,
         "exported_at": date.today().isoformat(),
         "references": rows(ReferenceItem, "kind", "name", "description"),
         "business_drivers": rows(BusinessDriver, "code", "name", "description"),
@@ -163,6 +167,58 @@ def export_json(_: Reader, db: DB) -> dict:
                 "content": c.content,
             }
             for c in db.scalars(select(ConfigCommit).order_by(ConfigCommit.id))
+        ],
+        # business owner interviews (#17)
+        "stride_mapping": [
+            {"category": m.category, "l2": l2_code.get(m.l2_id)}
+            for m in db.scalars(
+                select(StrideMapping).order_by(StrideMapping.category, StrideMapping.l2_id)
+            )
+        ],
+        "interview_settings": {
+            "proposal_threshold": interviews.threshold(db),
+            "log_source_filter": interviews.log_source_filter(db),
+        },
+        "systems": [
+            {
+                **{
+                    f: getattr(s, f)
+                    for f in (
+                        "name description owner_name owner_department owner_email criticality "
+                        "internet_facing data_classification review_interval_months archived"
+                    ).split()
+                },
+                "links": [
+                    {"l2": l2_code.get(x.l2_id), "risk_score": x.risk_score, "sources": x.sources}
+                    for x in db.scalars(select(SystemLink).where(SystemLink.system_id == s.id))
+                ],
+                "interviews": [
+                    {
+                        f: getattr(i, f)
+                        for f in (
+                            "status interview_date participants notes analyst data result "
+                            "completed_at completed_by confirmed_by confirmed_at "
+                            "confirmation_recorded_by"
+                        ).split()
+                    }
+                    # evidence files (#34): only what they are, not their content
+                    | {
+                        "attachments": [
+                            {
+                                "filename": a.filename,
+                                "content_type": a.content_type,
+                                "size": a.size,
+                                "sha256": a.sha256,
+                                "uploaded_by": a.uploaded_by,
+                                "uploaded_at": a.uploaded_at,
+                            }
+                            for a in i.attachments
+                        ]
+                    }
+                    for i in s.interviews
+                ],
+            }
+            for s in db.scalars(select(System).order_by(System.name))
         ],
     }
 

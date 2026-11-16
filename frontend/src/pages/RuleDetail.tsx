@@ -459,6 +459,11 @@ export default function RuleDetail() {
                       </option>
                     ))}
                   </select>
+                  {r.risk_source === "system" && (
+                    <span className="small muted">
+                      {t("Used: {risk}, raised by system {name}", { risk: r.effective_risk, name: r.risk_system ?? "" })}
+                    </span>
+                  )}
                 </label>
                 <label className="field">
                   {t("Target implementation (%)")}

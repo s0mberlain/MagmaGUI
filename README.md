@@ -127,6 +127,14 @@ gets a JSON commit with the same data on top (author `system`, YAML comments are
 YAML versions stay in the history. Old L2 configurations stay in the database and the JSON
 backup but are no longer shown.
 
+### SIEM name of rules
+
+Each rule page shows the rule's name as it should appear in the SIEM, with a Copy button. Admins
+set the format under *Setup → Settings*, e.g. `$companyName:$ucID:$ucName` with the variable
+`companyName = MYCORP` gives `MYCORP:IA-CMT-LOG-02:Failed Login Monitoring`. `$ucID`, `$ucName`,
+`$l2ID` and `$l1ID` come from the rule; unknown `$names` stay as they are. The default format is
+`$ucID:$ucName`. Settings are stored in the database (`app_settings`, migration 0015).
+
 ### Git repository (optional)
 
 Set `GIT_REMOTE_URL` plus `GIT_TOKEN` (HTTPS) or `GIT_SSH_KEY_FILE` (SSH) and the app pushes every

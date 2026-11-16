@@ -322,7 +322,10 @@ def test_yaml_file_from_before_json_moves_to_json(git_admin, remote, tmp_path):
         "-c", "user.name=admin", "-c", "user.email=a@x",
         "commit", "-q", "-m", f"AO-CRE-01: Old\n\n{gitsync.TRAILER}: {old_sha}",
     )  # fmt: skip
-    git(clone, "push", "-q", "origin", "HEAD:main")
+    for _ in range(3):  # the app may push its README at startup in the background
+        if subprocess.run(["git", "push", "-q", "origin", "HEAD:main"], cwd=clone).returncode == 0:
+            break
+        git(clone, "pull", "-q", "--rebase", "origin", "main")
 
     s = a.post("/api/admin/git/sync").json()
     assert s["last_error"] is None and s["commits_unsynced"] == 0, s

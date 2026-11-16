@@ -1,3 +1,4 @@
+import type { RuleNameVariable } from "./lib/ruleName";
 import type { Lang } from "./i18n";
 export type Role = "admin" | "analyst" | "auditor";
 
@@ -356,6 +357,14 @@ export interface RecentCommit extends ConfigCommit {
   code: string;
   name: string;
 }
+export interface RuleNameSettings {
+  format: string;
+  variables: RuleNameVariable[];
+  builtins: string[];
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
 export interface ConfigCheck {
   valid: boolean;
   error: string | null;
@@ -765,6 +774,10 @@ export const api = {
   updateL3: (code: string, body: L3Input) => request<L3>("PATCH", `/api/l3/${enc(code)}`, body),
   deleteL3: (code: string) => request<void>("DELETE", `/api/l3/${enc(code)}`),
   nextL3Code: (l2: string) => request<{ code: string }>("GET", `/api/l3/next-code/${enc(l2)}`),
+
+  ruleNameSettings: () => request<RuleNameSettings>("GET", "/api/settings/rule-name"),
+  saveRuleNameSettings: (body: { format: string; variables: RuleNameVariable[] }) =>
+    request<RuleNameSettings>("PUT", "/api/settings/rule-name", body),
 
   refs: (kind: RefKind) => request<RefItem[]>("GET", `/api/references/${kind}`),
   createRef: (kind: RefKind, body: { name: string; description: string }) =>

@@ -10,6 +10,7 @@ import { MarkdownField } from "../components/Markdown";
 import OutputPanel from "../components/OutputPanel";
 import { Chips, confirmDialog, ErrorNote, MultiSelect, StatusPill, useLoad, useUnsavedGuard } from "../components/ui";
 import { fmtDate, num, pct, refHref } from "../lib/format";
+import { renderRuleName, ruleNameValues } from "../lib/ruleName";
 import { VerifiedCell, VerifyDialog } from "./UseCases";
 import { t } from "../i18n";
 
@@ -78,6 +79,8 @@ export default function RuleDetail() {
     ]);
     return { log, tech, scope };
   });
+  const nameFormat = useLoad(() => api.ruleNameSettings());
+  const [copied, setCopied] = useState(false);
 
   const [form, setForm] = useState<Form | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -179,6 +182,9 @@ export default function RuleDetail() {
     }
   }
 
+  const siemName = nameFormat.data
+    ? renderRuleName(nameFormat.data.format, ruleNameValues({ ...r, name: form.name }, nameFormat.data.variables))
+    : null;
   const opts = (items: RefItem[] | undefined) => (items ?? []).map((x) => ({ value: x.name, label: x.name }));
   // new reference list entries can be added right from the dropdown (issue #26)
   const addRef = (kind: RefKind) => async (name: string) => {
@@ -226,6 +232,27 @@ export default function RuleDetail() {
               </>
             ) : (
               <h1>{r.name}</h1>
+            )}
+            {siemName !== null && (
+              // the name to use in the SIEM, built from the format in the settings (issue #29)
+              <div className="siem-name small">
+                <span className="muted">{t("SIEM name")}</span>
+                <code className="mono" data-testid="siem-name">
+                  {siemName}
+                </code>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(siemName).then(() => {
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 1500);
+                    });
+                  }}
+                >
+                  {copied ? t("Copied") : t("Copy")}
+                </button>
+              </div>
             )}
           </div>
           {editor && (

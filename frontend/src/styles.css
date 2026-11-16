@@ -735,3 +735,11 @@ th.num .sort-btn { text-align: right; }
 .md table { border-collapse: collapse; display: block; overflow-x: auto; }
 .md th, .md td { border: 1px solid var(--c-border); padding: 3px 8px; text-align: left; }
 .md a { color: var(--c-accent-hover); }
+
+/* Settings: SIEM name of rules (issue #29) */
+.var-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.var-name { display: flex; align-items: center; gap: 4px; font-family: var(--font-mono, monospace); }
+.var-name .input { width: 14rem; max-width: 60vw; }
+.rule-name-preview { display: flex; align-items: center; background: var(--c-subtle); overflow-x: auto; white-space: pre; }
+.siem-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.siem-name code { background: var(--c-subtle); border-radius: var(--radius-sm); padding: 4px 8px; user-select: all; overflow-wrap: anywhere; }

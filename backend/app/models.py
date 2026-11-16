@@ -525,3 +525,19 @@ class SiemAlertBatch(Base):
     batch_id: Mapped[str] = mapped_column(String(128))
     applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     applied_by: Mapped[str] = mapped_column(String(64))
+
+
+class AppSetting(Base):
+    """Settings admins change in the app (not in the environment), one JSON value per key.
+
+    `rule_name`: format and variables of the SIEM name shown on each rule (issue #29).
+    """
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+    updated_by: Mapped[str] = mapped_column(String(64), default="system")

@@ -262,6 +262,18 @@ def create_source(body: ComplianceSourceIn, user: Editor, db: DB) -> ComplianceS
     return src
 
 
+@router.patch("/compliance/{source_id}", response_model=ComplianceSourceOut)
+def rename_source(
+    source_id: int, body: ComplianceSourceIn, user: Editor, db: DB
+) -> ComplianceSource:
+    src = _get(db, ComplianceSource, source_id)
+    changes = audit.diff({"name": src.name}, {"name": body.name})
+    src.name = body.name
+    audit.record(db, user, "update", "compliance_source", body.name, changes)
+    _commit(db, "Compliance source")
+    return src
+
+
 @router.delete("/compliance/{source_id}", status_code=204, response_model=None)
 def delete_source(
     source_id: int, user: Editor, db: DB, confirm: bool = Confirm

@@ -266,7 +266,7 @@ class L3UseCase(Base):
     l2_id: Mapped[int] = mapped_column(
         ForeignKey("l2_use_cases.id", ondelete="RESTRICT"), index=True
     )
-    code: Mapped[str] = mapped_column(String(16), unique=True)
+    code: Mapped[str] = mapped_column(String(64), unique=True)
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(Text, default="")
     # Metrics are fractions 0..1; NULL = not assessed (see PLAN 2.5).

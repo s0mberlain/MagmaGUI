@@ -13,6 +13,7 @@ import {
 } from "../api";
 import { useAuth } from "../auth";
 import ConfigPanel from "../components/ConfigPanel";
+import { Markdown, MarkdownField } from "../components/Markdown";
 import { BusinessChips, ComplianceChips, DriverBlock, DriverPickers, EditDriversDialog } from "../components/Drivers";
 import LifecyclePanel from "../components/LifecyclePanel";
 import {
@@ -572,7 +573,7 @@ function L2Header({
         <h2 id="l2title" className="h-lg">
           {l2.name}
         </h2>
-        {l2.description && <p className="lead">{l2.description}</p>}
+        {l2.description && <Markdown text={l2.description} className="lead" />}
         <div className="chips">
           {l2.actors.map((a) => (
             <Link
@@ -907,15 +908,11 @@ function EditL2Dialog({ l2, onClose, onSaved }: { l2: L2; onClose: () => void; o
           {t("Name")}
           <input className="input" required value={form.name} onChange={(e) => set({ name: e.target.value })} />
         </label>
-        <label className="field">
-          {t("Description")}
-          <textarea
-            className="input textarea"
-            rows={3}
-            value={form.description}
-            onChange={(e) => set({ description: e.target.value })}
-          />
-        </label>
+        <MarkdownField
+          label={t("Description")}
+          value={form.description}
+          onChange={(v) => set({ description: v })}
+        />
         <div className="form-grid">
           <label className="field">
             {t("Risk level (1–5)")}
@@ -1094,15 +1091,11 @@ function L1Dialog({
           {t("Stakeholders")}
           <input className="input" value={form.stakeholders} onChange={(e) => set({ stakeholders: e.target.value })} />
         </label>
-        <label className="field">
-          {t("Description")}
-          <textarea
-            className="input textarea"
-            rows={3}
-            value={form.description}
-            onChange={(e) => set({ description: e.target.value })}
-          />
-        </label>
+        <MarkdownField
+          label={t("Description")}
+          value={form.description}
+          onChange={(v) => set({ description: v })}
+        />
         <div className="row-actions">
           {l1 && admin && (
             <button
@@ -1291,7 +1284,21 @@ function NewL3Dialog({ l2, onClose, onCreated }: { l2: L2; onClose: () => void; 
         <ErrorNote error={error ?? next.error} />
         <label className="field">
           {t("Rule ID")}
-          <input className="input mono" required value={value} onChange={(e) => setCode(e.target.value)} />
+          <input
+            className="input mono"
+            required
+            value={value}
+            pattern="[A-Za-z]{2}-[A-Za-z0-9]{3}-([A-Za-z0-9]+-)*[0-9]{2,3}"
+            maxLength={64}
+            aria-describedby="l3-code-hint"
+            onChange={(e) => setCode(e.target.value.toUpperCase())}
+          />
+          <span id="l3-code-hint" className="small muted" style={{ fontWeight: 400 }}>
+            {t("Format {a}; extra identifiers may go before the number, e.g. {b}.", {
+              a: `${l2.code}-NN`,
+              b: `${l2.code}-WIN-AD-01`,
+            })}
+          </span>
         </label>
         <label className="field">
           {t("Name")}

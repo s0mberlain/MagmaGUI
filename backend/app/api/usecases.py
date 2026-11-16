@@ -506,7 +506,7 @@ def get_l3(code: str, _: Reader, db: DB, settings: SettingsDep) -> L3Out:
 @router.post("/l3", response_model=L3Out, status_code=201)
 def create_l3(body: L3Create, user: Editor, db: DB, settings: SettingsDep) -> L3Out:
     _ensure_unique(db, L3UseCase, body.code)
-    l2_code = body.code.rsplit("-", 1)[0]
+    l2_code = body.code[:6]  # XX-YYY; extra identifiers may follow
     parent = db.scalar(select(L2UseCase).where(L2UseCase.code == l2_code))
     if parent is None:
         raise HTTPException(422, f"No L2 use case with identifier {l2_code}")

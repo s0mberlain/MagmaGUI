@@ -197,7 +197,7 @@ def verification_due(
                 DueOut(
                     code=x.code,
                     name=x.name,
-                    l2_code=x.code.rsplit("-", 1)[0],
+                    l2_code=x.code[:6],
                     lifecycle_status=x.lifecycle_status.value,
                     last_verified_at=x.last_verified_at,
                     last_verified_by=x.last_verified_by,

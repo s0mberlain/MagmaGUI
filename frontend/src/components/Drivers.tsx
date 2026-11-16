@@ -55,7 +55,7 @@ export function DriverBlock({
   note?: string;
 }) {
   return (
-    <div className="stack-xs">
+    <div className="stack-xs driver-wrap">
       <dl className="driver-block">
         <dt>{t("Business drivers")}</dt>
         <dd>

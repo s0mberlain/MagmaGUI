@@ -63,7 +63,7 @@ export default function Drivers() {
   const [error, setError] = useState<string | null>(null);
   const [bd, setBd] = useState<{ id?: number; form: DriverForm } | null>(null);
   const [cd, setCd] = useState<{ id?: number; sourceId: number; form: CdForm } | null>(null);
-  const [newSource, setNewSource] = useState("");
+  const [source, setSource] = useState<{ id?: number; name: string } | null>(null);
 
   const run = async (fn: () => Promise<unknown>) => {
     setError(null);
@@ -92,6 +92,15 @@ export default function Drivers() {
     if (ok) setCd(null);
   }
 
+  async function saveSource(e: FormEvent) {
+    e.preventDefault();
+    if (!source) return;
+    const ok = await run(() =>
+      source.id ? api.renameSource(source.id, source.name) : api.createSource(source.name),
+    );
+    if (ok) setSource(null);
+  }
+
   return (
     <>
       <header className="page-header">
@@ -113,6 +122,9 @@ export default function Drivers() {
               onClick={() => setBd({ form: { code: "", name: "", description: "" } })}
             >
               {t("+ Business driver")}
+            </button>
+            <button type="button" className="btn btn-primary" onClick={() => setSource({ name: "" })}>
+              {t("+ Compliance source")}
             </button>
           </div>
         )}
@@ -178,31 +190,12 @@ export default function Drivers() {
 
       <div className="section-head">
         <h2>{t("Compliance drivers")}</h2>
-        {editor && (
-          <form
-            className="inline-form-plain"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              if (await run(() => api.createSource(newSource))) setNewSource("");
-            }}
-          >
-            <label className="sr-only" htmlFor="new-source">
-              {t("New compliance source")}
-            </label>
-            <input
-              id="new-source"
-              className="input input-sm"
-              placeholder={t("New source, e.g. ISO 27001")}
-              required
-              value={newSource}
-              onChange={(e) => setNewSource(e.target.value)}
-            />
-            <button type="submit" className="btn btn-sm">
-              {t("Add source")}
-            </button>
-          </form>
-        )}
       </div>
+      {data.data && !data.data.compliance.length && (
+        <p className="muted" style={{ margin: 0 }}>
+          {t("No compliance source yet.")}
+        </p>
+      )}
 
       {data.data?.compliance.map((src: ComplianceSource) => (
         <section key={src.id} className="card table-card" aria-label={src.name}>
@@ -228,6 +221,13 @@ export default function Drivers() {
                   onClick={() => setCd({ sourceId: src.id, form: { ref: "", name: "", description: "" } })}
                 >
                   {t("+ Requirement")}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => setSource({ id: src.id, name: src.name })}
+                >
+                  {t("Rename")}
                 </button>
                 <button
                   type="button"
@@ -362,6 +362,42 @@ export default function Drivers() {
             </label>
             <div className="row-actions">
               <button type="button" className="btn" onClick={() => setBd(null)}>
+                {t("Cancel")}
+              </button>
+              <button type="submit" className="btn btn-primary">
+                {t("Save")}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {source && (
+        <Modal
+          title={source.id ? t("Rename compliance source") : t("New compliance source")}
+          open
+          onClose={() => setSource(null)}
+        >
+          <form className="stack" onSubmit={saveSource}>
+            <ErrorNote error={error} />
+            <label className="field">
+              {t("Name")}
+              <input
+                className="input"
+                required
+                autoFocus
+                value={source.name}
+                placeholder={t("e.g. ISO 27001")}
+                onChange={(e) => setSource({ ...source, name: e.target.value })}
+              />
+            </label>
+            {source.id && (
+              <p className="small muted" style={{ margin: 0 }}>
+                {t("Requirements and their links to use cases stay as they are.")}
+              </p>
+            )}
+            <div className="row-actions">
+              <button type="button" className="btn" onClick={() => setSource(null)}>
                 {t("Cancel")}
               </button>
               <button type="submit" className="btn btn-primary">

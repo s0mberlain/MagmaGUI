@@ -25,7 +25,7 @@ def parse_risk_targets(raw: str) -> dict[int, float]:
 @dataclass
 class Effective:
     risk: int | None
-    risk_source: str | None  # rule | l2
+    risk_source: str | None  # rule | l2 | system
     target: float | None
     target_source: str | None  # rule | l2 | risk
     gap: float | None  # target - implementation, never below 0
@@ -34,9 +34,17 @@ class Effective:
     priority: float | None
     drivers: int = 0  # business + compliance drivers linked to the rule's L2
     boost: float = 1.0
+    risk_system: str | None = None  # the system that raised the risk (risk_source "system")
 
 
-def effective(rule: L3UseCase, targets: dict[int, float], potential: float | None) -> Effective:
+def effective(
+    rule: L3UseCase,
+    targets: dict[int, float],
+    potential: float | None,
+    system_risk: tuple[int, str] | None = None,
+) -> Effective:
+    """`system_risk`: (level, system name) when the rule's L2 is linked to a non-archived system
+    (app/interviews.py system_risk_by_l2); the higher of it and the own risk level is used."""
     l2 = rule.parent
     if rule.risk_level is not None:
         risk, rsrc = rule.risk_level, "rule"
@@ -44,6 +52,9 @@ def effective(rule: L3UseCase, targets: dict[int, float], potential: float | Non
         risk, rsrc = l2.risk_level, "l2"
     else:
         risk, rsrc = None, None
+    risk_system = None
+    if system_risk is not None and system_risk[0] > (risk or 0):
+        risk, rsrc, risk_system = system_risk[0], "system", system_risk[1]
     if rule.target_implementation is not None:
         target, tsrc = rule.target_implementation, "rule"
     elif l2.target_implementation is not None:
@@ -62,4 +73,4 @@ def effective(rule: L3UseCase, targets: dict[int, float], potential: float | Non
     priority = None
     if risk is not None and gap is not None:
         priority = round(gap * risk / 5 * boost, 4)
-    return Effective(risk, rsrc, target, tsrc, gap, priority, links, boost)
+    return Effective(risk, rsrc, target, tsrc, gap, priority, links, boost, risk_system)

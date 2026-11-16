@@ -743,3 +743,36 @@ th.num .sort-btn { text-align: right; }
 .rule-name-preview { display: flex; align-items: center; background: var(--c-subtle); overflow-x: auto; white-space: pre; }
 .siem-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .siem-name code { background: var(--c-subtle); border-radius: var(--radius-sm); padding: 4px 8px; user-select: all; overflow-wrap: anywhere; }
+
+/* Systems and business owner interviews (issue #17) */
+.pill-none { background: var(--c-subtle); color: var(--c-ink-2); }
+.pill.iv-draft { background: #fef6dc; color: #854d0e; }
+.pill.iv-completed { background: var(--c-info-soft); color: var(--c-info-ink); }
+.pill.iv-confirmed { background: #e7f6ec; color: #166534; }
+.input.is-invalid { border-color: var(--c-accent); box-shadow: 0 0 0 1px var(--c-accent); }
+.field-error { color: var(--c-accent-hover); font-size: 12px; font-weight: 500; }
+.form-error-box { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 12px; border-radius: var(--radius); background: var(--c-accent-soft); color: var(--c-accent-hover); font-size: 13px; }
+.interviews-due { text-decoration: none; background: var(--c-accent-soft); color: var(--c-accent-hover); }
+.interviews-due:hover { color: var(--c-accent-hover); }
+.iv-toggle { text-decoration: none; color: var(--c-ink); font-weight: 600; font-size: 15px; }
+.iv-threats { display: grid; gap: 8px; }
+.iv-threat { border: 1px solid var(--c-border); border-radius: var(--radius); padding: 10px 12px; display: grid; gap: 10px; }
+.iv-threat.is-incomplete { border-color: var(--c-accent); border-left-width: 3px; }
+.iv-threat-head { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; align-items: flex-start; }
+.iv-threat-head > div:first-child { flex: 1 1 280px; }
+.iv-threat-body { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+.iv-threat-body .grow-2 { flex: 3 1 280px; }
+.iv-threat-body .field:not(.grow-2) { flex: 0 1 140px; }
+.iv-score { min-height: 40px; display: flex; align-items: center; }
+.iv-inc { flex-basis: 100%; }
+.iv-proposal { border: 1px solid var(--c-border); border-radius: var(--radius); padding: 10px 12px; display: grid; gap: 6px; }
+.iv-proposal-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.iv-rules li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.iv-below { border-top: 1px solid var(--c-border); padding-top: 8px; display: grid; gap: 4px; }
+.iv-done-comp { display: grid; gap: 4px; padding-bottom: 8px; border-bottom: 1px solid var(--c-border); }
+.iv-done-comp:last-child { border-bottom: 0; }
+.stride-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.stride-row { display: flex; align-items: center; gap: 8px; }
+.stride-row a { flex: 1; min-width: 0; }
+.risk-0 { background: transparent; }
+.risk-3 { background: #fef6dc; color: #854d0e; }

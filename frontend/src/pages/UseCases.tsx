@@ -10,6 +10,7 @@ import {
   type L3,
   type RefKind,
   type Scores,
+  type SystemRow,
 } from "../api";
 import { useAuth } from "../auth";
 import { Markdown, MarkdownField } from "../components/Markdown";
@@ -46,16 +47,20 @@ interface Catalogue {
   scores: Scores;
   drivers: BusinessDriver[];
   sources: ComplianceSource[];
+  systems: SystemRow[];
 }
 
-/** Filter by business driver (bd), compliance source (src) and compliance driver (cd). */
+/** Filter by business driver (bd), compliance source (src), compliance driver (cd) and system
+ * (sys: L2 use cases linked by the system's latest completed interview). */
 interface DriverFilter {
   bd: string;
   src: string;
   cd: string;
+  sys: string;
 }
 
 function matchesDrivers(l2: L2, f: DriverFilter): boolean {
+  if (f.sys && !(l2.systems ?? []).some((s) => String(s.id) === f.sys)) return false;
   if (f.bd && !l2.business_drivers.includes(f.bd)) return false;
   if (f.src && !l2.compliance_drivers.some((c) => String(c.source_id) === f.src)) return false;
   if (f.cd && !l2.compliance_driver_ids.includes(Number(f.cd))) return false;
@@ -84,16 +89,22 @@ export default function UseCases() {
   const [driversOf, setDriversOf] = useState<L2 | null>(null);
 
   const cat = useLoad<Catalogue>(async () => {
-    const [l1s, l2s, scores, drivers, sources] = await Promise.all([
+    const [l1s, l2s, scores, drivers, sources, systems] = await Promise.all([
       api.l1s(),
       api.l2s(),
       api.scores(),
       api.drivers(),
       api.compliance(),
+      api.systems({ archived: true }),
     ]);
-    return { l1s, l2s, scores, drivers, sources };
+    return { l1s, l2s, scores, drivers, sources, systems };
   });
-  const filter: DriverFilter = { bd: params.get("bd") ?? "", src: params.get("src") ?? "", cd: params.get("cd") ?? "" };
+  const filter: DriverFilter = {
+    bd: params.get("bd") ?? "",
+    src: params.get("src") ?? "",
+    cd: params.get("cd") ?? "",
+    sys: params.get("sys") ?? "",
+  };
 
   // Reference filter: one entry of a reference list (?ref_kind=log_source&ref=Windows%20Security).
   // Threat actors filter L2 use cases, the other kinds filter L3 rules.
@@ -118,7 +129,7 @@ export default function UseCases() {
     return refL2s.has(l2.code);
   };
   const matchesFilters = (l2: L2) => matchesDrivers(l2, filter) && matchesRef(l2);
-  const filtering = !!(filter.bd || filter.src || filter.cd || refActive);
+  const filtering = !!(filter.bd || filter.src || filter.cd || filter.sys || refActive);
   const view = params.get("view") === "table" ? "table" : "tree";
   /** Change some URL parameters and keep the others (filters, view, selection). */
   const setParam = (patch: Record<string, string | null>) => {
@@ -296,6 +307,23 @@ export default function UseCases() {
               </optgroup>
             ))}
         </select>
+        <label className="sr-only" htmlFor="f-sys">
+          {t("System")}
+        </label>
+        <select
+          id="f-sys"
+          className="input input-sm"
+          value={filter.sys}
+          onChange={(e) => setParam({ sys: e.target.value || null, l2: null })}
+        >
+          <option value="">{t("All systems")}</option>
+          {cat.data?.systems.map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.name}
+              {x.archived ? ` (${t("archived")})` : ""}
+            </option>
+          ))}
+        </select>
         {refActive && (
           <span className="ref-filter-chip">
             <span>
@@ -315,7 +343,7 @@ export default function UseCases() {
           <button
             type="button"
             className="btn btn-sm"
-            onClick={() => setParam({ bd: null, src: null, cd: null, ...clearRef })}
+            onClick={() => setParam({ bd: null, src: null, cd: null, sys: null, ...clearRef })}
           >
             {t("Clear filters")}
           </button>
@@ -593,6 +621,19 @@ function L2Header({
           )}
         </div>
         <DriverBlock business={l2.business_drivers} compliance={l2.compliance_drivers} drivers={drivers} />
+        {(l2.systems ?? []).length > 0 && (
+          <div className="driver-block">
+            <span className="small muted">{t("Needed by systems")}:</span>{" "}
+            <span className="chips" style={{ display: "inline-flex" }}>
+              {(l2.systems ?? []).map((x) => (
+                <Link key={x.id} to={`/systems/${x.id}`} className="chip chip-info chip-link">
+                  {x.name}
+                  {x.archived ? ` (${t("archived")})` : ""}
+                </Link>
+              ))}
+            </span>
+          </div>
+        )}
         {editor && (
           <div className="row-actions start">
             <button type="button" className="btn btn-sm" onClick={onEdit}>

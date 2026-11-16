@@ -541,3 +541,133 @@ class AppSetting(Base):
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
     updated_by: Mapped[str] = mapped_column(String(64), default="system")
+
+
+# ---------------------------------------------------------------- business owner interviews (#17)
+
+
+class InterviewStatus(enum.StrEnum):
+    draft = "draft"
+    completed = "completed"
+    confirmed = "confirmed"
+
+
+class System(Base):
+    """A business application or platform whose owner is interviewed (app/interviews.py).
+
+    The business owner is a contact, not a user account.
+    """
+
+    __tablename__ = "systems"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    # lower-case name: system names are unique regardless of case
+    name_key: Mapped[str] = mapped_column(String(255), unique=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    owner_name: Mapped[str] = mapped_column(String(255))
+    owner_department: Mapped[str] = mapped_column(String(255), default="")
+    owner_email: Mapped[str | None] = mapped_column(String(254))
+    criticality: Mapped[int] = mapped_column(Integer)  # 1..5
+    internet_facing: Mapped[bool] = mapped_column(Boolean, default=False)
+    # public | internal | confidential | restricted
+    data_classification: Mapped[str] = mapped_column(String(16), default="internal")
+    review_interval_months: Mapped[int] = mapped_column(Integer, default=12)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    interviews: Mapped[list["Interview"]] = relationship(
+        back_populates="system",
+        cascade="all, delete-orphan",
+        order_by="Interview.id",
+        foreign_keys="Interview.system_id",
+    )
+
+
+class Interview(Base):
+    """One threat interview with the business owner of a system.
+
+    `data` holds what the analyst enters (components with log source ids and STRIDE threats,
+    L2 use cases added or removed by hand, detection requests). While the interview is a draft,
+    proposals are worked out from it on every read. On completion the evaluated interview
+    (names, proposals, gaps) is frozen into `result` and never changes again.
+    """
+
+    __tablename__ = "interviews"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    system_id: Mapped[int] = mapped_column(ForeignKey("systems.id", ondelete="CASCADE"), index=True)
+    status: Mapped[InterviewStatus] = mapped_column(
+        _enum(InterviewStatus, "interview_status"), default=InterviewStatus.draft
+    )
+    interview_date: Mapped[date] = mapped_column(Date)
+    participants: Mapped[str] = mapped_column(Text, default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+    result: Mapped[dict | None] = mapped_column(JSON)
+    # the completed interview this one started from (re-interview), for the comparison
+    previous_id: Mapped[int | None] = mapped_column(
+        ForeignKey("interviews.id", ondelete="SET NULL")
+    )
+    analyst: Mapped[str] = mapped_column(String(64))
+    # optimistic locking: a save must name the version it started from
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    updated_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_by: Mapped[str | None] = mapped_column(String(64))
+    confirmed_by: Mapped[str | None] = mapped_column(String(255))
+    confirmed_at: Mapped[date | None] = mapped_column(Date)
+    confirmation_recorded_by: Mapped[str | None] = mapped_column(String(64))
+
+    system: Mapped[System] = relationship(back_populates="interviews", foreign_keys=[system_id])
+
+
+class SystemLink(Base):
+    """An L2 use case the latest completed interview of a system accepted.
+
+    Replaced as a whole when the next interview of the system is completed. Follows the L2 by
+    id (also when its code changes) and disappears with it.
+    """
+
+    __tablename__ = "system_links"
+    __table_args__ = (UniqueConstraint("system_id", "l2_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    system_id: Mapped[int] = mapped_column(ForeignKey("systems.id", ondelete="CASCADE"), index=True)
+    l2_id: Mapped[int] = mapped_column(
+        ForeignKey("l2_use_cases.id", ondelete="CASCADE"), index=True
+    )
+    interview_id: Mapped[int] = mapped_column(ForeignKey("interviews.id", ondelete="CASCADE"))
+    # highest risk score (likelihood x impact, 1..25) of the threats the link came from
+    risk_score: Mapped[int] = mapped_column(Integer)
+    # [{"component": name, "category": stride key, "score": int}]
+    sources: Mapped[list] = mapped_column(JSON, default=list)
+
+    system: Mapped[System] = relationship()
+    l2: Mapped[L2UseCase] = relationship()
+
+
+class StrideMapping(Base):
+    """Admin-maintained STRIDE category -> L2 use case mapping that drives the proposals."""
+
+    __tablename__ = "stride_mappings"
+
+    category: Mapped[str] = mapped_column(String(32), primary_key=True)
+    l2_id: Mapped[int] = mapped_column(
+        ForeignKey("l2_use_cases.id", ondelete="CASCADE"), primary_key=True
+    )
+
+    l2: Mapped[L2UseCase] = relationship()
+
+
+# Systems that need an L2 use case (read-only, for the use case pages)
+L2UseCase.linked_systems = relationship(
+    System, secondary="system_links", viewonly=True, order_by=System.name
+)

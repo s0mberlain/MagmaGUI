@@ -1,0 +1,1378 @@
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  ApiError,
+  api,
+  type ComponentView,
+  type Interview as IV,
+  type InterviewCompare,
+  type InterviewSave,
+  type L2,
+  type Proposal,
+  type RefItem,
+  type Stride,
+  type ThreatRef,
+  type ThreatState,
+} from "../api";
+import { useAuth } from "../auth";
+import {
+  confirmDialog,
+  ErrorNote,
+  Modal,
+  MultiSelect,
+  StatusPill,
+  useLoad,
+  useUnsavedGuard,
+} from "../components/ui";
+import { fmtDate, fmtTime, today } from "../lib/format";
+import { INTERVIEW_STATUS_LABEL, riskLevel, STATE_LABEL, STRIDE, STRIDE_HINT, STRIDE_LABEL } from "../lib/stride";
+import { getLang, t } from "../i18n";
+
+type Form = Omit<InterviewSave, "expected_version">;
+type FormComponent = Form["components"][number];
+type FormThreat = FormComponent["threats"][number];
+
+const RATINGS = [1, 2, 3, 4, 5];
+
+function newKey(): string {
+  return "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function formOf(iv: IV): Form {
+  const v = iv.view;
+  return {
+    interview_date: iv.interview_date,
+    participants: iv.participants,
+    notes: iv.notes,
+    components: v.components.map((c) => ({
+      key: c.key,
+      name: c.name,
+      description: c.description,
+      log_source_ids: c.log_sources.map((s) => s.id),
+      threats: c.threats.map((x) => ({
+        category: x.category,
+        state: x.state,
+        description: x.description,
+        likelihood: x.likelihood,
+        impact: x.impact,
+      })),
+    })),
+    added: v.added.map((a) => ({ l2_id: a.l2_id, threats: a.threats })),
+    removed: v.removed.map((r) => ({ l2_id: r.l2_id, reason: r.reason ?? "" })),
+    requests: v.requests.map((r) => ({
+      key: r.key,
+      text: r.text,
+      threat: { component: r.component, category: r.category },
+    })),
+  };
+}
+
+function threatOf(c: FormComponent, cat: Stride): FormThreat {
+  return (
+    c.threats.find((x) => x.category === cat) ?? {
+      category: cat,
+      state: "not_discussed",
+      description: "",
+      likelihood: null,
+      impact: null,
+    }
+  );
+}
+
+const applies = (f: Form) =>
+  new Set(
+    f.components.flatMap((c) => c.threats.filter((x) => x.state === "applies").map((x) => `${c.key}:${x.category}`)),
+  );
+
+/** Drop manual additions and detection requests whose threat no longer applies. */
+function pruned(f: Form): Form {
+  const ok = applies(f);
+  const has = (r: ThreatRef) => ok.has(`${r.component}:${r.category}`);
+  return {
+    ...f,
+    added: f.added.map((a) => ({ ...a, threats: a.threats.filter(has) })).filter((a) => a.threats.length),
+    requests: f.requests.filter((r) => has(r.threat)),
+  };
+}
+
+function dependents(f: Form, match: (r: ThreatRef) => boolean): number {
+  return f.requests.filter((r) => match(r.threat)).length + f.added.filter((a) => a.threats.length && a.threats.every(match)).length;
+}
+
+function score(x: FormThreat): number | null {
+  return x.state === "applies" && x.likelihood && x.impact ? x.likelihood * x.impact : null;
+}
+
+function incomplete(x: FormThreat): boolean {
+  return x.state === "applies" && (!x.description.trim() || !x.likelihood || !x.impact);
+}
+
+function RiskScore({ value }: { value: number | null }) {
+  if (value === null) return <span className="muted">–</span>;
+  return (
+    <span className={`risk risk-${riskLevel(value)}`} title={t("Risk level {r}", { r: riskLevel(value) })}>
+      {value}
+    </span>
+  );
+}
+
+export default function Interview() {
+  const { id } = useParams();
+  const ivId = Number(id);
+  const { can } = useAuth();
+  const editor = can("admin", "analyst");
+  const navigate = useNavigate();
+  const loaded = useLoad<IV>(() => api.interview(ivId), [ivId]);
+  const [iv, setIv] = useState<IV | null>(null);
+  const [form, setForm] = useState<Form | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [step, setStep] = useState(1);
+  const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (loaded.data) {
+      setIv(loaded.data);
+      setForm(formOf(loaded.data));
+      setDirty(false);
+      setConflict(false);
+    }
+  }, [loaded.data]);
+  useUnsavedGuard(dirty);
+
+  const draft = iv?.status === "draft";
+  const canEdit = editor && draft;
+
+  const update = (fn: (f: Form) => Form) => {
+    setForm((f) => (f ? fn(f) : f));
+    setDirty(true);
+    if (!conflict) setError(null);
+  };
+
+  /** Save the draft (with optional last-second changes); resolves to the new interview. */
+  async function save(next?: Form): Promise<IV | null> {
+    if (!iv || !form) return null;
+    const body = pruned(next ?? form);
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await api.saveInterview(iv.id, { ...body, expected_version: iv.version });
+      setIv(saved);
+      setForm(formOf(saved));
+      setDirty(false);
+      setSavedAt(new Date().toISOString());
+      return saved;
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) setConflict(true);
+      const msg = (e as Error).message;
+      setError(
+        e instanceof ApiError
+          ? msg
+          : t("Saving failed: {error}. Your input is still here; try again.", { error: msg }),
+      );
+      if (next) {
+        setForm(next);
+        setDirty(true);
+      }
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Change the form and save at once (step 3 actions re-evaluate the proposals). */
+  const saveWith = (fn: (f: Form) => Form) => (form ? save(fn(form)) : Promise.resolve(null));
+
+  const dateError = useMemo(() => {
+    if (!form) return null;
+    if (!form.interview_date) return t("Enter the interview date.");
+    if (form.interview_date > today()) return t("The interview date cannot be in the future.");
+    if (iv?.min_date && form.interview_date < iv.min_date)
+      return t("The interview date must be on or after the previous interview ({date}).", { date: fmtDate(iv.min_date) });
+    return null;
+  }, [form, iv]);
+
+  const dupNames = useMemo(() => {
+    const seen = new Map<string, number>();
+    for (const c of form?.components ?? []) {
+      const k = c.name.trim().toLowerCase();
+      seen.set(k, (seen.get(k) ?? 0) + 1);
+    }
+    return new Set([...seen].filter(([, n]) => n > 1).map(([k]) => k));
+  }, [form]);
+
+  async function goto(n: number) {
+    if (!form) return;
+    setError(null);
+    if (n > 1 && dateError) {
+      setError(dateError);
+      setStep(1);
+      return;
+    }
+    if (n > 2 && !form.components.length) {
+      setError(t("Add at least one component before you continue."));
+      setStep(2);
+      return;
+    }
+    if (n > 2 && (dupNames.size || form.components.some((c) => !c.name.trim()))) {
+      setError(t("Every component needs a name, and names must be unique."));
+      setStep(2);
+      return;
+    }
+    if (canEdit && (dirty || n === 3)) {
+      const ok = await save();
+      if (!ok) return;
+    }
+    setStep(n);
+  }
+
+  async function complete() {
+    if (!iv || !form) return;
+    if (dirty) {
+      const ok = await save();
+      if (!ok) return;
+    }
+    const fresh = await api.interview(iv.id).catch(() => iv);
+    const missing = fresh.view.incomplete;
+    if (!form.components.length) {
+      setError(t("Add at least one component before you continue."));
+      return;
+    }
+    if (missing.length) {
+      setError(
+        t("Complete description, likelihood and impact of these threats: {list}", {
+          list: missing.map((m) => `${m.component} / ${STRIDE_LABEL[m.category]}`).join(", "),
+        }),
+      );
+      setStep(2);
+      return;
+    }
+    const n = fresh.view.proposals.length;
+    const ok = await confirmDialog(
+      n
+        ? t("Complete the interview? {n} use cases will be linked to {system}, replacing the links of the previous interview. The interview becomes read-only.", {
+            n,
+            system: fresh.system_name,
+          })
+        : t("Complete the interview without accepted use cases? {system} will have no linked use cases. The interview becomes read-only.", {
+            system: fresh.system_name,
+          }),
+      { confirmLabel: t("Complete interview") },
+    );
+    if (!ok) return;
+    try {
+      const done = await api.completeInterview(fresh.id, fresh.version);
+      setIv(done);
+      setForm(formOf(done));
+      setDirty(false);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function removeDraft() {
+    if (!iv) return;
+    const ok = await confirmDialog(t("Delete this draft interview? The links of the system do not change."), {
+      danger: true,
+      confirmLabel: t("Delete"),
+    });
+    if (!ok) return;
+    try {
+      await api.deleteInterview(iv.id);
+      setDirty(false);
+      navigate(`/systems/${iv.system_id}`);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  if (!iv || !form) {
+    return (
+      <>
+        <ErrorNote error={loaded.error} />
+        {!loaded.error && <p className="muted">{t("Loading…")}</p>}
+      </>
+    );
+  }
+
+  const pdf = api.interviewPdfUrl(iv.id, getLang());
+
+  return (
+    <>
+      <nav className="crumbs" aria-label={t("Breadcrumb")}>
+        <Link to="/systems">{t("Systems")}</Link> / <Link to={`/systems/${iv.system_id}`}>{iv.system_name}</Link> /{" "}
+        <span>{t("Interview {date}", { date: fmtDate(iv.interview_date) })}</span>
+      </nav>
+      <header className="page-header">
+        <div>
+          <h1>{t("Interview: {system}", { system: iv.system_name })}</h1>
+          <div className="subtitle">
+            <span className={`pill iv-${iv.status}`}>{INTERVIEW_STATUS_LABEL[iv.status]}</span>{" "}
+            {t("Analyst {name}", { name: iv.analyst })}
+            {draft && iv.updated_at && ` · ${t("last saved {time} by {user}", { time: fmtTime(iv.updated_at), user: iv.updated_by })}`}
+            {!draft && iv.completed_at && ` · ${t("completed {time} by {user}", { time: fmtTime(iv.completed_at), user: iv.completed_by ?? "" })}`}
+          </div>
+        </div>
+        <div className="row-actions">
+          <a className="btn" href={pdf} download>
+            {t("Export PDF")}
+          </a>
+          {canEdit && (
+            <>
+              <button type="button" className="btn" onClick={() => void removeDraft()}>
+                {t("Delete draft")}
+              </button>
+              <button type="button" className="btn" disabled={busy || !dirty} onClick={() => void save()}>
+                {t("Save draft")}
+              </button>
+              <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void complete()}>
+                {t("Complete interview")}
+              </button>
+            </>
+          )}
+        </div>
+      </header>
+
+      {error && (
+        <div className="form-error-box" role="alert">
+          <span>{error}</span>
+          {conflict && (
+            <button type="button" className="btn btn-sm" onClick={() => void loaded.reload()}>
+              {t("Reload")}
+            </button>
+          )}
+        </div>
+      )}
+      {savedAt && !dirty && !error && draft && (
+        <p className="saved-tick small" role="status">
+          {t("Draft saved.")}
+        </p>
+      )}
+      {iv.archived && draft && <p className="form-notice">{t("The system is archived. You can still complete or delete this draft.")}</p>}
+
+      {draft ? (
+        <>
+          <div className="tabs" role="tablist" aria-label={t("Interview steps")}>
+            {[t("1 · Context"), t("2 · Components and threats"), t("3 · Proposals")].map((label, i) => (
+              <button
+                key={label}
+                type="button"
+                role="tab"
+                aria-selected={step === i + 1}
+                className={"tab" + (step === i + 1 ? " active" : "")}
+                onClick={() => void goto(i + 1)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {step === 1 && <StepContext iv={iv} form={form} update={update} readOnly={!canEdit} dateError={dateError} />}
+          {step === 2 && (
+            <StepComponents form={form} update={update} readOnly={!canEdit} dupNames={dupNames} />
+          )}
+          {step === 3 && <StepProposals iv={iv} form={form} readOnly={!canEdit} saveWith={saveWith} busy={busy} />}
+          {canEdit && (
+            <div className="row-actions">
+              {step > 1 && (
+                <button type="button" className="btn" onClick={() => void goto(step - 1)}>
+                  {t("Back")}
+                </button>
+              )}
+              {step < 3 && (
+                <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void goto(step + 1)}>
+                  {t("Save and continue")}
+                </button>
+              )}
+            </div>
+          )}
+        </>
+      ) : (
+        <CompletedView iv={iv} editor={editor} onChange={(x) => setIv(x)} />
+      )}
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ step 1 */
+
+function StepContext({
+  iv,
+  form,
+  update,
+  readOnly,
+  dateError,
+}: {
+  iv: IV;
+  form: Form;
+  update: (fn: (f: Form) => Form) => void;
+  readOnly: boolean;
+  dateError: string | null;
+}) {
+  return (
+    <section className="card stack">
+      <div className="form-grid">
+        <label className="field">
+          {t("Interview date")} *
+          <input
+            className={"input" + (dateError ? " is-invalid" : "")}
+            type="date"
+            max={today()}
+            min={iv.min_date ?? undefined}
+            value={form.interview_date}
+            disabled={readOnly}
+            aria-invalid={!!dateError}
+            onChange={(e) => update((f) => ({ ...f, interview_date: e.target.value }))}
+          />
+          {dateError && <span className="field-error">{dateError}</span>}
+        </label>
+        <label className="field">
+          {t("Participants")}
+          <input
+            className="input"
+            value={form.participants}
+            maxLength={10000}
+            disabled={readOnly}
+            onChange={(e) => update((f) => ({ ...f, participants: e.target.value }))}
+          />
+        </label>
+      </div>
+      <label className="field">
+        {t("Notes")}
+        <textarea
+          className="input textarea"
+          rows={5}
+          maxLength={10000}
+          value={form.notes}
+          disabled={readOnly}
+          onChange={(e) => update((f) => ({ ...f, notes: e.target.value }))}
+        />
+      </label>
+      <p className="muted small" style={{ margin: 0 }}>
+        {t("System details such as owner, criticality and review interval are changed on the system page.")}{" "}
+        <Link to={`/systems/${iv.system_id}`}>{t("Open system")}</Link>
+      </p>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ step 2 */
+
+function StepComponents({
+  form,
+  update,
+  readOnly,
+  dupNames,
+}: {
+  form: Form;
+  update: (fn: (f: Form) => Form) => void;
+  readOnly: boolean;
+  dupNames: Set<string>;
+}) {
+  const refs = useLoad<RefItem[]>(() => api.refs("log_source"));
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [extraRefs, setExtraRefs] = useState<RefItem[]>([]);
+  const options = [...(refs.data ?? []), ...extraRefs]
+    .filter((r, i, all) => all.findIndex((x) => x.id === r.id) === i)
+    .map((r) => ({ value: String(r.id), label: r.name }));
+
+  const setComp = (key: string, patch: Partial<FormComponent>) =>
+    update((f) => ({ ...f, components: f.components.map((c) => (c.key === key ? { ...c, ...patch } : c)) }));
+
+  async function setThreat(c: FormComponent, cat: Stride, patch: Partial<FormThreat>) {
+    const cur = threatOf(c, cat);
+    if (patch.state && patch.state !== "applies" && cur.state === "applies") {
+      const n = dependents(form, (r) => r.component === c.key && r.category === cat);
+      if (
+        n &&
+        !(await confirmDialog(
+          t("{n} detection requests or added use cases belong to this threat. They are removed when you save. Continue?", { n }),
+        ))
+      )
+        return;
+    }
+    const next = { ...cur, ...patch };
+    setComp(c.key, { threats: [...c.threats.filter((x) => x.category !== cat), next] });
+  }
+
+  async function removeComp(c: FormComponent) {
+    const n = dependents(form, (r) => r.component === c.key);
+    const ok = await confirmDialog(
+      n
+        ? t("Remove component {name}? {n} detection requests or added use cases tied to its threats are removed too.", { name: c.name || "–", n })
+        : t("Remove component {name}?", { name: c.name || "–" }),
+      { danger: true, confirmLabel: t("Remove") },
+    );
+    if (ok) update((f) => ({ ...f, components: f.components.filter((x) => x.key !== c.key) }));
+  }
+
+  const addComp = () =>
+    update((f) => ({
+      ...f,
+      components: [...f.components, { key: newKey(), name: "", description: "", log_source_ids: [], threats: [] }],
+    }));
+
+  return (
+    <div className="stack">
+      <ErrorNote error={refs.error} />
+      {!form.components.length && (
+        <div className="note-box">
+          {t("Split the system into a few components (e.g. web front end, API, database, admin access) and go through the six STRIDE categories for each.")}
+        </div>
+      )}
+      {form.components.map((c, idx) => {
+        const open = !collapsed.has(c.key);
+        const dup = dupNames.has(c.name.trim().toLowerCase());
+        const bad = c.threats.filter(incomplete).length;
+        return (
+          <section key={c.key} className="card stack-sm iv-comp" aria-label={c.name || t("Component {n}", { n: idx + 1 })}>
+            <div className="section-head">
+              <button
+                type="button"
+                className="link-btn iv-toggle"
+                aria-expanded={open}
+                onClick={() =>
+                  setCollapsed((s) => {
+                    const n = new Set(s);
+                    if (n.has(c.key)) n.delete(c.key);
+                    else n.add(c.key);
+                    return n;
+                  })
+                }
+              >
+                {open ? "▾" : "▸"} {c.name || t("Component {n}", { n: idx + 1 })}
+              </button>
+              <span className="small muted">
+                {t("{n} threats apply", { n: c.threats.filter((x) => x.state === "applies").length })}
+                {bad > 0 && (
+                  <>
+                    {" · "}
+                    <span className="text-err">{t("{n} incomplete", { n: bad })}</span>
+                  </>
+                )}
+              </span>
+              <span className="grow" />
+              {!readOnly && (
+                <button type="button" className="btn btn-sm" onClick={() => void removeComp(c)}>
+                  {t("Remove")}
+                </button>
+              )}
+            </div>
+            {open && (
+              <>
+                <div className="form-grid">
+                  <label className="field">
+                    {t("Component name")} *
+                    <input
+                      className={"input" + (dup || !c.name.trim() ? " is-invalid" : "")}
+                      value={c.name}
+                      maxLength={255}
+                      disabled={readOnly}
+                      aria-invalid={dup || !c.name.trim()}
+                      onChange={(e) => setComp(c.key, { name: e.target.value })}
+                    />
+                    {dup && <span className="field-error">{t("Another component has this name.")}</span>}
+                  </label>
+                  <MultiSelect
+                    label={t("Log sources the component delivers")}
+                    options={options}
+                    value={c.log_source_ids.map(String)}
+                    disabled={readOnly}
+                    onChange={(v) => setComp(c.key, { log_source_ids: v.map(Number) })}
+                    onCreate={async (name) => {
+                      const item = await api.createRef("log_source", { name, description: "" });
+                      setExtraRefs((x) => [...x, item]);
+                      return String(item.id);
+                    }}
+                  />
+                </div>
+                <label className="field">
+                  {t("Description")}
+                  <textarea
+                    className="input textarea"
+                    rows={2}
+                    maxLength={10000}
+                    value={c.description}
+                    disabled={readOnly}
+                    onChange={(e) => setComp(c.key, { description: e.target.value })}
+                  />
+                </label>
+                <div className="iv-threats">
+                  {STRIDE.map((cat) => {
+                    const x = threatOf(c, cat);
+                    const s = score(x);
+                    const inc = incomplete(x);
+                    return (
+                      <div key={cat} className={"iv-threat" + (inc ? " is-incomplete" : "")}>
+                        <div className="iv-threat-head">
+                          <div>
+                            <strong>{STRIDE_LABEL[cat]}</strong>
+                            <div className="small muted">{STRIDE_HINT[cat]}</div>
+                          </div>
+                          <div className="view-toggle" role="radiogroup" aria-label={STRIDE_LABEL[cat]}>
+                            {(["applies", "does_not_apply", "not_discussed"] as ThreatState[]).map((st) => (
+                              <button
+                                key={st}
+                                type="button"
+                                role="radio"
+                                aria-checked={x.state === st}
+                                disabled={readOnly}
+                                className={"filter-chip" + (x.state === st ? " active" : "")}
+                                onClick={() => void setThreat(c, cat, { state: st })}
+                              >
+                                {STATE_LABEL[st]}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        {x.state === "applies" && (
+                          <div className="iv-threat-body">
+                            <label className="field grow-2">
+                              {t("Threat description")} *
+                              <textarea
+                                className={"input textarea" + (inc && !x.description.trim() ? " is-invalid" : "")}
+                                rows={2}
+                                maxLength={10000}
+                                value={x.description}
+                                disabled={readOnly}
+                                onChange={(e) => void setThreat(c, cat, { description: e.target.value })}
+                              />
+                            </label>
+                            <label className="field">
+                              {t("Likelihood (1–5)")} *
+                              <select
+                                className={"input" + (inc && !x.likelihood ? " is-invalid" : "")}
+                                value={x.likelihood ?? ""}
+                                disabled={readOnly}
+                                onChange={(e) =>
+                                  void setThreat(c, cat, { likelihood: e.target.value ? Number(e.target.value) : null })
+                                }
+                              >
+                                <option value="">–</option>
+                                {RATINGS.map((n) => (
+                                  <option key={n} value={n}>
+                                    {n}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="field">
+                              {t("Impact (1–5)")} *
+                              <select
+                                className={"input" + (inc && !x.impact ? " is-invalid" : "")}
+                                value={x.impact ?? ""}
+                                disabled={readOnly}
+                                onChange={(e) =>
+                                  void setThreat(c, cat, { impact: e.target.value ? Number(e.target.value) : null })
+                                }
+                              >
+                                <option value="">–</option>
+                                {RATINGS.map((n) => (
+                                  <option key={n} value={n}>
+                                    {n}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <div className="field">
+                              {t("Risk score")}
+                              <div className="iv-score" aria-live="polite">
+                                <RiskScore value={s} />
+                              </div>
+                            </div>
+                            {inc && (
+                              <span className="field-error iv-inc">
+                                {t("Incomplete: description, likelihood and impact are needed.")}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </section>
+        );
+      })}
+      {!readOnly && (
+        <div>
+          <button type="button" className="btn" onClick={addComp}>
+            {t("+ Component")}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ step 3 */
+
+function ProposalCard({ p, children }: { p: Proposal; children?: ReactNode }) {
+  return (
+    <div className="iv-proposal">
+      <div className="iv-proposal-head">
+        <Link className="code-link" to={`/usecases?l2=${encodeURIComponent(p.code)}`}>
+          <span className="code-tag">{p.code}</span>
+          <span>{p.name}</span>
+        </Link>
+        {p.deleted && <span className="badge-gap">{t("deleted")}</span>}
+        {!p.l1_applicable && <span className="chip chip-neutral">{t("L1 not applicable")}</span>}
+        {p.manual && <span className="chip chip-info">{t("added by hand")}</span>}
+        <span className="grow" />
+        <span className="small muted">{t("Risk score")}</span> <RiskScore value={p.risk_score} />
+        {children}
+      </div>
+      {p.sources.length > 0 && (
+        <div className="small muted">
+          {t("From")}: {p.sources.map((s) => `${s.component_name} / ${STRIDE_LABEL[s.category]} (${s.score ?? "–"})`).join("; ")}
+        </div>
+      )}
+      {p.reason && <div className="small">{t("Reason: {reason}", { reason: p.reason })}</div>}
+      {p.rules.length > 0 ? (
+        <ul className="plain-list iv-rules">
+          {p.rules.map((r) => (
+            <li key={r.code}>
+              <span className="mono small">{r.code}</span> {r.name} <StatusPill status={r.lifecycle_status} />{" "}
+              {r.unknown ? (
+                <span className="pill pill-none">{t("Log source unknown")}</span>
+              ) : r.missing.length ? (
+                <span className="badge-gap" title={r.missing.join(", ")}>
+                  {t("Log source missing: {list}", { list: r.missing.join(", ") })}
+                </span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        !p.reason && <div className="small"><span className="badge-gap">{t("No rules")}</span></div>
+      )}
+    </div>
+  );
+}
+
+function StepProposals({
+  iv,
+  form,
+  readOnly,
+  saveWith,
+  busy,
+}: {
+  iv: IV;
+  form: Form;
+  readOnly: boolean;
+  saveWith: (fn: (f: Form) => Form) => Promise<IV | null>;
+  busy: boolean;
+}) {
+  const v = iv.view;
+  const [removing, setRemoving] = useState<Proposal | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [showBelow, setShowBelow] = useState(false);
+  const [request, setRequest] = useState<{ text: string; threat: string }>({ text: "", threat: "" });
+  const threatOptions = v.components.flatMap((c) =>
+    c.threats
+      .filter((x) => x.state === "applies")
+      .map((x) => ({ value: `${c.key}:${x.category}`, label: `${c.name} / ${STRIDE_LABEL[x.category]}` })),
+  );
+  const ref = (value: string): ThreatRef => {
+    const i = value.lastIndexOf(":");
+    return { component: value.slice(0, i), category: value.slice(i + 1) as Stride };
+  };
+  const addL2 = (l2_id: number, threats: ThreatRef[]) =>
+    saveWith((f) => {
+      const existing = f.added.find((a) => a.l2_id === l2_id);
+      const added = existing
+        ? f.added.map((a) =>
+            a.l2_id === l2_id
+              ? { ...a, threats: [...a.threats, ...threats.filter((x) => !a.threats.some((y) => y.component === x.component && y.category === x.category))] }
+              : a,
+          )
+        : [...f.added, { l2_id, threats }];
+      return { ...f, added, removed: f.removed.filter((r) => r.l2_id !== l2_id) };
+    });
+
+  return (
+    <div className="stack">
+      <p className="muted small" style={{ margin: 0 }}>
+        {t("Proposed: every L2 use case mapped to the STRIDE category of a threat with a risk score of at least {n} (likelihood × impact).", {
+          n: v.threshold,
+        })}{" "}
+        <Link to="/stride-mapping">{t("STRIDE mapping")}</Link>
+      </p>
+      {v.mapping_empty && <div className="note-box">{t("There is no STRIDE mapping yet, so nothing is proposed automatically. You can add use cases by hand.")}</div>}
+
+      <section className="card stack-sm" aria-labelledby="proph">
+        <div className="section-head">
+          <h2 id="proph">{t("Accepted use cases ({n})", { n: v.proposals.length })}</h2>
+          {!readOnly && (
+            <button type="button" className="btn btn-sm" disabled={busy || !threatOptions.length} onClick={() => setAdding(true)}>
+              {t("+ Add use case")}
+            </button>
+          )}
+        </div>
+        {!v.proposals.length && (
+          <p className="muted" style={{ margin: 0 }}>
+            {threatOptions.length
+              ? t("No use case is proposed for the threats of this interview.")
+              : t("No threat applies, so nothing is proposed.")}
+          </p>
+        )}
+        {v.proposals.map((p) => (
+          <ProposalCard key={p.l2_id} p={p}>
+            {!readOnly && (
+              <button type="button" className="btn btn-sm" disabled={busy} onClick={() => setRemoving(p)}>
+                {t("Remove")}
+              </button>
+            )}
+          </ProposalCard>
+        ))}
+      </section>
+
+      {v.below_threshold.length > 0 && (
+        <section className="card stack-sm">
+          <button type="button" className="link-btn iv-toggle" aria-expanded={showBelow} onClick={() => setShowBelow((x) => !x)}>
+            {showBelow ? "▾" : "▸"} {t("Below threshold ({n} threats)", { n: v.below_threshold.length })}
+          </button>
+          {showBelow &&
+            v.below_threshold.map((b) => (
+              <div key={`${b.component}:${b.category}`} className="iv-below">
+                <div>
+                  <strong>
+                    {b.component_name} / {STRIDE_LABEL[b.category]}
+                  </strong>{" "}
+                  <RiskScore value={b.score} />
+                </div>
+                {b.l2s.length ? (
+                  <ul className="plain-list">
+                    {b.l2s.map((l) => {
+                      const shown = v.proposals.some((p) => p.l2_id === l.l2_id);
+                      return (
+                        <li key={l.l2_id}>
+                          <span className="mono small">{l.code}</span> {l.name}{" "}
+                          {!l.l1_applicable && <span className="chip chip-neutral">{t("L1 not applicable")}</span>}{" "}
+                          {shown ? (
+                            <span className="small muted">{t("accepted")}</span>
+                          ) : (
+                            !readOnly && (
+                              <button
+                                type="button"
+                                className="btn btn-sm"
+                                disabled={busy}
+                                onClick={() => void addL2(l.l2_id, [{ component: b.component, category: b.category }])}
+                              >
+                                {t("Add")}
+                              </button>
+                            )
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className="small muted" style={{ margin: 0 }}>
+                    {t("No use case is mapped to this category.")}
+                  </p>
+                )}
+              </div>
+            ))}
+        </section>
+      )}
+
+      {v.removed.length > 0 && (
+        <section className="card stack-sm" aria-labelledby="remh">
+          <h2 id="remh" className="h-sm">
+            {t("Removed ({n})", { n: v.removed.length })}
+          </h2>
+          {v.removed.map((p) => (
+            <ProposalCard key={p.l2_id} p={{ ...p, rules: [] }}>
+              {!readOnly && (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={busy}
+                  onClick={() => void saveWith((f) => ({ ...f, removed: f.removed.filter((r) => r.l2_id !== p.l2_id) }))}
+                >
+                  {t("Restore")}
+                </button>
+              )}
+            </ProposalCard>
+          ))}
+        </section>
+      )}
+
+      <section className="card stack-sm" aria-labelledby="reqh">
+        <h2 id="reqh" className="h-sm">
+          {t("Detection requests")}
+        </h2>
+        <p className="muted small" style={{ margin: 0 }}>
+          {t("Detection needs from the interview that no use case covers yet.")}
+        </p>
+        {v.requests.length > 0 && (
+          <ul className="plain-list">
+            {v.requests.map((r) => (
+              <li key={r.key || r.text}>
+                {r.text}{" "}
+                <span className="small muted">
+                  · {r.component_name} / {STRIDE_LABEL[r.category]}
+                </span>{" "}
+                {!readOnly && (
+                  <button
+                    type="button"
+                    className="link-btn small"
+                    disabled={busy}
+                    onClick={() =>
+                      void saveWith((f) => ({ ...f, requests: f.requests.filter((x) => !(x.key === r.key && x.text === r.text)) }))
+                    }
+                  >
+                    {t("Remove")}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {!readOnly && (
+          <form
+            className="inline-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!request.text.trim() || !request.threat) return;
+              void saveWith((f) => ({
+                ...f,
+                requests: [...f.requests, { key: newKey(), text: request.text.trim(), threat: ref(request.threat) }],
+              })).then((ok) => ok && setRequest({ text: "", threat: "" }));
+            }}
+          >
+            <label className="field grow-2">
+              {t("Detection request")}
+              <input
+                className="input"
+                value={request.text}
+                maxLength={10000}
+                onChange={(e) => setRequest((r) => ({ ...r, text: e.target.value }))}
+              />
+            </label>
+            <label className="field">
+              {t("Threat")}
+              <select className="input" value={request.threat} onChange={(e) => setRequest((r) => ({ ...r, threat: e.target.value }))}>
+                <option value="">{t("Choose a threat")}</option>
+                {threatOptions.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="submit" className="btn" disabled={busy || !request.text.trim() || !request.threat}>
+              {t("Add")}
+            </button>
+          </form>
+        )}
+      </section>
+
+      {removing && (
+        <RemoveDialog
+          p={removing}
+          onClose={() => setRemoving(null)}
+          onRemove={(reason) =>
+            void saveWith((f) => ({
+              ...f,
+              added: f.added.filter((a) => a.l2_id !== removing.l2_id),
+              removed: [...f.removed.filter((r) => r.l2_id !== removing.l2_id), { l2_id: removing.l2_id, reason }],
+            })).then(() => setRemoving(null))
+          }
+        />
+      )}
+      {adding && (
+        <AddDialog
+          options={threatOptions}
+          exclude={new Set(v.proposals.map((p) => p.l2_id))}
+          form={form}
+          onClose={() => setAdding(false)}
+          onAdd={(l2, refs) => void addL2(l2, refs.map(ref)).then((ok) => ok && setAdding(false))}
+        />
+      )}
+    </div>
+  );
+}
+
+function RemoveDialog({ p, onClose, onRemove }: { p: Proposal; onClose: () => void; onRemove: (reason: string) => void }) {
+  const [reason, setReason] = useState("");
+  return (
+    <Modal title={t("Remove {code}?", { code: p.code })} open onClose={onClose}>
+      <form
+        className="stack"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onRemove(reason);
+        }}
+      >
+        <label className="field">
+          {t("Reason (optional)")}
+          <textarea className="input textarea" rows={3} maxLength={10000} value={reason} onChange={(e) => setReason(e.target.value)} />
+        </label>
+        <div className="row-actions">
+          <button type="button" className="btn" onClick={onClose}>
+            {t("Cancel")}
+          </button>
+          <button type="submit" className="btn btn-primary">
+            {t("Remove")}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function AddDialog({
+  options,
+  exclude,
+  form,
+  onClose,
+  onAdd,
+}: {
+  options: { value: string; label: string }[];
+  exclude: Set<number>;
+  form: Form;
+  onClose: () => void;
+  onAdd: (l2: number, threats: string[]) => void;
+}) {
+  const l2s = useLoad<L2[]>(() => api.l2s());
+  const l1s = useLoad(() => api.l1s());
+  const [l2, setL2] = useState("");
+  const [threats, setThreats] = useState<string[]>([]);
+  const [tried, setTried] = useState(false);
+  const na = new Set((l1s.data ?? []).filter((x) => !x.applicable).map((x) => x.code));
+  const chosen = l2s.data?.find((x) => String(x.id) === l2);
+  void form;
+  return (
+    <Modal title={t("Add a use case by hand")} open onClose={onClose} wide>
+      <form
+        className="stack"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setTried(true);
+          if (!l2 || !threats.length) return;
+          onAdd(Number(l2), threats);
+        }}
+      >
+        <ErrorNote error={l2s.error} />
+        <label className="field">
+          {t("L2 use case")}
+          <select className={"input" + (tried && !l2 ? " is-invalid" : "")} value={l2} onChange={(e) => setL2(e.target.value)}>
+            <option value="">{t("Choose a use case")}</option>
+            {l2s.data
+              ?.filter((x) => !exclude.has(x.id))
+              .map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.code} · {x.name}
+                  {na.has(x.l1_code) ? ` (${t("L1 not applicable")})` : ""}
+                </option>
+              ))}
+          </select>
+        </label>
+        {chosen && na.has(chosen.l1_code) && (
+          <p className="form-notice">{t("This use case belongs to an L1 marked as not applicable.")}</p>
+        )}
+        <fieldset className="fieldset">
+          <legend className="small strong">{t("Threats it covers (at least one)")}</legend>
+          {options.map((o) => (
+            <label key={o.value} className="check">
+              <input
+                type="checkbox"
+                checked={threats.includes(o.value)}
+                onChange={() => setThreats((x) => (x.includes(o.value) ? x.filter((y) => y !== o.value) : [...x, o.value]))}
+              />
+              {o.label}
+            </label>
+          ))}
+        </fieldset>
+        {tried && !threats.length && <span className="field-error">{t("Choose at least one threat of the interview.")}</span>}
+        <div className="row-actions">
+          <button type="button" className="btn" onClick={onClose}>
+            {t("Cancel")}
+          </button>
+          <button type="submit" className="btn btn-primary">
+            {t("Add")}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/* ------------------------------------------------------------------ completed interview */
+
+function ThreatTable({ components }: { components: ComponentView[] }) {
+  return (
+    <div className="stack-sm">
+      {components.map((c) => {
+        const on = c.threats.filter((x) => x.state === "applies");
+        return (
+          <div key={c.key} className="iv-done-comp">
+            <h3 className="h-sm" style={{ margin: 0 }}>
+              {c.name}
+            </h3>
+            {c.description && <p className="small ink-2" style={{ margin: 0 }}>{c.description}</p>}
+            <p className="small muted" style={{ margin: 0 }}>
+              {t("Log sources")}: {c.log_sources.map((s) => s.name).join(", ") || t("none")}
+            </p>
+            {on.length ? (
+              <table className="table table-plain table-compact">
+                <thead>
+                  <tr>
+                    <th>{t("STRIDE category")}</th>
+                    <th>{t("Threat description")}</th>
+                    <th className="num">{t("Likelihood")}</th>
+                    <th className="num">{t("Impact")}</th>
+                    <th className="num">{t("Risk score")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {on.map((x) => (
+                    <tr key={x.category}>
+                      <td>{STRIDE_LABEL[x.category]}</td>
+                      <td className="small">{x.description}</td>
+                      <td className="num">{x.likelihood}</td>
+                      <td className="num">{x.impact}</td>
+                      <td className="num">
+                        <RiskScore value={x.score} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="small muted" style={{ margin: 0 }}>
+                {t("No threat applies.")}
+              </p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function CompletedView({ iv, editor, onChange }: { iv: IV; editor: boolean; onChange: (iv: IV) => void }) {
+  const v = iv.view;
+  const cmp = useLoad<InterviewCompare | null>(
+    () => (iv.previous_id ? api.compareInterview(iv.id).catch(() => null) : Promise.resolve(null)),
+    [iv.id, iv.previous_id],
+  );
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function unconfirm() {
+    const ok = await confirmDialog(t("Remove the confirmation? The interview goes back to Completed."));
+    if (!ok) return;
+    try {
+      onChange(await api.unconfirmInterview(iv.id));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  return (
+    <div className="stack">
+      <ErrorNote error={error} />
+      <section className="card stack-sm" aria-labelledby="confh">
+        <div className="section-head">
+          <h2 id="confh" className="h-sm">
+            {t("Owner confirmation")}
+          </h2>
+          {editor && iv.status === "completed" && (
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => setConfirming(true)}>
+              {t("Record confirmation")}
+            </button>
+          )}
+          {editor && iv.status === "confirmed" && (
+            <button type="button" className="btn btn-sm" onClick={() => void unconfirm()}>
+              {t("Remove confirmation")}
+            </button>
+          )}
+        </div>
+        {iv.status === "confirmed" ? (
+          <p style={{ margin: 0 }}>
+            {t("Confirmed by {name} on {date}", { name: iv.confirmed_by ?? "", date: fmtDate(iv.confirmed_at) })}
+            {iv.confirmation_recorded_by && (
+              <span className="muted small"> · {t("recorded by {user}", { user: iv.confirmation_recorded_by })}</span>
+            )}
+          </p>
+        ) : (
+          <p className="muted" style={{ margin: 0 }}>
+            {t("Not confirmed yet. Send the PDF to the business owner and record the confirmation here.")}
+          </p>
+        )}
+      </section>
+
+      <section className="card stack-sm">
+        <h2 className="h-sm">{t("Context")}</h2>
+        <dl className="facts">
+          <dt>{t("Interview date")}</dt>
+          <dd>{fmtDate(iv.interview_date)}</dd>
+          <dt>{t("Participants")}</dt>
+          <dd>{iv.participants || "–"}</dd>
+          <dt>{t("Notes")}</dt>
+          <dd style={{ whiteSpace: "pre-wrap" }}>{iv.notes || "–"}</dd>
+        </dl>
+      </section>
+
+      {cmp.data && <Comparison c={cmp.data} />}
+
+      <section className="card stack-sm">
+        <h2 className="h-sm">{t("Components and threats")}</h2>
+        <ThreatTable components={v.components} />
+      </section>
+
+      <section className="card stack-sm">
+        <h2 className="h-sm">{t("Accepted use cases ({n})", { n: v.proposals.length })}</h2>
+        {!v.proposals.length && <p className="muted" style={{ margin: 0 }}>{t("No use cases accepted.")}</p>}
+        {v.proposals.map((p) => (
+          <ProposalCard key={p.l2_id} p={p} />
+        ))}
+      </section>
+
+      {v.removed.length > 0 && (
+        <section className="card stack-sm">
+          <h2 className="h-sm">{t("Removed ({n})", { n: v.removed.length })}</h2>
+          {v.removed.map((p) => (
+            <ProposalCard key={p.l2_id} p={{ ...p, rules: [] }} />
+          ))}
+        </section>
+      )}
+
+      <section className="card stack-sm">
+        <h2 className="h-sm">{t("Detection requests")}</h2>
+        {v.requests.length ? (
+          <ul className="plain-list">
+            {v.requests.map((r) => (
+              <li key={r.key || r.text}>
+                {r.text}{" "}
+                <span className="small muted">
+                  · {r.component_name} / {STRIDE_LABEL[r.category]}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted" style={{ margin: 0 }}>
+            {t("No detection requests.")}
+          </p>
+        )}
+      </section>
+
+      {confirming && (
+        <ConfirmDialog
+          iv={iv}
+          onClose={() => setConfirming(false)}
+          onDone={(x) => {
+            setConfirming(false);
+            onChange(x);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function Comparison({ c }: { c: InterviewCompare }) {
+  const rows: [string, string[]][] = [
+    [t("Components added"), c.components_added],
+    [t("Components removed"), c.components_removed],
+    [t("Threats added"), c.threats_added.map((x) => `${x.component} / ${STRIDE_LABEL[x.category]}`)],
+    [t("Threats removed"), c.threats_removed.map((x) => `${x.component} / ${STRIDE_LABEL[x.category]}`)],
+    [
+      t("Threats re-rated"),
+      c.threats_rerated.map((x) => `${x.component} / ${STRIDE_LABEL[x.category]}: ${x.old_score ?? "–"} → ${x.new_score ?? "–"}`),
+    ],
+    [t("Use cases added"), c.use_cases_added.map((x) => `${x.code} ${x.name}`)],
+    [t("Use cases removed"), c.use_cases_removed.map((x) => `${x.code} ${x.name}`)],
+  ];
+  const changed = rows.filter(([, items]) => items.length);
+  return (
+    <section className="card stack-sm" aria-labelledby="cmph">
+      <h2 id="cmph" className="h-sm">
+        {t("Changes since the interview of {date}", { date: fmtDate(c.previous_date) })}{" "}
+        <Link className="small" to={`/interviews/${c.previous_id}`}>
+          {t("Open")}
+        </Link>
+      </h2>
+      {changed.length ? (
+        <dl className="facts">
+          {changed.map(([k, items]) => (
+            <div key={k} style={{ display: "contents" }}>
+              <dt>{k}</dt>
+              <dd>{items.join("; ")}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="muted" style={{ margin: 0 }}>
+          {t("Nothing changed.")}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function ConfirmDialog({ iv, onClose, onDone }: { iv: IV; onClose: () => void; onDone: (iv: IV) => void }) {
+  const [by, setBy] = useState(iv.owner_name);
+  const [on, setOn] = useState(today());
+  const [error, setError] = useState<string | null>(null);
+  const bad =
+    !on
+      ? t("Enter the date.")
+      : on < iv.interview_date
+        ? t("The confirmation date cannot be before the interview date.")
+        : on > today()
+          ? t("The confirmation date cannot be in the future.")
+          : null;
+  return (
+    <Modal title={t("Record the owner's confirmation")} open onClose={onClose}>
+      <form
+        className="stack"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (bad || !by.trim()) {
+            setError(bad ?? t("Enter who confirmed."));
+            return;
+          }
+          try {
+            onDone(await api.confirmInterview(iv.id, { confirmed_by: by.trim(), confirmed_at: on }));
+          } catch (err) {
+            setError((err as Error).message);
+          }
+        }}
+      >
+        <label className="field">
+          {t("Confirmed by")}
+          <input className="input" value={by} maxLength={255} onChange={(e) => setBy(e.target.value)} />
+        </label>
+        <label className="field">
+          {t("Confirmation date")}
+          <input
+            className={"input" + (bad ? " is-invalid" : "")}
+            type="date"
+            min={iv.interview_date}
+            max={today()}
+            value={on}
+            onChange={(e) => setOn(e.target.value)}
+          />
+          {bad && <span className="field-error">{bad}</span>}
+        </label>
+        <ErrorNote error={error} />
+        <div className="row-actions">
+          <button type="button" className="btn" onClick={onClose}>
+            {t("Cancel")}
+          </button>
+          <button type="submit" className="btn btn-primary">
+            {t("Save")}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}

@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app import drivers, growth
 from app.api.deps import DB, SettingsDep
+from app.interviews import system_risk_by_l2
 from app.models import L3UseCase, Lifecycle
 from app.schemas import DriverCoverage
 from app.scoring import RuleInput, score_rule
@@ -31,6 +32,7 @@ class GapRow(BaseModel):
     potential: float | None
     risk: int | None
     risk_source: str | None
+    risk_system: str | None = None
     target: float | None
     target_source: str | None
     gap: float | None
@@ -78,6 +80,7 @@ def gaps(
     if l1:
         q = q.where(L3UseCase.code.startswith(l1.upper() + "-"))
     rows, all_rows = [], []
+    sys_risk = system_risk_by_l2(db)
     for r in db.scalars(q):
         s = score_rule(
             RuleInput(
@@ -95,7 +98,7 @@ def gaps(
         potential = s.potential
         if potential is None and None not in (r.effectiveness, r.implementation, r.coverage):
             potential = r.effectiveness - r.effectiveness * r.implementation * r.coverage
-        e = growth.effective(r, targets, potential)
+        e = growth.effective(r, targets, potential, sys_risk.get(r.l2_id))
         row = GapRow(
             code=r.code,
             name=r.name,
@@ -109,6 +112,7 @@ def gaps(
             potential=potential,
             risk=e.risk,
             risk_source=e.risk_source,
+            risk_system=e.risk_system,
             target=e.target,
             target_source=e.target_source,
             gap=e.gap,

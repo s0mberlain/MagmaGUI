@@ -9,6 +9,7 @@ from sqlalchemy import Engine
 
 from app.config import Settings
 from app.db import exclusive, wait_for_db
+from app.interviews import ensure_default_mapping
 from app.seed import ensure_admin, seed_catalogue
 
 log = logging.getLogger("magma.startup")
@@ -44,6 +45,7 @@ def initialize(engine: Engine, session_factory, settings: Settings) -> None:
         with session_factory() as db:
             fresh = seed_catalogue(db)
             ensure_admin(db, settings)
+            ensure_default_mapping(db)
             if fresh and settings.demo_data:
                 from app.demo import apply_demo_data
 

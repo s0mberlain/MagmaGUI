@@ -304,6 +304,12 @@ class L2Update(TrackingFields, Patch):
     compliance_driver_ids: list[int] | None = None
 
 
+class LinkedSystem(BaseModel):
+    id: int
+    name: str
+    archived: bool
+
+
 class L2Out(BaseModel):
     id: int
     code: str
@@ -322,6 +328,8 @@ class L2Out(BaseModel):
     compliance_driver_ids: list[int]
     compliance_drivers: list[ComplianceRef] = []
     l3_count: int
+    # systems whose latest completed interview linked this use case (#17)
+    systems: list[LinkedSystem] = []
 
 
 SiemRuleId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
@@ -409,6 +417,7 @@ class L3Out(BaseModel):
     # risk and target in effect (own value, else the L2's, else derived from the risk level)
     effective_risk: int | None = None
     risk_source: str | None = None
+    risk_system: str | None = None
     effective_target: float | None = None
     target_source: str | None = None
     implementation_gap: float | None = None

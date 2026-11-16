@@ -175,7 +175,10 @@ def export_json(_: Reader, db: DB) -> dict:
                 select(StrideMapping).order_by(StrideMapping.category, StrideMapping.l2_id)
             )
         ],
-        "interview_settings": {"proposal_threshold": interviews.threshold(db)},
+        "interview_settings": {
+            "proposal_threshold": interviews.threshold(db),
+            "log_source_filter": interviews.log_source_filter(db),
+        },
         "systems": [
             {
                 **{
@@ -197,6 +200,20 @@ def export_json(_: Reader, db: DB) -> dict:
                             "completed_at completed_by confirmed_by confirmed_at "
                             "confirmation_recorded_by"
                         ).split()
+                    }
+                    # evidence files (#34): only what they are, not their content
+                    | {
+                        "attachments": [
+                            {
+                                "filename": a.filename,
+                                "content_type": a.content_type,
+                                "size": a.size,
+                                "sha256": a.sha256,
+                                "uploaded_by": a.uploaded_by,
+                                "uploaded_at": a.uploaded_at,
+                            }
+                            for a in i.attachments
+                        ]
                     }
                     for i in s.interviews
                 ],

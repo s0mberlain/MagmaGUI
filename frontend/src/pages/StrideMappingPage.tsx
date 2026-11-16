@@ -100,6 +100,26 @@ export default function StrideMappingPage() {
         )}
       </section>
 
+      <section className="card stack-sm" aria-labelledby="lsh">
+        <h2 id="lsh" className="h-sm">
+          {t("Log source filter")}
+        </h2>
+        <p className="muted small" style={{ margin: 0 }}>
+          {t(
+            "When on, a use case is only proposed for a threat if one of its rules uses a log source of the threatened component. Use cases held back are listed in the interview and can still be added by hand.",
+          )}
+        </p>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={m?.log_source_filter ?? true}
+            disabled={!admin || !m}
+            onChange={(e) => void run(() => api.setLogSourceFilter(e.target.checked))}
+          />
+          {t("Only propose use cases whose log sources match the component")}
+        </label>
+      </section>
+
       <div className="stride-grid">
         {m?.categories.map((c) => (
           <section key={c.category} className="card stack-sm" aria-labelledby={`st-${c.category}`}>

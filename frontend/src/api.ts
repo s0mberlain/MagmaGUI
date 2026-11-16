@@ -796,6 +796,39 @@ export interface InterviewView {
   removed_ids: number[];
   requests: { key: string; text: string; component: string; component_name: string; category: Stride }[];
   log_source_gaps: { l2_code: string; rule_code: string; rule_name: string; missing: string[] }[];
+  /** #36: proposals are limited to L2s whose rules use a log source of the component */
+  log_source_filter: boolean;
+  /** #36: L2s the filter held back */
+  log_source_mismatch: {
+    l2_id: number;
+    code: string;
+    name: string;
+    l1_code: string;
+    l1_applicable: boolean;
+    risk_score: number | null;
+    log_sources: string[];
+    sources: {
+      component: string;
+      component_name: string;
+      category: Stride;
+      score: number | null;
+      component_log_sources: string[];
+    }[];
+  }[];
+}
+
+/** Evidence file of an interview (#34). */
+export interface InterviewAttachment {
+  id: number;
+  interview_id: number;
+  filename: string;
+  content_type: string;
+  size: number;
+  sha256: string;
+  uploaded_by: string;
+  uploaded_at: string;
+  viewable: boolean;
+  kind: "pdf" | "image" | "diagram" | "threat_model";
 }
 
 export interface Interview {
@@ -820,6 +853,7 @@ export interface Interview {
   previous_id: number | null;
   min_date: string | null;
   view: InterviewView;
+  attachments: InterviewAttachment[];
 }
 
 export interface InterviewSave {
@@ -853,6 +887,7 @@ export interface InterviewCompare {
 
 export interface StrideMapping {
   threshold: number;
+  log_source_filter: boolean;
   categories: {
     category: Stride;
     l2s: { l2_id: number; code: string; name: string; l1_applicable: boolean }[];
@@ -1132,6 +1167,23 @@ export const api = {
     request<StrideMapping>("PUT", `/api/stride-mapping/${category}`, { l2_ids }),
   setProposalThreshold: (value: number) =>
     request<StrideMapping>("PUT", "/api/stride-mapping/threshold", { proposal_threshold: value }),
+  setLogSourceFilter: (enabled: boolean) =>
+    request<StrideMapping>("PUT", "/api/stride-mapping/log-source-filter", { enabled }),
+  uploadAttachment: async (interviewId: number, file: File): Promise<InterviewAttachment> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch(`/api/interviews/${interviewId}/attachments`, {
+      method: "POST",
+      body: fd,
+      credentials: "same-origin",
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new ApiError(res.status, detailMessage(data) ?? `${res.status} ${res.statusText}`, data);
+    return data as InterviewAttachment;
+  },
+  deleteAttachment: (id: number) => request<void>("DELETE", `/api/interview-attachments/${id}`),
+  attachmentUrl: (id: number, download = false) =>
+    `/api/interview-attachments/${id}/content${download ? "?download=1" : ""}`,
   resetStrideMapping: () => request<StrideMapping>("POST", "/api/stride-mapping/reset"),
 
   demoDataAllowed: () => request<{ allowed: boolean }>("GET", "/api/admin/demo-data"),

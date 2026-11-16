@@ -3,7 +3,9 @@
 An analyst interviews the business owner of a system. Each component of the system gets the six
 STRIDE categories; a category that applies is rated likelihood x impact (risk score 1..25).
 The admin-maintained STRIDE -> L2 mapping turns threats at or above the proposal threshold into
-proposed L2 use cases. The analyst can remove proposals, add L2s by hand and record detection
+proposed L2 use cases. With the log source filter on (issue #36, default), an L2 is only proposed
+for a threat when one of its L3 rules uses a log source of the threatened component; the others
+are listed as filtered out. The analyst can remove proposals, add L2s by hand and record detection
 requests. Completing the interview freezes it and replaces the system's links.
 
 Stored draft (`Interview.data`):
@@ -70,6 +72,7 @@ def load_settings(db: Session) -> dict[str, Any]:
     value = dict(row.value) if row else {}
     value.setdefault("proposal_threshold", DEFAULT_THRESHOLD)
     value.setdefault("mapping_seeded", False)
+    value.setdefault("log_source_filter", True)
     return value
 
 
@@ -83,6 +86,10 @@ def save_settings(db: Session, value: dict[str, Any], username: str) -> None:
 
 def threshold(db: Session) -> int:
     return int(load_settings(db)["proposal_threshold"])
+
+
+def log_source_filter(db: Session) -> bool:
+    return bool(load_settings(db)["log_source_filter"])
 
 
 def apply_default_mapping(db: Session) -> int:
@@ -192,8 +199,17 @@ def _rule_views(l2: L2UseCase, delivered: set[str]) -> list[dict]:
     return rules
 
 
-def evaluate(db: Session, data: dict, threshold_value: int) -> dict:
+def _l2_log_sources(l2: L2UseCase) -> set[str]:
+    """Names of the log sources any L3 rule of the L2 uses."""
+    return {x.name for r in l2.children for x in r.references if x.kind == RefKind.log_source}
+
+
+def evaluate(
+    db: Session, data: dict, threshold_value: int, filter_log_sources: bool | None = None
+) -> dict:
     """Resolve a stored draft and work out proposals, removals, gaps (see module docstring)."""
+    if filter_log_sources is None:
+        filter_log_sources = log_source_filter(db)
     ls_names = dict(
         db.execute(
             select(ReferenceItem.id, ReferenceItem.name).where(
@@ -248,14 +264,24 @@ def evaluate(db: Session, data: dict, threshold_value: int) -> dict:
         p["auto" if auto else "manual"] = True
 
     below: list[dict] = []
+    # L2s held back by the log source filter (#36): l2 id -> {(component key, category): score}
+    filtered: dict[int, dict[tuple[str, str], int | None]] = {}
+    l2_ls: dict[int, set[str]] = {}
     for (key, cat), t in threats.items():
         if t["score"] is None:
             continue
         targets = [i for i in mapped.get(cat, []) if i in l2s]
         if t["score"] >= threshold_value:
             for i in targets:
-                if l2s[i].parent.applicable:
-                    propose(i, key, cat, auto=True)
+                if not l2s[i].parent.applicable:
+                    continue
+                if filter_log_sources:
+                    if i not in l2_ls:
+                        l2_ls[i] = _l2_log_sources(l2s[i])
+                    if not (l2_ls[i] & comp_ls.get(key, set())):
+                        filtered.setdefault(i, {})[(key, cat)] = t["score"]
+                        continue
+                propose(i, key, cat, auto=True)
         else:
             below.append(
                 {
@@ -316,9 +342,36 @@ def evaluate(db: Session, data: dict, threshold_value: int) -> dict:
                 | {"rules": [], "reason": reason}
             )
 
+    not_matching = []
+    for l2_id, srcs_by in filtered.items():
+        if l2_id in proposals or l2_id in removed_reason:
+            continue  # proposed through another component, or already handled by hand
+        srcs = sorted(
+            (
+                {
+                    "component": key,
+                    "component_name": threats[(key, cat)]["component_name"],
+                    "category": cat,
+                    "score": score,
+                    "component_log_sources": sorted(comp_ls.get(key, set())),
+                }
+                for (key, cat), score in srcs_by.items()
+            ),
+            key=lambda s: (-(s["score"] or 0), s["component_name"], STRIDE.index(s["category"])),
+        )
+        not_matching.append(
+            _l2_brief(l2s[l2_id])
+            | {
+                "risk_score": max((s["score"] or 0) for s in srcs) or None,
+                "sources": srcs,
+                "log_sources": sorted(l2_ls.get(l2_id, set())),
+            }
+        )
+
     order = lambda v: (-(v["risk_score"] or 0), v["code"])  # noqa: E731
     accepted.sort(key=order)
     removed.sort(key=order)
+    not_matching.sort(key=order)
     below.sort(key=lambda b: (-b["score"], b["component_name"], STRIDE.index(b["category"])))
 
     requests = []
@@ -343,6 +396,8 @@ def evaluate(db: Session, data: dict, threshold_value: int) -> dict:
     return {
         "threshold": threshold_value,
         "mapping_empty": not any(mapped.values()),
+        "log_source_filter": filter_log_sources,
+        "log_source_mismatch": not_matching,
         "components": components,
         "incomplete": incomplete,
         "proposals": accepted,

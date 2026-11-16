@@ -20,6 +20,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Table,
     Text,
@@ -627,6 +628,36 @@ class Interview(Base):
     confirmation_recorded_by: Mapped[str | None] = mapped_column(String(64))
 
     system: Mapped[System] = relationship(back_populates="interviews", foreign_keys=[system_id])
+    attachments: Mapped[list["InterviewAttachment"]] = relationship(
+        back_populates="interview",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="InterviewAttachment.id",
+    )
+
+
+class InterviewAttachment(Base):
+    """An evidence file uploaded to an interview (issue #34): PDF, image, diagram or threat model.
+
+    The file is kept in the database (so backups and `magma db-copy` take it along). `data` is
+    deferred: lists of attachments do not load the file contents.
+    """
+
+    __tablename__ = "interview_attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    interview_id: Mapped[int] = mapped_column(
+        ForeignKey("interviews.id", ondelete="CASCADE"), index=True
+    )
+    filename: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(128))
+    size: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
+    uploaded_by: Mapped[str] = mapped_column(String(64))
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    interview: Mapped[Interview] = relationship(back_populates="attachments")
 
 
 class SystemLink(Base):

@@ -80,6 +80,9 @@ TEXTS: dict[str, dict[str, str]] = {
         "de": "Keine Detection Requests.",
         "nl": "Geen detectieverzoeken.",
     },
+    "evidence": {"en": "Evidence", "de": "Nachweise", "nl": "Bewijsstukken"},
+    "file": {"en": "File", "de": "Datei", "nl": "Bestand"},
+    "uploaded": {"en": "Added", "de": "Hinzugefügt", "nl": "Toegevoegd"},
     "threat": {"en": "Threat", "de": "Bedrohung", "nl": "Dreiging"},
     "signoff": {"en": "Confirmation", "de": "Bestätigung", "nl": "Bevestiging"},
     "signoff_text": {
@@ -286,6 +289,19 @@ def build(out, system, lang: str, app_name: str) -> bytes:
             pdf.p(r["text"], size=9)
     else:
         pdf.p(tr("no_requests"), color=MUTED)
+
+    if out.attachments:  # evidence files (#34): listed, not embedded
+        pdf.h2(tr("evidence"), need=25)
+        pdf.table(
+            [(tr("file"), 118, "L"), (tr("uploaded"), 60, "L")],
+            [
+                [
+                    f"{a.filename} ({max(1, round(a.size / 1024))} KB)",
+                    f"{a.uploaded_at.date().isoformat()} {a.uploaded_by}",
+                ]
+                for a in out.attachments
+            ],
+        )
 
     pdf.h2(tr("signoff"), need=45)
     pdf.p(tr("signoff_text"))

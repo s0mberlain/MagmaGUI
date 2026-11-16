@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app import audit
 from app import interviews as iv
+from app.api import evidence
 from app.api.deps import DB, SettingsDep
 from app.models import (
     Interview,
@@ -211,6 +212,8 @@ class InterviewOut(BaseModel):
     # earlier)
     min_date: date | None
     view: dict
+    # evidence files (#34)
+    attachments: list[evidence.AttachmentOut] = []
 
 
 class MappingL2(BaseModel):
@@ -227,6 +230,7 @@ class MappingCategory(BaseModel):
 
 class MappingOut(BaseModel):
     threshold: int
+    log_source_filter: bool
     categories: list[MappingCategory]
 
 
@@ -236,6 +240,10 @@ class MappingIn(BaseModel):
 
 class ThresholdIn(BaseModel):
     proposal_threshold: Annotated[int, Field(ge=1, le=25)]
+
+
+class LogSourceFilterIn(BaseModel):
+    enabled: bool
 
 
 # ---------------------------------------------------------------- helpers
@@ -391,6 +399,7 @@ def _interview_out(db: Session, i: Interview) -> InterviewOut:
         previous_id=i.previous_id,
         min_date=max((x.interview_date for x in earlier), default=None),
         view=view,
+        attachments=[evidence.out(a) for a in i.attachments],
     )
 
 
@@ -799,6 +808,7 @@ def _mapping_out(db: Session) -> MappingOut:
             )
     return MappingOut(
         threshold=iv.threshold(db),
+        log_source_filter=iv.log_source_filter(db),
         categories=[
             MappingCategory(category=c, l2s=sorted(by_cat[c], key=lambda x: x.code))
             for c in iv.STRIDE
@@ -819,6 +829,20 @@ def set_threshold(body: ThresholdIn, user: Admin, db: DB) -> MappingOut:
     iv.save_settings(db, s, user.username)
     changes = {"proposal_threshold": [old, body.proposal_threshold]}
     audit.record(db, user, "update", "stride_mapping", "proposal_threshold", changes)
+    db.commit()
+    return _mapping_out(db)
+
+
+@router.put("/stride-mapping/log-source-filter", response_model=MappingOut)
+def set_log_source_filter(body: LogSourceFilterIn, user: Admin, db: DB) -> MappingOut:
+    """Issue #36: only propose L2s whose rules use a log source of the threatened component."""
+    s = iv.load_settings(db)
+    old = s["log_source_filter"]
+    s["log_source_filter"] = body.enabled
+    iv.save_settings(db, s, user.username)
+    if old != body.enabled:
+        changes = {"log_source_filter": [old, body.enabled]}
+        audit.record(db, user, "update", "stride_mapping", "log_source_filter", changes)
     db.commit()
     return _mapping_out(db)
 

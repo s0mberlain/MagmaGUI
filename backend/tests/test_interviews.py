@@ -107,6 +107,14 @@ def analyst(make_user):
     return make_user("analyst")
 
 
+@pytest.fixture(autouse=True)
+def no_log_source_filter(admin):
+    """These tests cover #17 itself; the log source filter (#36) is tested in
+    test_issues_32_36.py."""
+    r = admin.put("/api/stride-mapping/log-source-filter", json={"enabled": False})
+    assert r.status_code == 200, r.text
+
+
 # ---------------------------------------------------------------- systems
 
 
@@ -850,7 +858,7 @@ def test_json_export_contains_systems(analyst, admin):
     assert sysx["interviews"][0]["confirmed_by"] == "J. Jansen"
     assert "AO-ACC" in [x["l2"] for x in sysx["links"]]
     assert {"category": "spoofing", "l2": "AO-ACC"} in data["stride_mapping"]
-    assert data["interview_settings"] == {"proposal_threshold": 8}
+    assert data["interview_settings"] == {"proposal_threshold": 8, "log_source_filter": False}
 
 
 def test_reinterview_on_the_same_day(analyst):

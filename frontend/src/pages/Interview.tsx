@@ -5,6 +5,7 @@ import {
   api,
   type ComponentView,
   type Interview as IV,
+  type InterviewAttachment,
   type InterviewCompare,
   type InterviewSave,
   type L2,
@@ -24,6 +25,7 @@ import {
   useLoad,
   useUnsavedGuard,
 } from "../components/ui";
+import { Markdown, MarkdownField } from "../components/Markdown";
 import { fmtDate, fmtTime, today } from "../lib/format";
 import { INTERVIEW_STATUS_LABEL, riskLevel, STATE_LABEL, STRIDE, STRIDE_HINT, STRIDE_LABEL } from "../lib/stride";
 import { getLang, t } from "../i18n";
@@ -143,6 +145,8 @@ export default function Interview() {
   useUnsavedGuard(dirty);
 
   const draft = iv?.status === "draft";
+  /** Evidence files are saved on their own, not with the draft (#34). */
+  const setAttachments = (list: InterviewAttachment[]) => setIv((x) => (x ? { ...x, attachments: list } : x));
   const canEdit = editor && draft;
 
   const update = (fn: (f: Form) => Form) => {
@@ -302,7 +306,7 @@ export default function Interview() {
   return (
     <>
       <nav className="crumbs" aria-label={t("Breadcrumb")}>
-        <Link to="/systems">{t("Systems")}</Link> / <Link to={`/systems/${iv.system_id}`}>{iv.system_name}</Link> /{" "}
+        <Link to="/systems">{t("Usecase Threat Modelling")}</Link> / <Link to={`/systems/${iv.system_id}`}>{iv.system_name}</Link> /{" "}
         <span>{t("Interview {date}", { date: fmtDate(iv.interview_date) })}</span>
       </nav>
       <header className="page-header">
@@ -368,7 +372,16 @@ export default function Interview() {
               </button>
             ))}
           </div>
-          {step === 1 && <StepContext iv={iv} form={form} update={update} readOnly={!canEdit} dateError={dateError} />}
+          {step === 1 && (
+            <StepContext
+              iv={iv}
+              form={form}
+              update={update}
+              readOnly={!canEdit}
+              dateError={dateError}
+              onAttachments={setAttachments}
+            />
+          )}
           {step === 2 && (
             <StepComponents form={form} update={update} readOnly={!canEdit} dupNames={dupNames} />
           )}
@@ -389,7 +402,7 @@ export default function Interview() {
           )}
         </>
       ) : (
-        <CompletedView iv={iv} editor={editor} onChange={(x) => setIv(x)} />
+        <CompletedView iv={iv} editor={editor} onChange={(x) => setIv(x)} onAttachments={setAttachments} />
       )}
     </>
   );
@@ -403,56 +416,215 @@ function StepContext({
   update,
   readOnly,
   dateError,
+  onAttachments,
 }: {
   iv: IV;
   form: Form;
   update: (fn: (f: Form) => Form) => void;
   readOnly: boolean;
   dateError: string | null;
+  onAttachments: (list: InterviewAttachment[]) => void;
 }) {
   return (
-    <section className="card stack">
-      <div className="form-grid">
-        <label className="field">
-          {t("Interview date")} *
-          <input
-            className={"input" + (dateError ? " is-invalid" : "")}
-            type="date"
-            max={today()}
-            min={iv.min_date ?? undefined}
-            value={form.interview_date}
-            disabled={readOnly}
-            aria-invalid={!!dateError}
-            onChange={(e) => update((f) => ({ ...f, interview_date: e.target.value }))}
-          />
-          {dateError && <span className="field-error">{dateError}</span>}
-        </label>
-        <label className="field">
-          {t("Participants")}
-          <input
-            className="input"
-            value={form.participants}
-            maxLength={10000}
-            disabled={readOnly}
-            onChange={(e) => update((f) => ({ ...f, participants: e.target.value }))}
-          />
-        </label>
-      </div>
-      <label className="field">
-        {t("Notes")}
-        <textarea
-          className="input textarea"
-          rows={5}
-          maxLength={10000}
+    <>
+      <section className="card stack">
+        <div className="form-grid">
+          <label className="field">
+            {t("Interview date")} *
+            <input
+              className={"input" + (dateError ? " is-invalid" : "")}
+              type="date"
+              max={today()}
+              min={iv.min_date ?? undefined}
+              value={form.interview_date}
+              disabled={readOnly}
+              aria-invalid={!!dateError}
+              onChange={(e) => update((f) => ({ ...f, interview_date: e.target.value }))}
+            />
+            {dateError && <span className="field-error">{dateError}</span>}
+          </label>
+          <label className="field">
+            {t("Participants")}
+            <input
+              className="input"
+              value={form.participants}
+              maxLength={10000}
+              disabled={readOnly}
+              onChange={(e) => update((f) => ({ ...f, participants: e.target.value }))}
+            />
+          </label>
+        </div>
+        <MarkdownField
+          label={t("Notes")}
+          rows={6}
           value={form.notes}
-          disabled={readOnly}
-          onChange={(e) => update((f) => ({ ...f, notes: e.target.value }))}
+          readOnly={readOnly}
+          placeholder={t("Markdown: **bold**, *italic*, lists, links, tables")}
+          onChange={(v) => update((f) => ({ ...f, notes: v }))}
         />
-      </label>
+        <p className="muted small" style={{ margin: 0 }}>
+          {t("System details such as owner, criticality and review interval are changed on the system page.")}{" "}
+          <Link to={`/systems/${iv.system_id}`}>{t("Open system")}</Link>
+        </p>
+      </section>
+      <Evidence iv={iv} editable={!readOnly} onChange={onAttachments} />
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ evidence (#34) */
+
+const EVIDENCE_ACCEPT = ".pdf,.png,.jpg,.jpeg,.vsd,.vsdx,.dia,.excalidraw,.tm7";
+const EVIDENCE_MAX = 20 * 1024 * 1024;
+
+function fmtSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const KIND_LABEL: Record<InterviewAttachment["kind"], string> = {
+  pdf: "PDF",
+  image: t("Image"),
+  diagram: t("Diagram"),
+  threat_model: t("Threat model"),
+};
+
+function Evidence({
+  iv,
+  editable,
+  onChange,
+}: {
+  iv: IV;
+  editable: boolean;
+  onChange: (list: InterviewAttachment[]) => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [viewing, setViewing] = useState<InterviewAttachment | null>(null);
+  const list = iv.attachments ?? [];
+
+  async function upload(files: FileList | null) {
+    if (!files?.length) return;
+    setError(null);
+    setBusy(true);
+    let current = list;
+    const failed: string[] = [];
+    for (const f of Array.from(files)) {
+      if (f.size > EVIDENCE_MAX) {
+        failed.push(t("{file}: the file is larger than 20 MB", { file: f.name }));
+        continue;
+      }
+      try {
+        current = [...current, await api.uploadAttachment(iv.id, f)];
+        onChange(current);
+      } catch (e) {
+        failed.push(`${f.name}: ${(e as Error).message}`);
+      }
+    }
+    setBusy(false);
+    if (failed.length) setError(failed.join(" · "));
+  }
+
+  async function remove(a: InterviewAttachment) {
+    const ok = await confirmDialog(t("Remove {file} from the interview?", { file: a.filename }), {
+      danger: true,
+      confirmLabel: t("Remove"),
+    });
+    if (!ok) return;
+    try {
+      await api.deleteAttachment(a.id);
+      onChange(list.filter((x) => x.id !== a.id));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  return (
+    <section className="card stack-sm" aria-labelledby="evh">
+      <div className="section-head">
+        <h2 id="evh" className="h-sm">
+          {t("Evidence")} <span className="count">{list.length}</span>
+        </h2>
+        {editable && (
+          <label className={"btn btn-sm" + (busy ? " disabled" : "")}>
+            {busy ? t("Uploading…") : t("+ Add files")}
+            <input
+              type="file"
+              multiple
+              accept={EVIDENCE_ACCEPT}
+              disabled={busy}
+              className="sr-only"
+              onChange={(e) => {
+                void upload(e.target.files);
+                e.target.value = "";
+              }}
+            />
+          </label>
+        )}
+      </div>
       <p className="muted small" style={{ margin: 0 }}>
-        {t("System details such as owner, criticality and review interval are changed on the system page.")}{" "}
-        <Link to={`/systems/${iv.system_id}`}>{t("Open system")}</Link>
+        {t("PDF, images (JPG, PNG), diagrams (Visio, Dia, Excalidraw) and Threat Modeling Tool files (.tm7), up to 20 MB each. PDFs and images can be viewed here.")}
       </p>
+      <ErrorNote error={error} />
+      {list.length > 0 ? (
+        <ul className="plain-list evidence-list">
+          {list.map((a) => (
+            <li key={a.id}>
+              {a.viewable ? (
+                <button type="button" className="link-btn evidence-name" onClick={() => setViewing(a)}>
+                  {a.filename}
+                </button>
+              ) : (
+                <a className="evidence-name" href={api.attachmentUrl(a.id, true)} download>
+                  {a.filename}
+                </a>
+              )}
+              <span className="chip chip-neutral">{KIND_LABEL[a.kind]}</span>
+              <span className="small muted">
+                {fmtSize(a.size)} · {t("added {time} by {user}", { time: fmtTime(a.uploaded_at), user: a.uploaded_by })}
+              </span>
+              <span className="grow" />
+              {a.viewable && (
+                <button type="button" className="btn btn-sm" onClick={() => setViewing(a)}>
+                  {t("View")}
+                </button>
+              )}
+              <a className="btn btn-sm" href={api.attachmentUrl(a.id, true)} download>
+                {t("Download")}
+              </a>
+              {editable && (
+                <button type="button" className="btn btn-sm" onClick={() => void remove(a)}>
+                  {t("Remove")}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="muted" style={{ margin: 0 }}>
+          {t("No evidence files.")}
+        </p>
+      )}
+      {viewing && (
+        <Modal title={viewing.filename} open onClose={() => setViewing(null)} wide>
+          <div className="stack-sm">
+            {viewing.kind === "image" ? (
+              <img className="evidence-image" src={api.attachmentUrl(viewing.id)} alt={viewing.filename} />
+            ) : (
+              <iframe className="evidence-frame" src={api.attachmentUrl(viewing.id)} title={viewing.filename} />
+            )}
+            <div className="row-actions">
+              <a className="btn" href={api.attachmentUrl(viewing.id)} target="_blank" rel="noreferrer">
+                {t("Open in new tab")}
+              </a>
+              <a className="btn" href={api.attachmentUrl(viewing.id, true)} download>
+                {t("Download")}
+              </a>
+            </div>
+          </div>
+        </Modal>
+      )}
     </section>
   );
 }
@@ -770,6 +942,7 @@ function StepProposals({
   const [removing, setRemoving] = useState<Proposal | null>(null);
   const [adding, setAdding] = useState(false);
   const [showBelow, setShowBelow] = useState(false);
+  const [showMismatch, setShowMismatch] = useState(true);
   const [request, setRequest] = useState<{ text: string; threat: string }>({ text: "", threat: "" });
   const threatOptions = v.components.flatMap((c) =>
     c.threats
@@ -799,6 +972,7 @@ function StepProposals({
         {t("Proposed: every L2 use case mapped to the STRIDE category of a threat with a risk score of at least {n} (likelihood × impact).", {
           n: v.threshold,
         })}{" "}
+        {v.log_source_filter && t("Only use cases with a rule that uses a log source of the component are proposed.")}{" "}
         <Link to="/stride-mapping">{t("STRIDE mapping")}</Link>
       </p>
       {v.mapping_empty && <div className="note-box">{t("There is no STRIDE mapping yet, so nothing is proposed automatically. You can add use cases by hand.")}</div>}
@@ -877,6 +1051,56 @@ function StepProposals({
                 )}
               </div>
             ))}
+        </section>
+      )}
+
+      {v.log_source_mismatch.length > 0 && (
+        <section className="card stack-sm">
+          <button type="button" className="link-btn iv-toggle" aria-expanded={showMismatch} onClick={() => setShowMismatch((x) => !x)}>
+            {showMismatch ? "▾" : "▸"} {t("Log sources do not match ({n} use cases)", { n: v.log_source_mismatch.length })}
+          </button>
+          {showMismatch && (
+            <>
+              <p className="muted small" style={{ margin: 0 }}>
+                {t("Mapped to a threat at or above the threshold, but no rule of the use case uses a log source of the component. Add log sources to the component, or add the use case by hand.")}
+              </p>
+              {v.log_source_mismatch.map((m) => (
+                <div key={m.l2_id} className="iv-below">
+                  <div>
+                    <span className="mono small">{m.code}</span> {m.name} <RiskScore value={m.risk_score} />{" "}
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        disabled={busy}
+                        onClick={() =>
+                          void addL2(
+                            m.l2_id,
+                            m.sources.map((s) => ({ component: s.component, category: s.category })),
+                          )
+                        }
+                      >
+                        {t("Add")}
+                      </button>
+                    )}
+                  </div>
+                  <div className="small muted">
+                    {t("Use case needs")}: {m.log_sources.length ? m.log_sources.join(", ") : t("no log source recorded on its rules")}
+                  </div>
+                  <ul className="plain-list small">
+                    {m.sources.map((s) => (
+                      <li key={`${s.component}:${s.category}`}>
+                        {s.component_name} / {STRIDE_LABEL[s.category]} ({s.score ?? "–"}) ·{" "}
+                        <span className="muted">
+                          {t("component delivers")}: {s.component_log_sources.length ? s.component_log_sources.join(", ") : t("no log sources")}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </>
+          )}
         </section>
       )}
 
@@ -1156,7 +1380,17 @@ function ThreatTable({ components }: { components: ComponentView[] }) {
   );
 }
 
-function CompletedView({ iv, editor, onChange }: { iv: IV; editor: boolean; onChange: (iv: IV) => void }) {
+function CompletedView({
+  iv,
+  editor,
+  onChange,
+  onAttachments,
+}: {
+  iv: IV;
+  editor: boolean;
+  onChange: (iv: IV) => void;
+  onAttachments: (list: InterviewAttachment[]) => void;
+}) {
   const v = iv.view;
   const cmp = useLoad<InterviewCompare | null>(
     () => (iv.previous_id ? api.compareInterview(iv.id).catch(() => null) : Promise.resolve(null)),
@@ -1216,9 +1450,11 @@ function CompletedView({ iv, editor, onChange }: { iv: IV; editor: boolean; onCh
           <dt>{t("Participants")}</dt>
           <dd>{iv.participants || "–"}</dd>
           <dt>{t("Notes")}</dt>
-          <dd style={{ whiteSpace: "pre-wrap" }}>{iv.notes || "–"}</dd>
+          <dd>{iv.notes ? <Markdown text={iv.notes} /> : "–"}</dd>
         </dl>
       </section>
+
+      {iv.attachments.length > 0 && <Evidence iv={iv} editable={false} onChange={onAttachments} />}
 
       {cmp.data && <Comparison c={cmp.data} />}
 

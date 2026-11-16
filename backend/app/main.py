@@ -22,6 +22,7 @@ from app.api import (
     auth,
     business,
     configs,
+    evidence,
     gitsync_api,
     growth,
     integrations,
@@ -206,6 +207,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         integrations.router,
         app_settings.router,
         systems.router,
+        evidence.router,
     ):
         api.include_router(r)
     app.include_router(api)

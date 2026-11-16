@@ -276,7 +276,7 @@ export default function Systems() {
     <>
       <header className="page-header">
         <div>
-          <h1>{t("Systems")}</h1>
+          <h1>{t("Usecase Threat Modelling")}</h1>
           <div className="subtitle">
             {t(
               "Business applications and platforms with their owner. Interview the owner to find out which use cases a system needs.",

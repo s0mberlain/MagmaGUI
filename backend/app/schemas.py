@@ -17,7 +17,10 @@ from app.models import AuthSource, Lifecycle, RefKind, Role
 # Identifier rules from the MaGMa UCF tool: L1 "XX", L2 "XX-YYY", L3 "XX-YYY-NN".
 L1Code = Annotated[str, StringConstraints(pattern=r"^[A-Z]{2}$")]
 L2Code = Annotated[str, StringConstraints(pattern=r"^[A-Z]{2}-[A-Z0-9]{3}$")]
-L3Code = Annotated[str, StringConstraints(pattern=r"^[A-Z]{2}-[A-Z0-9]{3}-\d{2,3}$")]
+# XX-YYY-NN, optionally with extra identifiers before the sequence number: XX-YYY-WIN-AD-01
+L3_CODE_PATTERN = r"^[A-Z]{2}-[A-Z0-9]{3}-(?:[A-Z0-9]+-)*\d{2,3}$"
+L3_CODE_MAX = 64
+L3Code = Annotated[str, StringConstraints(pattern=L3_CODE_PATTERN, max_length=L3_CODE_MAX)]
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
 Metric = Annotated[float, Field(ge=0, le=1)]
 AttackId = Annotated[str, StringConstraints(pattern=r"^T\d{4}(\.\d{3})?$")]

@@ -787,6 +787,8 @@ export const api = {
   driverCoverage: () => request<DriverCoverageReport>("GET", "/api/drivers/coverage"),
   compliance: () => request<ComplianceSource[]>("GET", "/api/compliance"),
   createSource: (name: string) => request<ComplianceSource>("POST", "/api/compliance", { name }),
+  renameSource: (id: number, name: string) =>
+    request<ComplianceSource>("PATCH", `/api/compliance/${id}`, { name }),
   deleteSource: (id: number) => request<void>("DELETE", `/api/compliance/${id}?confirm=true`),
   createComplianceDriver: (sourceId: number, body: { ref: string; name: string; description: string }) =>
     request<ComplianceDriver>("POST", `/api/compliance/${sourceId}/drivers`, body),

@@ -33,12 +33,13 @@ from app.models import (
     ReferenceItem,
     RefKind,
 )
+from app.schemas import L3_CODE_MAX, L3_CODE_PATTERN
 
 MAX_UNPACKED_BYTES = 200 * 2**20
 
 L1_RE = re.compile(r"^[A-Z]{2}$")
 L2_RE = re.compile(r"^[A-Z]{2}-[A-Z0-9]{3}$")
-L3_RE = re.compile(r"^[A-Z]{2}-[A-Z0-9]{3}-\d{2,3}$")
+L3_RE = re.compile(L3_CODE_PATTERN)
 ATTACK_RE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b")
 
 # App-only L2 columns with every linked driver (the classic columns hold one value each)
@@ -899,12 +900,14 @@ class _Importer:
             if not raw:
                 continue
             code = raw.upper()
-            if not L3_RE.fullmatch(code):
-                self.r.error(sheet, r, f"'{raw}' is not a valid rule identifier (XX-YYY-NN)")
+            if len(code) > L3_CODE_MAX or not L3_RE.fullmatch(code):
+                self.r.error(
+                    sheet, r, f"'{raw}' is not a valid rule identifier (XX-YYY-NN or XX-YYY-...-NN)"
+                )
                 continue
-            parent = l2s.get(code.rsplit("-", 1)[0])
+            parent = l2s.get(code[:6])
             if parent is None:
-                self.r.error(sheet, r, f"{code}: no L2 use case {code.rsplit('-', 1)[0]}")
+                self.r.error(sheet, r, f"{code}: no L2 use case {code[:6]}")
                 continue
             vals: dict[str, Any] = {}
             name = _text(ws.cell(r, c_name).value) if c_name else ""

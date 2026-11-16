@@ -17,21 +17,63 @@ function initials(name: string): string {
   );
 }
 
+const COLLAPSE_KEY = "magma.sidebar.collapsed";
+
 export default function Layout() {
   const { user, logout, can } = useAuth();
   const name = user?.display_name || user?.username || "";
   // On a phone the menu is folded away behind a button and closes again after a choice.
   const [open, setOpen] = useState(false);
+  // On a wide screen the whole sidebar can be folded to a thin rail; the choice is remembered.
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(COLLAPSE_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggleCollapsed = () =>
+    setCollapsed((x) => {
+      try {
+        localStorage.setItem(COLLAPSE_KEY, x ? "0" : "1");
+      } catch {
+        /* storage blocked: keep the choice for this visit only */
+      }
+      return !x;
+    });
   const location = useLocation();
   useEffect(() => setOpen(false), [location.pathname]);
   const visible = NAV_ITEMS.filter((item) => !item.roles || can(...item.roles));
 
   return (
     <div className="shell">
-      <nav className={"sidebar" + (open ? " is-open" : "")} aria-label={t("Main")}>
+      <nav
+        className={"sidebar" + (open ? " is-open" : "") + (collapsed ? " is-collapsed" : "")}
+        aria-label={t("Main")}
+      >
         <div className="brand">
           <Logo />
           <span className="brand-name">{t("Magma UCF")}</span>
+          <button
+            type="button"
+            className="nav-collapse"
+            aria-expanded={!collapsed}
+            aria-controls="nav-menu"
+            title={collapsed ? t("Show menu") : t("Hide menu")}
+            aria-label={collapsed ? t("Show menu") : t("Hide menu")}
+            onClick={toggleCollapsed}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d={collapsed ? "M6 3l5 5-5 5" : "M10 3L5 8l5 5"}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
           <button
             type="button"
             className="nav-toggle"

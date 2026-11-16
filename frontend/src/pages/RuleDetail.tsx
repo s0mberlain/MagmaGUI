@@ -6,6 +6,7 @@ import { useAuth } from "../auth";
 import ConfigPanel from "../components/ConfigPanel";
 import LifecyclePanel from "../components/LifecyclePanel";
 import { DriverBlock } from "../components/Drivers";
+import { MarkdownField } from "../components/Markdown";
 import OutputPanel from "../components/OutputPanel";
 import { Chips, confirmDialog, ErrorNote, MultiSelect, StatusPill, useLoad, useUnsavedGuard } from "../components/ui";
 import { fmtDate, num, pct, refHref } from "../lib/format";
@@ -515,26 +516,18 @@ export default function RuleDetail() {
                   </div>
                 ))}
               </div>
-              <label className="field">
-                {t("Description")}
-                <textarea
-                  className="input textarea"
-                  rows={3}
-                  disabled={!editor}
-                  value={form.description}
-                  onChange={(ev) => set({ description: ev.target.value })}
-                />
-              </label>
-              <label className="field">
-                {t("Comments")}
-                <textarea
-                  className="input textarea"
-                  rows={3}
-                  disabled={!editor}
-                  value={form.comments}
-                  onChange={(ev) => set({ comments: ev.target.value })}
-                />
-              </label>
+              <MarkdownField
+                label={t("Description")}
+                readOnly={!editor}
+                value={form.description}
+                onChange={(v) => set({ description: v })}
+              />
+              <MarkdownField
+                label={t("Comments")}
+                readOnly={!editor}
+                value={form.comments}
+                onChange={(v) => set({ comments: v })}
+              />
               <p className="small muted" style={{ margin: 0 }}>
                 {t("Last changed")} {fmtDate(r.updated_at)}
               </p>

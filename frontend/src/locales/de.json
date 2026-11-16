@@ -826,5 +826,7 @@
   "Rename compliance source": "Compliance-Quelle umbenennen",
   "e.g. ISO 27001": "z. B. ISO 27001",
   "Requirements and their links to use cases stay as they are.": "Anforderungen und ihre Verknüpfungen zu Use Cases bleiben erhalten.",
-  "Format {a}; extra identifiers may go before the number, e.g. {b}.": "Format {a}; zusätzliche Kennungen können vor der Nummer stehen, z. B. {b}."
+  "Format {a}; extra identifiers may go before the number, e.g. {b}.": "Format {a}; zusätzliche Kennungen können vor der Nummer stehen, z. B. {b}.",
+  "New entry…": "Neuer Eintrag…",
+  "New entry for {list}": "Neuer Eintrag für {list}"
 }

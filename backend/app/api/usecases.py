@@ -511,6 +511,9 @@ def create_l3(body: L3Create, user: Editor, db: DB, settings: SettingsDep) -> L3
     if parent is None:
         raise HTTPException(422, f"No L2 use case with identifier {l2_code}")
     data = body.model_dump(exclude_unset=True)
+    # A new rule is onboarded from the day it is created unless a date is given (issue #27);
+    # an explicit null leaves it empty.
+    data.setdefault("onboarded_at", date.today())
     l3 = L3UseCase(parent=parent, code=data.pop("code"), name=data.pop("name"), references=[])
     db.add(l3)
     _set_l3_refs(db, l3, data)

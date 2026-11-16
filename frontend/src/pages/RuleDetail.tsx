@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { flushSync } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, type L3, type RefItem } from "../api";
+import { api, type L3, type RefItem, type RefKind } from "../api";
 import { useAuth } from "../auth";
 import ConfigPanel from "../components/ConfigPanel";
 import LifecyclePanel from "../components/LifecyclePanel";
@@ -180,6 +180,12 @@ export default function RuleDetail() {
   }
 
   const opts = (items: RefItem[] | undefined) => (items ?? []).map((x) => ({ value: x.name, label: x.name }));
+  // new reference list entries can be added right from the dropdown (issue #26)
+  const addRef = (kind: RefKind) => async (name: string) => {
+    const item = await api.createRef(kind, { name, description: "" });
+    await lists.reload();
+    return item.name;
+  };
 
   return (
     <>
@@ -473,6 +479,7 @@ export default function RuleDetail() {
                   value={form.log_sources}
                   disabled={!editor}
                   onChange={(v) => set({ log_sources: v })}
+                  onCreate={addRef("log_source")}
                 />
                 <MultiSelect
                   label={t("Detection technologies")}
@@ -480,6 +487,7 @@ export default function RuleDetail() {
                   value={form.detection_technologies}
                   disabled={!editor}
                   onChange={(v) => set({ detection_technologies: v })}
+                  onCreate={addRef("detection_technology")}
                 />
                 <MultiSelect
                   label={t("Scopes")}
@@ -487,6 +495,7 @@ export default function RuleDetail() {
                   value={form.scopes}
                   disabled={!editor}
                   onChange={(v) => set({ scopes: v })}
+                  onCreate={addRef("scope")}
                 />
               </div>
               <div className="form-grid ref-links" aria-label={t("Rules that share an entry")}>

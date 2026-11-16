@@ -826,5 +826,7 @@
   "Rename compliance source": "Compliancebron hernoemen",
   "e.g. ISO 27001": "bijv. ISO 27001",
   "Requirements and their links to use cases stay as they are.": "Eisen en hun koppelingen met use cases blijven behouden.",
-  "Format {a}; extra identifiers may go before the number, e.g. {b}.": "Formaat {a}; extra kenmerken mogen vóór het nummer staan, bijv. {b}."
+  "Format {a}; extra identifiers may go before the number, e.g. {b}.": "Formaat {a}; extra kenmerken mogen vóór het nummer staan, bijv. {b}.",
+  "New entry…": "Nieuw item…",
+  "New entry for {list}": "Nieuw item voor {list}"
 }

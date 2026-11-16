@@ -158,6 +158,7 @@ export function MultiSelect({
   value,
   onChange,
   disabled,
+  onCreate,
 }: {
   label: string;
   /** options with a `group` are listed under that heading (in the order the groups appear) */
@@ -165,10 +166,40 @@ export function MultiSelect({
   value: string[];
   onChange: (v: string[]) => void;
   disabled?: boolean;
+  /** When set, a new entry can be typed in at the end of the list; it is created (e.g. in a
+   * reference list), then selected. Resolves to the value of the created option. */
+  onCreate?: (name: string) => Promise<string>;
 }) {
   const id = useId();
   const toggle = (v: string) => onChange(value.includes(v) ? value.filter((x) => x !== v) : [...value, v]);
   const chosen = options.filter((o) => value.includes(o.value));
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function create() {
+    const name = draft.trim();
+    if (!name || !onCreate || busy) return;
+    setError(null);
+    // an entry with that name exists already: just select it
+    const existing = options.find((o) => o.value.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      if (!value.includes(existing.value)) onChange([...value, existing.value]);
+      setDraft("");
+      return;
+    }
+    setBusy(true);
+    try {
+      const created = await onCreate(name);
+      onChange([...value, created]);
+      setDraft("");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="field">
       <span id={id}>{label}</span>
@@ -202,6 +233,33 @@ export function MultiSelect({
               </div>
             ))}
             {!options.length && <span className="muted">{t("The reference list is empty.")}</span>}
+            {onCreate && (
+              <div className="multi-add">
+                <input
+                  className="input input-sm grow"
+                  value={draft}
+                  maxLength={200}
+                  placeholder={t("New entry…")}
+                  aria-label={t("New entry for {list}", { list: label })}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Enter adds the entry instead of submitting the surrounding form
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void create();
+                    }
+                  }}
+                />
+                <button type="button" className="btn btn-sm" disabled={!draft.trim() || busy} onClick={() => void create()}>
+                  {t("Add")}
+                </button>
+                {error && (
+                  <span className="form-error small" role="alert">
+                    {error}
+                  </span>
+                )}
+              </div>
+            )}
           </fieldset>
         )}
       </details>

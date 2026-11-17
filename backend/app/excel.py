@@ -21,7 +21,7 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app import lifecycle
+from app import lifecycle, rulename
 from app.models import (
     BusinessDriver,
     ComplianceDriver,
@@ -247,9 +247,11 @@ def export_workbook(db: Session) -> bytes:
             "ATT&CK techniques",
             "Risk level",
             "Target implementation",
+            "SIEM name",
         ],
         extra_from=18,
     )
+    siem_name = rulename.formatter(db)
     for i, x in enumerate(l3s, start=2):
         refs = {k: sorted(r.name for r in x.references if r.kind == k) for k in RefKind}
         ws.cell(i, 1, f"=COUNTIF(E:E,E{i})")
@@ -279,6 +281,7 @@ def export_workbook(db: Session) -> bytes:
         ws.cell(i, 23, _join(x.attack_techniques))
         ws.cell(i, 24, x.risk_level)
         ws.cell(i, 25, x.target_implementation).number_format = "0%"
+        ws.cell(i, 26, siem_name(x))  # issue #50, export only
     _widths(ws, {"F": 12, "G": 40, "H": 40, "N": 26, "O": 22, "P": 22, "Q": 30})
     ws.freeze_panes = "G2"
 

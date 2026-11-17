@@ -81,3 +81,10 @@ export function codeList(codes: string[], max = 20): string {
   if (codes.length <= max) return codes.join(", ");
   return t("{codes} and {n} more", { codes: codes.slice(0, max).join(", "), n: codes.length - max });
 }
+
+/** File size for people: 512 B, 40 KB, 3.2 MB. */
+export function fmtSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}

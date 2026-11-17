@@ -1,5 +1,6 @@
 import type { RuleNameVariable } from "./lib/ruleName";
 import type { Lang } from "./i18n";
+import { translateServer } from "./serverTexts";
 export type Role = "admin" | "analyst" | "auditor";
 
 export interface User {
@@ -183,6 +184,8 @@ export interface L3 {
   comments: string;
   attack_techniques: string[];
   siem_rule_ids?: string[];
+  /** built on the server from the SIEM name format (#50) */
+  siem_name?: string | null;
   onboarded_at: string | null;
   last_verified_at: string | null;
   last_verified_by: string | null;
@@ -261,6 +264,8 @@ export interface RefItem {
   /** Codes of what uses the entry: L2 use cases for threat actors, L3 rules otherwise.
    *  Only filled by the list endpoint. */
   used_by?: string[];
+  /** log sources: systems whose interview lists the entry on a component (#39) */
+  used_by_systems?: string[];
 }
 export interface BusinessDriver {
   id: number;
@@ -725,7 +730,14 @@ export interface InterviewRow {
 export interface SystemDetail extends SystemRow {
   links: SystemLinkInfo[];
   gap_no_rules: { code: string; name: string }[];
-  gap_log_sources: { l2_code: string; rule_code: string; rule_name: string; missing: string[]; components: string[] }[];
+  /** #41: grouped per L2; `blind` = no active rule gets any log source it needs (counts as gap) */
+  gap_log_sources: {
+    l2_code: string;
+    l2_name: string;
+    components: string[];
+    blind: boolean;
+    rules: { rule_code: string; rule_name: string; missing: string[]; partial: boolean }[];
+  }[];
   gap_requests: { text: string; component: string; category: Stride }[];
   interviews: InterviewRow[];
 }
@@ -760,6 +772,9 @@ export interface ProposalRule {
   log_sources: string[];
   missing: string[];
   unknown: boolean;
+  /** #40: only onboarding, operational and maintenance rules count */
+  active: boolean;
+  coverage: "unknown" | "blind" | "partial" | "ok" | "inactive";
 }
 
 export interface Proposal {
@@ -773,6 +788,8 @@ export interface Proposal {
   auto: boolean;
   manual: boolean;
   rules: ProposalRule[];
+  /** #38/#41: how well the active rules see the threatened components */
+  detection?: "no_rules" | "unknown" | "blind" | "partial" | "ok";
   reason?: string;
   /** completed interviews: the use case was deleted since */
   deleted?: boolean;
@@ -795,7 +812,11 @@ export interface InterviewView {
   added: { l2_id: number; threats: ThreatRef[] }[];
   removed_ids: number[];
   requests: { key: string; text: string; component: string; component_name: string; category: Stride }[];
-  log_source_gaps: { l2_code: string; rule_code: string; rule_name: string; missing: string[] }[];
+  log_source_gaps: { l2_code: string; rule_code: string; rule_name: string; missing: string[]; partial?: boolean }[];
+  /** #38: accepted use cases without any active rule */
+  no_detection?: string[];
+  /** #38: components with applying threats but no log sources */
+  components_without_log_sources?: string[];
   /** #36: proposals are limited to L2s whose rules use a log source of the component */
   log_source_filter: boolean;
   /** #36: L2s the filter held back */
@@ -829,6 +850,14 @@ export interface InterviewAttachment {
   uploaded_at: string;
   viewable: boolean;
   kind: "pdf" | "image" | "diagram" | "threat_model";
+  /** the business owner's sign-off (#42) */
+  signoff?: boolean;
+}
+
+export interface EvidenceStorage {
+  files: number;
+  used_bytes: number;
+  limit_bytes: number;
 }
 
 export interface Interview {
@@ -960,7 +989,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 function detailMessage(data: unknown): string | null {
   if (!data || typeof data !== "object" || !("detail" in data)) return null;
   const d = (data as { detail: unknown }).detail;
-  if (typeof d === "string") return d;
+  if (typeof d === "string") return translateServer(d);
   if (Array.isArray(d)) return d.map((e) => e?.msg ?? String(e)).join("; ");
   return null;
 }
@@ -1009,7 +1038,10 @@ export const api = {
   l2: (code: string) => request<L2>("GET", `/api/l2/${enc(code)}`),
   createL2: (body: L2Input & { code: string; name: string }) => request<L2>("POST", "/api/l2", body),
   updateL2: (code: string, body: L2Input) => request<L2>("PATCH", `/api/l2/${enc(code)}`, body),
-  deleteL2: (code: string) => request<void>("DELETE", `/api/l2/${enc(code)}`),
+  /** Refused with 409 and `systems` while systems link the L2 and confirm is false (#48). */
+  deleteL2: (code: string, confirm = false) =>
+    request<void>("DELETE", `/api/l2/${enc(code)}${confirm ? "?confirm=true" : ""}`),
+  evidenceStorage: () => request<EvidenceStorage>("GET", "/api/evidence/storage"),
   l3s: (filter: { l2?: string; l1?: string } = {}) =>
     request<L3[]>("GET", `/api/l3?${new URLSearchParams(filter as Record<string, string>)}`),
   l3: (code: string) => request<L3>("GET", `/api/l3/${enc(code)}`),
@@ -1159,7 +1191,8 @@ export const api = {
     request<Interview>("POST", `/api/interviews/${id}/complete`, { expected_version: version }),
   confirmInterview: (id: number, body: { confirmed_by: string; confirmed_at: string }) =>
     request<Interview>("PUT", `/api/interviews/${id}/confirmation`, body),
-  unconfirmInterview: (id: number) => request<Interview>("DELETE", `/api/interviews/${id}/confirmation`),
+  unconfirmInterview: (id: number, reason: string) =>
+    request<Interview>("DELETE", `/api/interviews/${id}/confirmation`, { reason }),
   compareInterview: (id: number) => request<InterviewCompare>("GET", `/api/interviews/${id}/compare`),
   interviewPdfUrl: (id: number, lang: Lang) => `/api/interviews/${id}/pdf?lang=${lang}`,
   strideMapping: () => request<StrideMapping>("GET", "/api/stride-mapping"),
@@ -1169,10 +1202,10 @@ export const api = {
     request<StrideMapping>("PUT", "/api/stride-mapping/threshold", { proposal_threshold: value }),
   setLogSourceFilter: (enabled: boolean) =>
     request<StrideMapping>("PUT", "/api/stride-mapping/log-source-filter", { enabled }),
-  uploadAttachment: async (interviewId: number, file: File): Promise<InterviewAttachment> => {
+  uploadAttachment: async (interviewId: number, file: File, signoff = false): Promise<InterviewAttachment> => {
     const fd = new FormData();
     fd.append("file", file);
-    const res = await fetch(`/api/interviews/${interviewId}/attachments`, {
+    const res = await fetch(`/api/interviews/${interviewId}/attachments${signoff ? "?signoff=true" : ""}`, {
       method: "POST",
       body: fd,
       credentials: "same-origin",

@@ -19,12 +19,15 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
     Table,
     Text,
     UniqueConstraint,
+    false,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -598,6 +601,16 @@ class Interview(Base):
     """
 
     __tablename__ = "interviews"
+    # at most one draft per system (#45)
+    __table_args__ = (
+        Index(
+            "uq_interviews_one_draft",
+            "system_id",
+            unique=True,
+            sqlite_where=text("status = 'draft'"),
+            postgresql_where=text("status = 'draft'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     system_id: Mapped[int] = mapped_column(ForeignKey("systems.id", ondelete="CASCADE"), index=True)
@@ -656,6 +669,8 @@ class InterviewAttachment(Base):
     data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
     uploaded_by: Mapped[str] = mapped_column(String(64))
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # the business owner's sign-off (#42): may be added after completion, until confirmed
+    signoff: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     interview: Mapped[Interview] = relationship(back_populates="attachments")
 

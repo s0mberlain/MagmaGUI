@@ -106,6 +106,8 @@ class Settings(BaseSettings):
 
     # Largest request body (uploads are capped at 20 MB on their own).
     max_body_mb: int = 25
+    # Total size of all interview evidence files in the database (#47); 0 = no limit.
+    evidence_max_total_mb: int = 2048
 
     @property
     def demo_data_allowed(self) -> bool:

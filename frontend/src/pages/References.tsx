@@ -87,19 +87,29 @@ function RefList({ kind }: { kind: RefKind }) {
 
   const usedCell = (item: RefItem) => {
     const codes = item.used_by ?? [];
-    if (!codes.length) return <span className="muted">0</span>;
+    const systems = item.used_by_systems ?? [];
+    const sys = systems.length > 0 && (
+      <span className="small muted" title={systems.join(", ")}>
+        {" "}
+        {t("+ {n} systems", { n: systems.length })}
+      </span>
+    );
+    if (!codes.length) return <span className="muted">0{sys}</span>;
     return (
-      <Link
-        to={refHref(kind, item.name)}
-        title={codeList(codes)}
-        aria-label={
-          actors
-            ? t("{n} L2 use cases use {name}", { n: codes.length, name: item.name })
-            : t("{n} L3 rules use {name}", { n: codes.length, name: item.name })
-        }
-      >
-        {codes.length}
-      </Link>
+      <>
+        <Link
+          to={refHref(kind, item.name)}
+          title={codeList(codes)}
+          aria-label={
+            actors
+              ? t("{n} L2 use cases use {name}", { n: codes.length, name: item.name })
+              : t("{n} L3 rules use {name}", { n: codes.length, name: item.name })
+          }
+        >
+          {codes.length}
+        </Link>
+        {sys}
+      </>
     );
   };
 
@@ -128,7 +138,9 @@ function RefList({ kind }: { kind: RefKind }) {
     try {
       await api.deleteRef(kind, item.id);
     } catch (e) {
-      const used = e instanceof ApiError && e.status === 409 ? (e.data as { used_by?: string[] })?.used_by : null;
+      const data = e instanceof ApiError && e.status === 409 ? (e.data as { used_by?: string[]; used_by_systems?: string[] }) : null;
+      const used = data?.used_by ?? null;
+      const systems = data?.used_by_systems ?? [];
       if (!used) {
         setError((e as Error).message);
         return;
@@ -143,11 +155,18 @@ function RefList({ kind }: { kind: RefKind }) {
           confirmLabel: t("Delete and remove everywhere"),
           danger: true,
           body: (
-            <ul className="confirm-list mono">
-              {used.map((c) => (
-                <li key={c}>{c}</li>
-              ))}
-            </ul>
+            <>
+              <ul className="confirm-list mono">
+                {used.map((c) => (
+                  <li key={c}>{c}</li>
+                ))}
+              </ul>
+              {systems.length > 0 && (
+                <p className="small">
+                  {t("Interviews of these systems list it on a component: {list}", { list: systems.join(", ") })}
+                </p>
+              )}
+            </>
           ),
         },
       );

@@ -9,8 +9,8 @@ A SIEM (or a small script next to it) pushes two kinds of data with an API token
 - **alert counts** per SIEM rule and month: stored as output metrics (PLAN 2.13) of every L3
   rule linked to that SIEM rule, either replacing the month or adding to it (daily pushes).
 
-A SIEM rule is matched to an L3 rule by one of the rule's `siem_rule_ids` or by the L3 code
-itself, so a SIEM rule named like `AO-CRE-01 Credential dumping` can also use the code as id.
+A SIEM rule is matched to an L3 rule by one of the rule's `siem_rule_ids`, by the L3 code
+itself, or by the rule's SIEM name built from the format in the settings (issue #50).
 """
 
 from collections import defaultdict
@@ -42,10 +42,17 @@ def source(db: Session, name: str, create: bool = True) -> SiemSource | None:
 
 
 def rule_index(db: Session) -> dict[str, list[L3UseCase]]:
-    """SIEM rule id (case-insensitive) or L3 code -> L3 rules."""
+    """SIEM rule id (case-insensitive), L3 code or the rule's SIEM name (issue #50) -> L3
+    rules."""
+    from app import rulename
+
+    name = rulename.formatter(db)
     idx: dict[str, list[L3UseCase]] = defaultdict(list)
     for r in db.scalars(select(L3UseCase)):
         idx[r.code.lower()].append(r)
+        siem_name = name(r).lower()
+        if siem_name != r.code.lower():
+            idx[siem_name].append(r)
         for sid in r.siem_rule_ids or []:
             if r not in idx[sid.lower()]:
                 idx[sid.lower()].append(r)

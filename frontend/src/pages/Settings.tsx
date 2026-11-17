@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, type RuleNameSettings } from "../api";
 import { useAuth } from "../auth";
 import { ErrorNote, useLoad, useUnsavedGuard } from "../components/ui";
-import { fmtDate } from "../lib/format";
+import { fmtDate, fmtSize } from "../lib/format";
 import { renderRuleName, RULE_NAME_BUILTINS, ruleNameValues, unknownNames, type RuleNameVariable } from "../lib/ruleName";
 import { t } from "../i18n";
 
@@ -197,6 +197,37 @@ export default function Settings() {
           )}
         </div>
       </form>
+
+      <EvidenceStorageCard />
     </>
+  );
+}
+
+/** Space used by interview evidence files (#47). */
+function EvidenceStorageCard() {
+  const storage = useLoad(() => api.evidenceStorage());
+  const s = storage.data;
+  return (
+    <section className="card stack-sm" aria-labelledby="ev-h">
+      <h2 id="ev-h">{t("Evidence storage")}</h2>
+      <ErrorNote error={storage.error} />
+      {s && (
+        <>
+          <p style={{ margin: 0 }}>
+            {s.limit_bytes
+              ? t("{used} of {limit} used by {n} files.", { used: fmtSize(s.used_bytes), limit: fmtSize(s.limit_bytes), n: s.files })
+              : t("{used} used by {n} files (no limit).", { used: fmtSize(s.used_bytes), n: s.files })}
+          </p>
+          {s.limit_bytes > 0 && (
+            <div className="bar-track" aria-hidden="true">
+              <div className="bar-fill" style={{ width: `${Math.min(100, (s.used_bytes / s.limit_bytes) * 100)}%` }} />
+            </div>
+          )}
+          <p className="small muted" style={{ margin: 0 }}>
+            {t("Evidence files are stored in the database. The JSON export lists them without content, so back up the database (or use magma db-copy) to keep them. The limit is set with EVIDENCE_MAX_TOTAL_MB.")}
+          </p>
+        </>
+      )}
+    </section>
   );
 }

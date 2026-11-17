@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app import audit, drivers
+from app import audit, drivers, interviews
 from app.api.deps import DB, SettingsDep
 from app.models import (
     BusinessDriver,
@@ -71,6 +71,7 @@ def list_refs(kind: RefKind, _: Reader, db: DB) -> list[RefItemUsageOut]:
         links = select(l3_references.c.item_id, L3UseCase.code).join(
             L3UseCase, L3UseCase.id == l3_references.c.l3_id
         )
+    systems = interviews.log_source_users(db) if kind == RefKind.log_source else {}
     used: dict[int, list[str]] = {}
     for item_id, code in db.execute(
         links.where(links.selected_columns[0].in_([i.id for i in items]))
@@ -83,6 +84,7 @@ def list_refs(kind: RefKind, _: Reader, db: DB) -> list[RefItemUsageOut]:
             name=i.name,
             description=i.description,
             used_by=sorted(used.get(i.id, [])),
+            used_by_systems=systems.get(i.id, []),
         )
         for i in items
     ]
@@ -132,16 +134,26 @@ def delete_ref(
     if item.kind != kind:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     used = _ref_users(db, item)
-    if used and not confirm:
+    systems = interviews.log_source_users(db).get(item.id, []) if kind == RefKind.log_source else []
+    if (used or systems) and not confirm:
+        parts = []
+        if used:
+            parts.append(f"{len(used)} use cases or rules")
+        if systems:
+            parts.append(f"the interviews of {len(systems)} systems")
         return JSONResponse(
             status_code=status.HTTP_409_CONFLICT,
             content={
-                "detail": f"{item.name} is used by {len(used)} use cases or rules; "
+                "detail": f"{item.name} is used by {' and '.join(parts)}; "
                 "repeat with confirm=true to remove it from them",
                 "used_by": used,
+                "used_by_systems": systems,
             },
         )
-    audit.record(db, user, "delete", kind.value, item.name, {"unlinked": used} if used else None)
+    changes = {"unlinked": used} if used else {}
+    if systems:
+        changes["systems"] = systems
+    audit.record(db, user, "delete", kind.value, item.name, changes or None)
     db.delete(item)
     _commit(db, "Entry")
     return None

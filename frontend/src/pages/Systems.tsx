@@ -276,7 +276,7 @@ export default function Systems() {
     <>
       <header className="page-header">
         <div>
-          <h1>{t("Usecase Threat Modelling")}</h1>
+          <h1>{t("Systems")}</h1>
           <div className="subtitle">
             {t(
               "Business applications and platforms with their owner. Interview the owner to find out which use cases a system needs.",
@@ -326,7 +326,7 @@ export default function Systems() {
 
       <section className="card table-card">
         <div className="scroll-x">
-          <table className="table">
+          <table className="table cards-sm">
             <thead>
               <tr>
                 {head("name", t("System"))}
@@ -348,18 +348,18 @@ export default function Systems() {
                     </Link>
                     {s.archived && <span className="chip chip-neutral" style={{ marginLeft: 8 }}>{t("Archived")}</span>}
                   </td>
-                  <td>
+                  <td data-label={t("Business owner")}>
                     {s.owner_name}
                     {s.owner_department && <span className="muted small"> · {s.owner_department}</span>}
                   </td>
-                  <td className="num">{s.criticality}</td>
-                  <td className="num">
+                  <td className="num" data-label={t("Criticality")}>{s.criticality}</td>
+                  <td className="num" data-label={t("Linked L2")}>
                     {s.linked ? <Link to={`/usecases?sys=${s.id}&view=table`}>{s.linked}</Link> : <span className="muted">0</span>}
                   </td>
-                  <td className="num">{pct(s.coverage)}</td>
-                  <td className="num">{s.gaps ? <span className="count-gap">{s.gaps}</span> : <span className="muted">0</span>}</td>
-                  <td>{fmtDate(s.last_interview)}</td>
-                  <td>
+                  <td className="num" data-label={t("Detection coverage")}>{pct(s.coverage)}</td>
+                  <td className="num" data-label={t("Gaps")}>{s.gaps ? <span className="count-gap">{s.gaps}</span> : <span className="muted">0</span>}</td>
+                  <td data-label={t("Last interview")}>{fmtDate(s.last_interview)}</td>
+                  <td data-label={t("Interview status")}>
                     <StatePill state={s.state} />
                     {s.draft_id && <span className="muted small"> · {t("Draft open")}</span>}
                   </td>

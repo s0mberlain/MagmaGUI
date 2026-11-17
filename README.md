@@ -305,6 +305,12 @@ second factor of the identity provider.
   account is set by the identity provider only.
 - Requests larger than `MAX_BODY_MB` (25) are refused with 413, and text fields have length
   limits.
+- Changes made with the session cookie (POST, PUT, PATCH, DELETE) are refused with 403 when the
+  browser sends an `Origin` or `Referer` of another site; API tokens are not affected.
+- Viewing and downloading interview evidence and exporting an interview PDF are written to the
+  audit log (once per user, file and hour). All evidence together is limited by
+  `EVIDENCE_MAX_TOTAL_MB` (2048); it is stored in the database, so only a database backup (or
+  `magma db-copy`) keeps it, not the JSON export.
 - The API docs load their assets from the app itself, not from a CDN.
 - The SSO login page shows fixed texts only; IdP error details go to the log.
 

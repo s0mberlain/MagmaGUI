@@ -39,3 +39,79 @@ export const serverTexts = () => [
   t("Scopes in use"),
   t("Now"),
 ];
+
+/** Marks an English server message for the translation files (picked up by i18n:check). */
+const st = (s: string) => s;
+
+/** Error messages the API sends (#53). Fixed texts are looked up as they are; `{name}` parts
+ * match any text and are put into the translation. Keep in sync with the backend messages. */
+const SERVER_MESSAGES = [
+  st("Not signed in"),
+  st("Your role does not allow this action"),
+  st("Invalid username or password"),
+  st("Invalid authentication code"),
+  st("Too many failed sign-ins, try again later"),
+  st("Account temporarily locked, try again later"),
+  st("Local login is disabled"),
+  st("The request is too large"),
+  st("Cross-site request refused"),
+  st("Not found"),
+  st("Username already exists"),
+  st("You cannot delete yourself"),
+  st("Cannot remove the last active admin"),
+  st("Delete or move its L3 rules first"),
+  st("Delete or move its L2 use cases first"),
+  st("Nothing to commit: the content is unchanged"),
+  st("Verification date cannot be in the future"),
+  st("Only admins can skip the definition of done"),
+  st("This system already has a draft interview"),
+  st("Only a draft interview can be deleted"),
+  st("Complete the interview before confirming"),
+  st("The interview is not confirmed"),
+  st("The interview date cannot be in the future"),
+  st("The confirmation date cannot be before the interview date"),
+  st("Add at least one component before completing the interview"),
+  st("A detection request needs a text"),
+  st("A detection request is tied to a threat that does not apply"),
+  st("Unknown log source; reload the page"),
+  st("Unknown L2 use case; reload the page"),
+  st("A completed interview cannot be changed; start a new one"),
+  st("Evidence can only be added while the interview is a draft"),
+  st("Evidence of a completed interview cannot be removed"),
+  st("A sign-off can be added after completion and before the confirmation"),
+  st("This interview has a sign-off file already"),
+  st("A sign-off must be a PDF, JPG or PNG file"),
+  st("The file is empty"),
+  st("The file is larger than 20 MB"),
+  st("This draft was changed by {user}; reload to see the changes"),
+  st("Already confirmed by {name}; remove that confirmation first"),
+  st("The interview date must be on or after the previous interview ({date})"),
+  st("Complete description, likelihood and impact of these threats: {list}"),
+  st("A system named {name} exists already"),
+  st("{code} is already {status}"),
+  st("Definition of done is not complete: {list}"),
+  st("Password must be at least {n} characters"),
+  st("The file content does not match a .{ext} file"),
+  st("The evidence storage is full ({mb} MB); ask an admin to remove old files or raise EVIDENCE_MAX_TOTAL_MB"),
+];
+
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const PATTERNS = SERVER_MESSAGES.filter((m) => m.includes("{")).map((m) => {
+  const names: string[] = [];
+  const re = escape(m).replace(/\\\{(\w+)\\\}/g, (_x, n: string) => {
+    names.push(n);
+    return "(.+?)";
+  });
+  return { template: m, names, re: new RegExp(`^${re}$`) };
+});
+const FIXED = new Set(SERVER_MESSAGES.filter((m) => !m.includes("{")));
+
+/** The server's (English) message in the user's language, when it is a known one. */
+export function translateServer(message: string): string {
+  if (FIXED.has(message)) return t(message);
+  for (const p of PATTERNS) {
+    const m = p.re.exec(message);
+    if (m) return t(p.template, Object.fromEntries(p.names.map((n, i) => [n, m[i + 1]])));
+  }
+  return message;
+}

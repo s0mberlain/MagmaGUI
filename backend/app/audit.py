@@ -31,6 +31,32 @@ def record(
     )
 
 
+def record_access(
+    db: Session, user: User, action: str, entity: str, key: str, changes: dict[str, Any]
+) -> None:
+    """Record reading something sensitive (#46) at most once per user, item and hour, so viewing
+    a file repeatedly does not flood the log."""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import select
+
+    since = datetime.now(UTC) - timedelta(hours=1)
+    seen = db.scalar(
+        select(AuditLog.id)
+        .where(
+            AuditLog.user_id == user.id,
+            AuditLog.action == action,
+            AuditLog.entity == entity,
+            AuditLog.entity_key == key,
+            AuditLog.at >= since,
+        )
+        .limit(1)
+    )
+    if seen is None:
+        record(db, user, action, entity, key, changes)
+        db.commit()
+
+
 def diff(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
     """{field: [old, new]} for fields that changed."""
     return {k: [before.get(k), v] for k, v in after.items() if before.get(k) != v}

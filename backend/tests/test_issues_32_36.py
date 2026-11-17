@@ -4,7 +4,15 @@ import io
 
 import pytest
 
-from tests.test_interviews import component, log_source_id, new_system, save, start, threat
+from tests.test_interviews import (
+    complete,
+    component,
+    log_source_id,
+    new_system,
+    save,
+    start,
+    threat,
+)
 
 PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
@@ -156,10 +164,17 @@ def test_deleting_draft_removes_files(analyst):
 # ---------------------------------------------------------------- #36 log source filter
 
 
+def _rules_of(client, l2_code: str) -> list[str]:
+    return [r["code"] for r in client.get("/api/l3").json() if r["l2_code"] == l2_code]
+
+
 def _setup_rules(client):
-    """AO-ACC rules use the database log, AO-CRE rules none; spoofing maps to both."""
-    for code in ("AO-ACC-01",):
-        r = client.patch(f"/api/l3/{code}", json={"log_sources": ["Database log"]})
+    """AO-ACC-01 uses the database log, every AO-CRE rule the proxy log; spoofing maps to
+    both. The other spoofing L2s record no log sources, so the filter cannot judge them."""
+    for code, ls in [("AO-ACC-01", "Database log")] + [
+        (c, "Proxy log") for c in _rules_of(client, "AO-CRE")
+    ]:
+        r = client.patch(f"/api/l3/{code}", json={"log_sources": [ls]})
         assert r.status_code == 200, r.text
 
 
@@ -179,45 +194,106 @@ def test_filter_is_on_by_default_and_matches_component_log_sources(analyst, admi
     # AO-ACC: only the database component delivers what its rules need
     assert "AO-ACC" in proposed
     assert [s["component"] for s in proposed["AO-ACC"]["sources"]] == ["db"]
-    # every other spoofing L2 needs log sources nobody delivers (or records none)
-    assert set(proposed) == {"AO-ACC"}
+    # AO-CRE needs the proxy log, which nobody delivers
+    assert "AO-CRE" not in proposed
     mismatch = {m["code"]: m for m in view["log_source_mismatch"]}
     assert "AO-ACC" not in mismatch
-    assert "AO-CRE" in mismatch
     m = mismatch["AO-CRE"]
     assert {s["component"] for s in m["sources"]} == {"web", "db"}
     assert m["risk_score"] == 12
+    assert m["log_sources"] == ["Proxy log"]
     web = next(s for s in m["sources"] if s["component"] == "web")
     assert web["component_log_sources"] == ["OS logging"]
+    # issue #38: L2s whose rules record no log source cannot be judged and stay proposed
+    unknown = [p for p in proposed.values() if p["detection"] == "unknown"]
+    assert unknown and not ({p["code"] for p in unknown} & set(mismatch))
 
 
-def test_component_without_log_sources_proposes_nothing(analyst):
+def test_component_without_log_sources_is_not_filtered(analyst):
+    """Issue #38: without log sources on the component nothing can be judged, so the mapped
+    L2s are proposed and the component is named in a warning."""
     _setup_rules(analyst)
     iv = start(analyst, new_system(analyst)["id"])
     view = save(analyst, iv, components=[component(threats=[threat("spoofing")])])["view"]
-    assert view["proposals"] == []
-    assert "AO-ACC" in [m["code"] for m in view["log_source_mismatch"]]
+    assert {"AO-ACC", "AO-CRE"} <= {p["code"] for p in view["proposals"]}
+    assert view["log_source_mismatch"] == []
+    assert view["components_without_log_sources"] == ["Web front end"]
+
+
+def test_l2_without_rules_is_proposed_as_no_detection(analyst, admin):
+    """Issue #38: an L2 with no (active) rules is exactly the gap an interview should find."""
+    _setup_rules(analyst)
+    os_log = log_source_id(analyst, "OS logging")
+    r = analyst.post("/api/l2", json={"code": "AO-ZZZ", "l1_code": "AO", "name": "Nothing yet"})
+    assert r.status_code == 201, r.text
+    mapped = admin.get("/api/stride-mapping").json()["categories"][0]
+    ids = [x["l2_id"] for x in mapped["l2s"]] + [r.json()["id"]]
+    assert admin.put("/api/stride-mapping/spoofing", json={"l2_ids": ids}).status_code == 200
+    iv = start(analyst, new_system(analyst)["id"])
+    comps = [component(threats=[threat("spoofing")], log_source_ids=[os_log])]
+    view = save(analyst, iv, components=comps)["view"]
+    p = next(p for p in view["proposals"] if p["code"] == "AO-ZZZ")
+    assert p["detection"] == "no_rules"
+    assert "AO-ZZZ" in view["no_detection"]
+
+
+def test_retired_rules_do_not_count(analyst, admin):
+    """Issue #40: a retired rule neither lets an L2 pass the filter nor creates a gap."""
+    _setup_rules(analyst)
+    db_log = log_source_id(analyst, "Database log")
+    s = new_system(analyst)
+    comps = [component(threats=[threat("spoofing")], log_source_ids=[db_log])]
+    iv = save(analyst, start(analyst, s["id"]), components=comps)
+    assert "AO-ACC" in [p["code"] for p in iv["view"]["proposals"]]
+    allowed = admin.get("/api/l3/AO-ACC-01/lifecycle").json()["allowed"]
+    target = "retired" if "retired" in allowed else "offloading"
+    r = admin.post("/api/l3/AO-ACC-01/lifecycle", json={"to_status": target})
+    assert r.status_code == 201, r.text
+    view = analyst.get(f"/api/interviews/{iv['id']}").json()["view"]
+    acc = next(p for p in view["proposals"] if p["code"] == "AO-ACC")
+    rule = next(x for x in acc["rules"] if x["code"] == "AO-ACC-01")
+    assert rule["active"] is False and rule["coverage"] == "inactive" and rule["missing"] == []
 
 
 def test_added_by_hand_is_not_filtered(analyst):
     _setup_rules(analyst)
+    os_log = log_source_id(analyst, "OS logging")
     iv = start(analyst, new_system(analyst)["id"])
-    iv = save(analyst, iv, components=[component(threats=[threat("spoofing")])])
+    comps = [component(threats=[threat("spoofing")], log_source_ids=[os_log])]
+    iv = save(analyst, iv, components=comps)
+    assert "AO-CRE" in [m["code"] for m in iv["view"]["log_source_mismatch"]]
     cre = analyst.get("/api/l2/AO-CRE").json()["id"]
     view = save(
         analyst,
         iv,
         added=[{"l2_id": cre, "threats": [{"component": "web", "category": "spoofing"}]}],
     )["view"]
-    assert [p["code"] for p in view["proposals"]] == ["AO-CRE"]
+    assert "AO-CRE" in [p["code"] for p in view["proposals"]]
     assert "AO-CRE" not in [m["code"] for m in view["log_source_mismatch"]]
+
+
+def test_renamed_log_source_creates_no_gap(analyst):
+    """Issue #39: completed interviews are compared with the catalogue by log source id."""
+    _setup_rules(analyst)
+    db_log = log_source_id(analyst, "Database log")
+    s = new_system(analyst)
+    comps = [component(threats=[threat("spoofing")], log_source_ids=[db_log])]
+    complete(analyst, save(analyst, start(analyst, s["id"]), components=comps))
+    before = analyst.get(f"/api/systems/{s['id']}").json()
+    r = analyst.patch(f"/api/references/log_source/{db_log}", json={"name": "DB audit log"})
+    assert r.status_code == 200, r.text
+    after = analyst.get(f"/api/systems/{s['id']}").json()
+    assert after["gaps"] == before["gaps"]
+    assert after["gap_log_sources"] == before["gap_log_sources"]
 
 
 def test_admin_can_switch_the_filter_off(analyst, admin):
     _setup_rules(analyst)
+    os_log = log_source_id(analyst, "OS logging")
     iv = start(analyst, new_system(analyst)["id"])
-    iv = save(analyst, iv, components=[component(threats=[threat("spoofing")])])
-    assert iv["view"]["proposals"] == []
+    comps = [component(threats=[threat("spoofing")], log_source_ids=[os_log])]
+    iv = save(analyst, iv, components=comps)
+    assert {"AO-ACC", "AO-CRE"} & {p["code"] for p in iv["view"]["proposals"]} == set()
     r = analyst.put("/api/stride-mapping/log-source-filter", json={"enabled": False})
     assert r.status_code == 403
     r = admin.put("/api/stride-mapping/log-source-filter", json={"enabled": False})

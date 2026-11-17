@@ -14,7 +14,8 @@ const files = [];
 
 const keys = new Set();
 for (const f of files) {
-  for (const m of readFileSync(f, "utf8").matchAll(/\bt\(\s*("(?:[^"\\]|\\.)*")/g)) keys.add(JSON.parse(m[1]));
+  // t("...") texts, and st("...") server messages translated at runtime (src/serverTexts.ts)
+  for (const m of readFileSync(f, "utf8").matchAll(/\bs?t\(\s*("(?:[^"\\]|\\.)*")/g)) keys.add(JSON.parse(m[1]));
 }
 
 const ph = (s) => [...s.matchAll(/\{\w+\}/g)].map((x) => x[0]).sort().join();

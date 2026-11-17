@@ -383,3 +383,74 @@ export function ShowMore({ rest, more, all }: { rest: number; more: () => void; 
     </div>
   );
 }
+
+/* ------------------------------------------------------------------ unsaved drafts (#53) */
+
+interface StoredDraft<T> {
+  at: number;
+  base: string;
+  value: T;
+}
+
+/**
+ * Keeps an unsaved form in this tab's sessionStorage, so it survives an expired session: after
+ * signing in again the page offers to restore it. `base` names the server version the edits
+ * started from; a draft for another version is not offered. Call `clear()` after saving or
+ * discarding.
+ */
+export function useDraftBackup<T>(key: string, value: T | null, dirty: boolean, base: string | null) {
+  const [offer, setOffer] = useState<StoredDraft<T> | null>(null);
+  const checked = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (base === null || checked.current === key) return;
+    checked.current = key;
+    try {
+      const raw = sessionStorage.getItem(key);
+      const d = raw ? (JSON.parse(raw) as StoredDraft<T>) : null;
+      if (d && d.base === base) setOffer(d);
+      else if (d) sessionStorage.removeItem(key);
+    } catch {
+      /* storage blocked: nothing to offer */
+    }
+  }, [key, base]);
+
+  useEffect(() => {
+    if (!dirty || value === null || base === null || offer) return;
+    try {
+      sessionStorage.setItem(key, JSON.stringify({ at: Date.now(), base, value }));
+    } catch {
+      /* storage full or blocked */
+    }
+  }, [key, value, dirty, base, offer]);
+
+  const clear = () => {
+    setOffer(null);
+    try {
+      sessionStorage.removeItem(key);
+    } catch {
+      /* ignore */
+    }
+  };
+  return { offer, clear, dismiss: () => setOffer(null) };
+}
+
+/** "Unsaved changes from {time} were kept" with Restore and Discard. */
+export function DraftRestoreBanner({ at, onRestore, onDiscard }: { at: number; onRestore: () => void; onDiscard: () => void }) {
+  return (
+    <div className="note-box draft-restore" role="status">
+      <span>
+        {t("Unsaved changes from {time} were kept when your session ended.", {
+          time: new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        })}
+      </span>
+      <span className="grow" />
+      <button type="button" className="btn btn-sm btn-primary" onClick={onRestore}>
+        {t("Restore")}
+      </button>
+      <button type="button" className="btn btn-sm" onClick={onDiscard}>
+        {t("Discard")}
+      </button>
+    </div>
+  );
+}

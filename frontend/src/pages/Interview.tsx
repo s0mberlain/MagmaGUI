@@ -18,15 +18,17 @@ import {
 import { useAuth } from "../auth";
 import {
   confirmDialog,
+  DraftRestoreBanner,
   ErrorNote,
   Modal,
   MultiSelect,
   StatusPill,
+  useDraftBackup,
   useLoad,
   useUnsavedGuard,
 } from "../components/ui";
 import { Markdown, MarkdownField } from "../components/Markdown";
-import { fmtDate, fmtTime, today } from "../lib/format";
+import { fmtDate, fmtSize, fmtTime, today } from "../lib/format";
 import { INTERVIEW_STATUS_LABEL, riskLevel, STATE_LABEL, STRIDE, STRIDE_HINT, STRIDE_LABEL } from "../lib/stride";
 import { getLang, t } from "../i18n";
 
@@ -143,6 +145,12 @@ export default function Interview() {
     }
   }, [loaded.data]);
   useUnsavedGuard(dirty);
+  const backup = useDraftBackup(
+    `magma-draft:interview:${ivId}`,
+    form,
+    dirty,
+    iv && iv.status === "draft" ? String(iv.version) : null,
+  );
 
   const draft = iv?.status === "draft";
   /** Evidence files are saved on their own, not with the draft (#34). */
@@ -166,6 +174,7 @@ export default function Interview() {
       setIv(saved);
       setForm(formOf(saved));
       setDirty(false);
+      backup.clear();
       setSavedAt(new Date().toISOString());
       return saved;
     } catch (e) {
@@ -306,7 +315,7 @@ export default function Interview() {
   return (
     <>
       <nav className="crumbs" aria-label={t("Breadcrumb")}>
-        <Link to="/systems">{t("Usecase Threat Modelling")}</Link> / <Link to={`/systems/${iv.system_id}`}>{iv.system_name}</Link> /{" "}
+        <Link to="/systems">{t("Systems")}</Link> / <Link to={`/systems/${iv.system_id}`}>{iv.system_name}</Link> /{" "}
         <span>{t("Interview {date}", { date: fmtDate(iv.interview_date) })}</span>
       </nav>
       <header className="page-header">
@@ -325,13 +334,16 @@ export default function Interview() {
           </a>
           {canEdit && (
             <>
-              <button type="button" className="btn" onClick={() => void removeDraft()}>
-                {t("Delete draft")}
-              </button>
               <button type="button" className="btn" disabled={busy || !dirty} onClick={() => void save()}>
                 {t("Save draft")}
               </button>
-              <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void complete()}>
+              <button
+                type="button"
+                className={"btn" + (step === 3 ? " btn-primary" : "")}
+                disabled={busy || !form.components.length}
+                title={form.components.length ? undefined : t("Add at least one component before you continue.")}
+                onClick={() => void complete()}
+              >
                 {t("Complete interview")}
               </button>
             </>
@@ -354,6 +366,17 @@ export default function Interview() {
           {t("Draft saved.")}
         </p>
       )}
+      {backup.offer && canEdit && (
+        <DraftRestoreBanner
+          at={backup.offer.at}
+          onRestore={() => {
+            setForm(backup.offer!.value);
+            setDirty(true);
+            backup.dismiss();
+          }}
+          onDiscard={backup.clear}
+        />
+      )}
       {iv.archived && draft && <p className="form-notice">{t("The system is archived. You can still complete or delete this draft.")}</p>}
 
       {draft ? (
@@ -369,6 +392,11 @@ export default function Interview() {
                 onClick={() => void goto(i + 1)}
               >
                 {label}
+                {i === 2 && iv.view.log_source_mismatch.length > 0 && (
+                  <span className="tab-count" title={t("Held back: log sources do not match ({n} use cases)", { n: iv.view.log_source_mismatch.length })}>
+                    {t("{n} held back", { n: iv.view.log_source_mismatch.length })}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -388,6 +416,10 @@ export default function Interview() {
           {step === 3 && <StepProposals iv={iv} form={form} readOnly={!canEdit} saveWith={saveWith} busy={busy} />}
           {canEdit && (
             <div className="row-actions">
+              <button type="button" className="btn btn-danger" onClick={() => void removeDraft()}>
+                {t("Delete draft")}
+              </button>
+              <span className="grow" />
               {step > 1 && (
                 <button type="button" className="btn" onClick={() => void goto(step - 1)}>
                   {t("Back")}
@@ -477,11 +509,6 @@ function StepContext({
 const EVIDENCE_ACCEPT = ".pdf,.png,.jpg,.jpeg,.vsd,.vsdx,.dia,.excalidraw,.tm7";
 const EVIDENCE_MAX = 20 * 1024 * 1024;
 
-function fmtSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 const KIND_LABEL: Record<InterviewAttachment["kind"], string> = {
   pdf: "PDF",
@@ -893,6 +920,7 @@ function ProposalCard({ p, children }: { p: Proposal; children?: ReactNode }) {
         {p.deleted && <span className="badge-gap">{t("deleted")}</span>}
         {!p.l1_applicable && <span className="chip chip-neutral">{t("L1 not applicable")}</span>}
         {p.manual && <span className="chip chip-info">{t("added by hand")}</span>}
+        {p.detection === "no_rules" && p.rules.length > 0 && <span className="badge-gap">{t("No active rule")}</span>}
         <span className="grow" />
         <span className="small muted">{t("Risk score")}</span> <RiskScore value={p.risk_score} />
         {children}
@@ -906,10 +934,16 @@ function ProposalCard({ p, children }: { p: Proposal; children?: ReactNode }) {
       {p.rules.length > 0 ? (
         <ul className="plain-list iv-rules">
           {p.rules.map((r) => (
-            <li key={r.code}>
+            <li key={r.code} className={r.active === false ? "muted" : undefined}>
               <span className="mono small">{r.code}</span> {r.name} <StatusPill status={r.lifecycle_status} />{" "}
-              {r.unknown ? (
+              {r.active === false ? (
+                <span className="small muted">{t("not counted (inactive)")}</span>
+              ) : r.unknown ? (
                 <span className="pill pill-none">{t("Log source unknown")}</span>
+              ) : r.coverage === "partial" ? (
+                <span className="chip chip-neutral" title={r.missing.join(", ")}>
+                  {t("Partly delivered, missing: {list}", { list: r.missing.join(", ") })}
+                </span>
               ) : r.missing.length ? (
                 <span className="badge-gap" title={r.missing.join(", ")}>
                   {t("Log source missing: {list}", { list: r.missing.join(", ") })}
@@ -972,9 +1006,23 @@ function StepProposals({
         {t("Proposed: every L2 use case mapped to the STRIDE category of a threat with a risk score of at least {n} (likelihood × impact).", {
           n: v.threshold,
         })}{" "}
-        {v.log_source_filter && t("Only use cases with a rule that uses a log source of the component are proposed.")}{" "}
+        {v.log_source_filter && t("Use cases whose active rules need other log sources than the component delivers are held back.")}{" "}
         <Link to="/stride-mapping">{t("STRIDE mapping")}</Link>
       </p>
+      {(v.components_without_log_sources?.length ?? 0) > 0 && (
+        <div className="note-box">
+          {t("These components deliver no log source yet, so their proposals cannot be checked: {list}. Add their log sources in step 2.", {
+            list: (v.components_without_log_sources ?? []).join(", "),
+          })}
+        </div>
+      )}
+      {(v.no_detection?.length ?? 0) > 0 && (
+        <div className="note-box">
+          {t("Nothing detects these accepted use cases yet (no active rule): {list}. They become gaps of the system.", {
+            list: (v.no_detection ?? []).join(", "),
+          })}
+        </div>
+      )}
       {v.mapping_empty && <div className="note-box">{t("There is no STRIDE mapping yet, so nothing is proposed automatically. You can add use cases by hand.")}</div>}
 
       <section className="card stack-sm" aria-labelledby="proph">
@@ -1057,12 +1105,12 @@ function StepProposals({
       {v.log_source_mismatch.length > 0 && (
         <section className="card stack-sm">
           <button type="button" className="link-btn iv-toggle" aria-expanded={showMismatch} onClick={() => setShowMismatch((x) => !x)}>
-            {showMismatch ? "▾" : "▸"} {t("Log sources do not match ({n} use cases)", { n: v.log_source_mismatch.length })}
+            {showMismatch ? "▾" : "▸"} {t("Held back: log sources do not match ({n} use cases)", { n: v.log_source_mismatch.length })}
           </button>
           {showMismatch && (
             <>
               <p className="muted small" style={{ margin: 0 }}>
-                {t("Mapped to a threat at or above the threshold, but no rule of the use case uses a log source of the component. Add log sources to the component, or add the use case by hand.")}
+                {t("Mapped to a threat at or above the threshold, but no active rule of the use case uses a log source the component delivers. Add log sources to the component, or add the use case anyway.")}
               </p>
               {v.log_source_mismatch.map((m) => (
                 <div key={m.l2_id} className="iv-below">
@@ -1080,7 +1128,7 @@ function StepProposals({
                           )
                         }
                       >
-                        {t("Add")}
+                        {t("Add anyway")}
                       </button>
                     )}
                   </div>
@@ -1397,13 +1445,17 @@ function CompletedView({
     [iv.id, iv.previous_id],
   );
   const [confirming, setConfirming] = useState(false);
+  const [unconfirming, setUnconfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const signoff = iv.attachments.find((a) => a.signoff) ?? null;
+  const evidence = iv.attachments.filter((a) => !a.signoff);
 
-  async function unconfirm() {
-    const ok = await confirmDialog(t("Remove the confirmation? The interview goes back to Completed."));
+  async function removeSignoff(a: InterviewAttachment) {
+    const ok = await confirmDialog(t('Remove the sign-off file "{name}"?', { name: a.filename }), { danger: true, confirmLabel: t("Remove") });
     if (!ok) return;
     try {
-      onChange(await api.unconfirmInterview(iv.id));
+      await api.deleteAttachment(a.id);
+      onAttachments(iv.attachments.filter((x) => x.id !== a.id));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -1423,7 +1475,7 @@ function CompletedView({
             </button>
           )}
           {editor && iv.status === "confirmed" && (
-            <button type="button" className="btn btn-sm" onClick={() => void unconfirm()}>
+            <button type="button" className="btn btn-sm" onClick={() => setUnconfirming(true)}>
               {t("Remove confirmation")}
             </button>
           )}
@@ -1440,6 +1492,20 @@ function CompletedView({
             {t("Not confirmed yet. Send the PDF to the business owner and record the confirmation here.")}
           </p>
         )}
+        {signoff && (
+          <p className="small" style={{ margin: 0 }}>
+            {t("Sign-off")}:{" "}
+            <a href={api.attachmentUrl(signoff.id)} target="_blank" rel="noopener noreferrer">
+              {signoff.filename}
+            </a>{" "}
+            <span className="muted">· {t("added {time} by {user}", { time: fmtTime(signoff.uploaded_at), user: signoff.uploaded_by })}</span>{" "}
+            {editor && iv.status === "completed" && (
+              <button type="button" className="link-btn" onClick={() => void removeSignoff(signoff)}>
+                {t("Remove")}
+              </button>
+            )}
+          </p>
+        )}
       </section>
 
       <section className="card stack-sm">
@@ -1454,7 +1520,7 @@ function CompletedView({
         </dl>
       </section>
 
-      {iv.attachments.length > 0 && <Evidence iv={iv} editable={false} onChange={onAttachments} />}
+      {evidence.length > 0 && <Evidence iv={{ ...iv, attachments: evidence }} editable={false} onChange={onAttachments} />}
 
       {cmp.data && <Comparison c={cmp.data} />}
 
@@ -1503,9 +1569,20 @@ function CompletedView({
       {confirming && (
         <ConfirmDialog
           iv={iv}
+          hasSignoff={!!signoff}
           onClose={() => setConfirming(false)}
           onDone={(x) => {
             setConfirming(false);
+            onChange(x);
+          }}
+        />
+      )}
+      {unconfirming && (
+        <UnconfirmDialog
+          iv={iv}
+          onClose={() => setUnconfirming(false)}
+          onDone={(x) => {
+            setUnconfirming(false);
             onChange(x);
           }}
         />
@@ -1554,9 +1631,63 @@ function Comparison({ c }: { c: InterviewCompare }) {
   );
 }
 
-function ConfirmDialog({ iv, onClose, onDone }: { iv: IV; onClose: () => void; onDone: (iv: IV) => void }) {
+/** Removing a confirmation needs a reason (#42); it is kept in the audit log. */
+function UnconfirmDialog({ iv, onClose, onDone }: { iv: IV; onClose: () => void; onDone: (iv: IV) => void }) {
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <Modal title={t("Remove the confirmation")} open onClose={onClose}>
+      <form
+        className="stack"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (!reason.trim()) {
+            setError(t("Enter why the confirmation is removed."));
+            return;
+          }
+          try {
+            onDone(await api.unconfirmInterview(iv.id, reason.trim()));
+          } catch (err) {
+            setError((err as Error).message);
+          }
+        }}
+      >
+        <p style={{ margin: 0 }}>
+          {t("Confirmed by {name} on {date}", { name: iv.confirmed_by ?? "", date: fmtDate(iv.confirmed_at) })}.{" "}
+          {t("The interview goes back to Completed.")}
+        </p>
+        <label className="field">
+          {t("Reason")}
+          <textarea className="input textarea" rows={3} maxLength={2000} value={reason} onChange={(e) => setReason(e.target.value)} />
+        </label>
+        <ErrorNote error={error} />
+        <div className="row-actions">
+          <button type="button" className="btn" onClick={onClose}>
+            {t("Cancel")}
+          </button>
+          <button type="submit" className="btn btn-danger-solid">
+            {t("Remove confirmation")}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function ConfirmDialog({
+  iv,
+  hasSignoff,
+  onClose,
+  onDone,
+}: {
+  iv: IV;
+  hasSignoff: boolean;
+  onClose: () => void;
+  onDone: (iv: IV) => void;
+}) {
   const [by, setBy] = useState(iv.owner_name);
   const [on, setOn] = useState(today());
+  const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const bad =
     !on
@@ -1577,6 +1708,7 @@ function ConfirmDialog({ iv, onClose, onDone }: { iv: IV; onClose: () => void; o
             return;
           }
           try {
+            if (file) await api.uploadAttachment(iv.id, file, true);
             onDone(await api.confirmInterview(iv.id, { confirmed_by: by.trim(), confirmed_at: on }));
           } catch (err) {
             setError((err as Error).message);
@@ -1599,6 +1731,13 @@ function ConfirmDialog({ iv, onClose, onDone }: { iv: IV; onClose: () => void; o
           />
           {bad && <span className="field-error">{bad}</span>}
         </label>
+        {!hasSignoff && (
+          <label className="field">
+            {t("Sign-off file (optional)")}
+            <input type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            <span className="small muted">{t("The owner's signed PDF or e-mail as PDF or image. It is kept with the interview.")}</span>
+          </label>
+        )}
         <ErrorNote error={error} />
         <div className="row-actions">
           <button type="button" className="btn" onClick={onClose}>

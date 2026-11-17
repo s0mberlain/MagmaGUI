@@ -6,7 +6,10 @@ must fit it, so a renamed file of another kind is refused. PDFs and images can b
 app (served inline); every other type is only offered as a download.
 
 Files can be added and removed while the interview is a draft; a completed interview keeps its
-evidence as it was (read-only, like the rest of the interview).
+evidence as it was (read-only, like the rest of the interview). The business owner's sign-off
+(issue #42, a PDF or image) can be added and removed after completion until the confirmation is
+recorded. All evidence together is limited by EVIDENCE_MAX_TOTAL_MB (issue #47). Viewing and
+downloading a file is written to the audit log (issue #46).
 """
 
 import hashlib
@@ -17,14 +20,15 @@ from datetime import datetime
 from typing import Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel
+from sqlalchemy import func, select
 
 from app import audit
-from app.api.deps import DB
+from app.api.deps import DB, SettingsDep
 from app.models import Interview, InterviewAttachment, InterviewStatus
-from app.security import Editor, Reader
+from app.security import Admin, Editor, Reader
 
 router = APIRouter(tags=["systems & interviews"])
 
@@ -61,6 +65,7 @@ class AttachmentOut(BaseModel):
     uploaded_at: datetime
     viewable: bool
     kind: Literal["pdf", "image", "diagram", "threat_model"]
+    signoff: bool = False
 
 
 def _ext(name: str) -> str:
@@ -90,6 +95,7 @@ def out(a: InterviewAttachment) -> AttachmentOut:
         uploaded_at=a.uploaded_at,
         viewable=TYPES.get(ext, ("", (), False))[2],
         kind=_kind(ext),  # type: ignore[arg-type]
+        signoff=bool(a.signoff),
     )
 
 
@@ -157,10 +163,25 @@ def list_attachments(interview_id: int, _: Reader, db: DB) -> list[AttachmentOut
     "/interviews/{interview_id}/attachments", response_model=AttachmentOut, status_code=201
 )
 async def upload_attachment(
-    interview_id: int, user: Editor, db: DB, file: UploadFile = File(...)
+    interview_id: int,
+    user: Editor,
+    db: DB,
+    settings: SettingsDep,
+    file: UploadFile = File(...),
+    signoff: bool = Query(False, description="The business owner's sign-off (PDF or image)"),
 ) -> AttachmentOut:
     i = _interview(db, interview_id)
-    if i.status != InterviewStatus.draft:
+    if signoff:
+        if i.status != InterviewStatus.completed:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "A sign-off can be added after completion and before the confirmation",
+            )
+        if any(a.signoff for a in i.attachments):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "This interview has a sign-off file already"
+            )
+    elif i.status != InterviewStatus.draft:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "Evidence can only be added while the interview is a draft"
         )
@@ -177,8 +198,17 @@ async def upload_attachment(
         raise HTTPException(413, "The file is larger than 20 MB")
     if not data:
         raise HTTPException(422, "The file is empty")
+    if signoff and not TYPES[ext][2]:
+        raise HTTPException(422, "A sign-off must be a PDF, JPG or PNG file")
     if not _content_ok(ext, data):
         raise HTTPException(422, f"The file content does not match a .{ext} file")
+    limit = settings.evidence_max_total_mb * 1024 * 1024
+    if limit and used_bytes(db) + len(data) > limit:
+        raise HTTPException(
+            413,
+            f"The evidence storage is full ({settings.evidence_max_total_mb} MB); "
+            "ask an admin to remove old files or raise EVIDENCE_MAX_TOTAL_MB",
+        )
     if len(i.attachments) >= MAX_FILES:
         raise HTTPException(422, f"An interview can have at most {MAX_FILES} files")
     a = InterviewAttachment(
@@ -189,11 +219,11 @@ async def upload_attachment(
         sha256=hashlib.sha256(data).hexdigest(),
         data=data,
         uploaded_by=user.username,
+        signoff=signoff,
     )
     db.add(a)
-    audit.record(
-        db, user, "upload", "interview_evidence", _key(i), {"file": name, "size": len(data)}
-    )
+    changes = {"file": name, "size": len(data)} | ({"signoff": True} if signoff else {})
+    audit.record(db, user, "upload", "interview_evidence", _key(i), changes)
     db.commit()
     return out(a)
 
@@ -202,10 +232,20 @@ _UNSAFE = re.compile(r"[^A-Za-z0-9._ -]")
 
 
 @router.get("/interview-attachments/{attachment_id}/content")
-def attachment_content(attachment_id: int, _: Reader, db: DB, download: bool = False) -> Response:
+def attachment_content(
+    attachment_id: int, user: Reader, db: DB, download: bool = False
+) -> Response:
     a = _attachment(db, attachment_id)
     viewable = TYPES.get(_ext(a.filename), ("", (), False))[2]
     inline = viewable and not download
+    audit.record_access(
+        db,
+        user,
+        "view" if inline else "download",
+        "interview_evidence",
+        _key(a.interview),
+        {"file": a.filename},
+    )
     ascii_name = _UNSAFE.sub("_", a.filename) or "evidence"
     disposition = (
         f'{"inline" if inline else "attachment"}; filename="{ascii_name}"; '
@@ -229,7 +269,9 @@ def attachment_content(attachment_id: int, _: Reader, db: DB, download: bool = F
 def delete_attachment(attachment_id: int, user: Editor, db: DB) -> None:
     a = _attachment(db, attachment_id)
     i = a.interview
-    if i.status != InterviewStatus.draft:
+    if a.signoff and i.status == InterviewStatus.completed:
+        pass  # a sign-off can be replaced until the confirmation is recorded (#42)
+    elif i.status != InterviewStatus.draft:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "Evidence of a completed interview cannot be removed",
@@ -237,3 +279,23 @@ def delete_attachment(attachment_id: int, user: Editor, db: DB) -> None:
     audit.record(db, user, "delete", "interview_evidence", _key(i), {"file": a.filename})
     db.delete(a)
     db.commit()
+
+
+def used_bytes(db) -> int:
+    return int(db.scalar(select(func.coalesce(func.sum(InterviewAttachment.size), 0))) or 0)
+
+
+class StorageOut(BaseModel):
+    files: int
+    used_bytes: int
+    limit_bytes: int
+
+
+@router.get("/evidence/storage", response_model=StorageOut)
+def evidence_storage(_: Admin, db: DB, settings: SettingsDep) -> StorageOut:
+    """Space used by interview evidence files (#47), shown on the Settings page."""
+    return StorageOut(
+        files=int(db.scalar(select(func.count(InterviewAttachment.id))) or 0),
+        used_bytes=used_bytes(db),
+        limit_bytes=settings.evidence_max_total_mb * 1024 * 1024,
+    )

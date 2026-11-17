@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr, Field, StringConstraints, field_validator
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app import audit
@@ -178,6 +179,10 @@ class VersionIn(BaseModel):
     expected_version: int
 
 
+class UnconfirmIn(BaseModel):
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
+
+
 class ConfirmIn(BaseModel):
     confirmed_by: Name
     confirmed_at: date
@@ -296,27 +301,51 @@ class _Ctx:
 
 
 def _gaps(system: System, links: list[SystemLink]) -> tuple[list, list, list]:
+    """Gaps of a system from its latest completed interview and the current catalogue.
+
+    Log sources are compared by id, so renaming one does not create gaps (issue #39). Only
+    active rules count (issue #40). A linked L2 is a log source gap when none of its active rules
+    gets any log source it needs ("blind"); rules that get only some are listed as "partial"
+    hints but do not count (issue #41)."""
     last = iv.latest_completed(system)
     result = (last.result or {}) if last else {}
     comp_ls = {
-        c["name"]: {s["name"] for s in c["log_sources"]} for c in result.get("components", [])
+        c["name"]: {s["id"] for s in c.get("log_sources", []) if s.get("id") is not None}
+        for c in result.get("components", [])
     }
     no_rules, ls_gaps = [], []
     for link in sorted(links, key=lambda x: x.l2.code):
         l2 = link.l2
-        if not l2.children:
+        active = [r for r in l2.children if iv.is_active(r)]
+        if not active:
             no_rules.append({"code": l2.code, "name": l2.name})
             continue
         comps = sorted({s["component"] for s in link.sources})
         delivered = set().union(*(comp_ls.get(c, set()) for c in comps)) if comps else set()
-        for r in l2.children:
-            needed = {x.name for x in r.references if x.kind == RefKind.log_source}
-            missing = sorted(needed - delivered)
-            if needed and missing:
-                ls_gaps.append(
-                    {"l2_code": l2.code, "rule_code": r.code, "rule_name": r.name}
-                    | {"missing": missing, "components": comps}
+        state = iv.detection_state(l2, delivered)
+        rules = []
+        for r in active:
+            needed = {x.id: x.name for x in r.references if x.kind == RefKind.log_source}
+            cov = iv.rule_coverage(set(needed), delivered)
+            if cov in ("blind", "partial"):
+                rules.append(
+                    {
+                        "rule_code": r.code,
+                        "rule_name": r.name,
+                        "missing": sorted(n for i, n in needed.items() if i not in delivered),
+                        "partial": cov == "partial",
+                    }
                 )
+        if rules:
+            ls_gaps.append(
+                {
+                    "l2_code": l2.code,
+                    "l2_name": l2.name,
+                    "components": comps,
+                    "blind": state == "blind",
+                    "rules": rules,
+                }
+            )
     requests = [
         {"text": r["text"], "component": r["component_name"], "category": r["category"]}
         for r in result.get("requests", [])
@@ -346,7 +375,7 @@ def _row(system: System, ctx: _Ctx) -> dict:
         "updated_at": system.updated_at,
         "linked": len(links),
         "coverage": round(sum(weights) / len(weights), 4) if weights else None,
-        "gaps": len(no_rules) + len(ls_gaps) + len(requests),
+        "gaps": len(no_rules) + sum(1 for g in ls_gaps if g["blind"]) + len(requests),
         "last_interview": last_date,
         "next_due": iv.add_months(last_date, system.review_interval_months) if last_date else None,
         "state": iv.interview_state(system, last_date),
@@ -626,7 +655,13 @@ def start_interview(system_id: int, user: Editor, db: DB) -> InterviewOut:
     db.add(i)
     changes = {"copied_from": prev.interview_date.isoformat()} if prev else None
     audit.record(db, user, "create", "interview", f"{s.name} {i.interview_date}", changes)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as e:  # a second click at the same moment (#45)
+        db.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "This system already has a draft interview"
+        ) from e
     return _interview_out(db, i)
 
 
@@ -718,6 +753,12 @@ def confirm_interview(interview_id: int, body: ConfirmIn, user: Editor, db: DB) 
     i = _interview(db, interview_id)
     if i.status == InterviewStatus.draft:
         raise HTTPException(status.HTTP_409_CONFLICT, "Complete the interview before confirming")
+    if i.status == InterviewStatus.confirmed:
+        # an existing confirmation is never replaced silently (#42)
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Already confirmed by {i.confirmed_by}; remove that confirmation first",
+        )
     if body.confirmed_at < i.interview_date:
         raise HTTPException(422, "The confirmation date cannot be before the interview date")
     i.confirmed_by = body.confirmed_by
@@ -725,17 +766,25 @@ def confirm_interview(interview_id: int, body: ConfirmIn, user: Editor, db: DB) 
     i.confirmation_recorded_by = user.username
     i.status = InterviewStatus.confirmed
     changes = {"confirmed_by": body.confirmed_by, "confirmed_at": body.confirmed_at}
+    signoff = next((a for a in i.attachments if a.signoff), None)
+    if signoff is not None:
+        changes["signoff"] = signoff.filename
     audit.record(db, user, "confirm", "interview", _key(i), changes)
     db.commit()
     return _interview_out(db, i)
 
 
 @router.delete("/interviews/{interview_id}/confirmation", response_model=InterviewOut)
-def unconfirm_interview(interview_id: int, user: Editor, db: DB) -> InterviewOut:
+def unconfirm_interview(interview_id: int, body: UnconfirmIn, user: Editor, db: DB) -> InterviewOut:
     i = _interview(db, interview_id)
     if i.status != InterviewStatus.confirmed:
         raise HTTPException(status.HTTP_409_CONFLICT, "The interview is not confirmed")
-    changes = {"confirmed_by": i.confirmed_by, "confirmed_at": i.confirmed_at}
+    changes = {
+        "confirmed_by": i.confirmed_by,
+        "confirmed_at": i.confirmed_at,
+        "recorded_by": i.confirmation_recorded_by,
+        "reason": body.reason,
+    }
     audit.record(db, user, "unconfirm", "interview", _key(i), changes)
     i.status = InterviewStatus.completed
     i.confirmed_by = i.confirmed_at = i.confirmation_recorded_by = None
@@ -775,6 +824,7 @@ def interview_pdf(
     out = _interview_out(db, _interview(db, interview_id))
     system = _system(db, out.system_id)
     data = interview_report.build(out, system, lang or _lang(user), settings.app_name)
+    audit.record_access(db, user, "export", "interview", _key(_interview(db, interview_id)), {})
     safe = "".join(ch if ch.isalnum() else "-" for ch in out.system_name).strip("-")[:60]
     name = f"interview-{safe or 'system'}-{out.interview_date.isoformat()}.pdf"
     return Response(

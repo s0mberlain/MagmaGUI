@@ -3,9 +3,11 @@
 An analyst interviews the business owner of a system. Each component of the system gets the six
 STRIDE categories; a category that applies is rated likelihood x impact (risk score 1..25).
 The admin-maintained STRIDE -> L2 mapping turns threats at or above the proposal threshold into
-proposed L2 use cases. With the log source filter on (issue #36, default), an L2 is only proposed
-for a threat when one of its L3 rules uses a log source of the threatened component; the others
-are listed as filtered out. The analyst can remove proposals, add L2s by hand and record detection
+proposed L2 use cases. With the log source filter on (issue #36, default), an L2 is held back for
+a threat when its active L3 rules use log sources and the threatened component delivers log
+sources, but none of them meet (issue #38: an L2 without rules or without recorded log sources,
+and a component without log sources, are not filtered, because that is a gap to show). The
+analyst can remove proposals, add L2s by hand and record detection
 requests. Completing the interview freezes it and replaces the system's links.
 
 Stored draft (`Interview.data`):
@@ -38,6 +40,7 @@ from app.models import (
     System,
     SystemLink,
 )
+from app.scoring import ACTIVE_STATES
 
 STRIDE = (
     "spoofing",
@@ -182,26 +185,72 @@ def _l2_index(db: Session) -> dict[int, L2UseCase]:
     return {x.id: x for x in db.scalars(q)}
 
 
-def _rule_views(l2: L2UseCase, delivered: set[str]) -> list[dict]:
+def _rule_ls(rule: L3UseCase) -> dict[int, str]:
+    """Log sources a rule needs: id -> name."""
+    return {x.id: x.name for x in rule.references if x.kind == RefKind.log_source}
+
+
+def is_active(rule: L3UseCase) -> bool:
+    """Only rules that are onboarded or running count as detection (issue #40); offloading and
+    retired rules are shown, but neither filter nor gaps use them."""
+    return rule.lifecycle_status in ACTIVE_STATES
+
+
+def rule_coverage(needed: set[int], delivered: set[int]) -> str:
+    """unknown (no log source recorded) | blind (none delivered) | partial | ok (issue #41)."""
+    if not needed:
+        return "unknown"
+    have = needed & delivered
+    if not have:
+        return "blind"
+    return "ok" if have == needed else "partial"
+
+
+def detection_state(l2: L2UseCase, delivered: set[int]) -> str:
+    """How well the active rules of an L2 see a component that delivers the given log sources:
+    no_rules | unknown (no rule records a log source) | blind (no rule gets any of its log
+    sources) | partial | ok (at least one rule gets everything it needs)."""
+    active = [r for r in l2.children if is_active(r)]
+    if not active:
+        return "no_rules"
+    states = {rule_coverage(set(_rule_ls(r)), delivered) for r in active}
+    if "ok" in states:
+        return "ok"
+    if "partial" in states:
+        return "partial"
+    if "blind" in states:
+        return "blind"
+    return "unknown"
+
+
+def _rule_views(l2: L2UseCase, delivered: set[int]) -> list[dict]:
     rules = []
     for r in l2.children:
-        needed = sorted(x.name for x in r.references if x.kind == RefKind.log_source)
+        ls = _rule_ls(r)
+        active = is_active(r)
+        cov = rule_coverage(set(ls), delivered) if active else "inactive"
         rules.append(
             {
                 "code": r.code,
                 "name": r.name,
                 "lifecycle_status": str(r.lifecycle_status),
-                "log_sources": needed,
-                "missing": sorted(set(needed) - delivered),
-                "unknown": not needed,
+                "active": active,
+                "log_sources": sorted(ls.values()),
+                "missing": sorted(n for i, n in ls.items() if i not in delivered) if active else [],
+                "unknown": not ls,
+                "coverage": cov,
             }
         )
     return rules
 
 
-def _l2_log_sources(l2: L2UseCase) -> set[str]:
-    """Names of the log sources any L3 rule of the L2 uses."""
-    return {x.name for r in l2.children for x in r.references if x.kind == RefKind.log_source}
+def _l2_log_sources(l2: L2UseCase) -> dict[int, str]:
+    """Log sources (id -> name) any active L3 rule of the L2 uses."""
+    out: dict[int, str] = {}
+    for r in l2.children:
+        if is_active(r):
+            out |= _rule_ls(r)
+    return out
 
 
 def evaluate(
@@ -222,13 +271,13 @@ def evaluate(
 
     components: list[dict] = []
     threats: dict[tuple[str, str], dict] = {}
-    comp_ls: dict[str, set[str]] = {}
+    comp_ls: dict[str, set[int]] = {}  # component key -> log source ids
     incomplete: list[dict] = []
     for c in data.get("components", []):
         sources = [
             {"id": i, "name": ls_names[i]} for i in c.get("log_source_ids", []) if i in ls_names
         ]
-        comp_ls[c["key"]] = {s["name"] for s in sources}
+        comp_ls[c["key"]] = {s["id"] for s in sources}
         tviews = []
         by_cat = {t["category"]: t for t in c.get("threats", [])}
         for cat in STRIDE:
@@ -266,7 +315,7 @@ def evaluate(
     below: list[dict] = []
     # L2s held back by the log source filter (#36): l2 id -> {(component key, category): score}
     filtered: dict[int, dict[tuple[str, str], int | None]] = {}
-    l2_ls: dict[int, set[str]] = {}
+    l2_ls: dict[int, dict[int, str]] = {}
     for (key, cat), t in threats.items():
         if t["score"] is None:
             continue
@@ -278,7 +327,11 @@ def evaluate(
                 if filter_log_sources:
                     if i not in l2_ls:
                         l2_ls[i] = _l2_log_sources(l2s[i])
-                    if not (l2_ls[i] & comp_ls.get(key, set())):
+                    # issue #38: only hold back when both sides are known and do not meet;
+                    # an L2 without (logged) rules or a component without log sources is
+                    # proposed, because that is a gap the interview has to show
+                    needed, have = set(l2_ls[i]), comp_ls.get(key, set())
+                    if needed and have and not (needed & have):
                         filtered.setdefault(i, {})[(key, cat)] = t["score"]
                         continue
                 propose(i, key, cat, auto=True)
@@ -306,7 +359,7 @@ def evaluate(
     accepted, removed = [], []
     for l2_id, p in proposals.items():
         l2 = l2s[l2_id]
-        delivered: set[str] = set()
+        delivered: set[int] = set()
         srcs = []
         for (key, cat), score in p["sources"].items():
             delivered |= comp_ls.get(key, set())
@@ -328,6 +381,7 @@ def evaluate(
             "auto": p["auto"],
             "manual": p["manual"],
             "rules": _rule_views(l2, delivered),
+            "detection": detection_state(l2, delivered),
         }
         if l2_id in removed_reason:
             removed.append(view | {"reason": removed_reason[l2_id]})
@@ -353,7 +407,9 @@ def evaluate(
                     "component_name": threats[(key, cat)]["component_name"],
                     "category": cat,
                     "score": score,
-                    "component_log_sources": sorted(comp_ls.get(key, set())),
+                    "component_log_sources": sorted(
+                        ls_names[i] for i in comp_ls.get(key, set()) if i in ls_names
+                    ),
                 }
                 for (key, cat), score in srcs_by.items()
             ),
@@ -364,7 +420,7 @@ def evaluate(
             | {
                 "risk_score": max((s["score"] or 0) for s in srcs) or None,
                 "sources": srcs,
-                "log_sources": sorted(l2_ls.get(l2_id, set())),
+                "log_sources": sorted(l2_ls.get(l2_id, {}).values()),
             }
         )
 
@@ -406,12 +462,22 @@ def evaluate(
         "added": added,
         "removed_ids": [r["l2_id"] for r in data.get("removed", []) if r["l2_id"] in l2s],
         "requests": requests,
+        # issue #41: a rule is a gap when it gets none (blind) or only some (partial) of its
+        # log sources; inactive rules and rules without recorded log sources are not
         "log_source_gaps": [
             {"l2_code": p["code"], "rule_code": r["code"], "rule_name": r["name"]}
-            | {"missing": r["missing"]}
+            | {"missing": r["missing"], "partial": r["coverage"] == "partial"}
             for p in accepted
             for r in p["rules"]
-            if r["missing"]
+            if r["coverage"] in ("blind", "partial")
+        ],
+        # issue #38: accepted use cases without any active rule (nothing detects the threat)
+        "no_detection": [p["code"] for p in accepted if p["detection"] == "no_rules"],
+        # issue #38: components whose threats apply but that deliver no log source yet
+        "components_without_log_sources": [
+            c["name"]
+            for c in components
+            if not c["log_sources"] and any(t["state"] == "applies" for t in c["threats"])
         ],
     }
 
@@ -544,3 +610,23 @@ def system_risk_by_l2(db: Session) -> dict[int, tuple[int, str]]:
         if lvl and (l2_id not in out or lvl > out[l2_id][0]):
             out[l2_id] = (lvl, name)
     return out
+
+
+def log_source_users(db: Session) -> dict[int, list[str]]:
+    """Log source id -> names of the systems whose draft or latest completed interview lists it
+    on a component (issue #39: shown before a log source is deleted)."""
+    out: dict[int, set[str]] = {}
+    q = select(System).options(selectinload(System.interviews))
+    for system in db.scalars(q):
+        ids: set[int] = set()
+        draft = draft_of(system)
+        if draft is not None:
+            for c in (draft.data or {}).get("components", []):
+                ids |= set(c.get("log_source_ids", []))
+        last = latest_completed(system)
+        if last is not None:
+            for c in (last.result or {}).get("components", []):
+                ids |= {s["id"] for s in c.get("log_sources", []) if s.get("id") is not None}
+        for i in ids:
+            out.setdefault(i, set()).add(system.name)
+    return {i: sorted(names) for i, names in out.items()}

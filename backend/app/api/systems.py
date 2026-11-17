@@ -5,7 +5,14 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import Response
-from pydantic import BaseModel, EmailStr, Field, StringConstraints, field_validator
+from pydantic import (
+    BaseModel,
+    EmailStr,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
@@ -94,9 +101,13 @@ class SystemRow(BaseModel):
 
 
 class LinkOut(BaseModel):
+    level: Literal["L2", "L3"] = "L2"
     l2_id: int
+    l3_id: int | None = None
     code: str
     name: str
+    l2_code: str
+    detection: str | None = None
     weight: float | None
     risk_score: int
     risk_level: int | None
@@ -116,6 +127,11 @@ class InterviewRow(BaseModel):
 
 class SystemDetail(SystemRow):
     links: list[LinkOut]
+    # risk overview of the latest completed interview with the current state of its links
+    risks: list[dict]
+    threshold: int | None
+    # components of that interview, in interview order (rows of the threat matrix)
+    components: list[dict]
     gap_no_rules: list[dict]
     gap_log_sources: list[dict]
     gap_requests: list[dict]
@@ -144,8 +160,17 @@ class ThreatRef(BaseModel):
 
 
 class AddedIn(BaseModel):
-    l2_id: int
+    """A use case chosen by hand: a whole L2 (`l2_id`) or a single L3 rule (`l3_id`)."""
+
+    l2_id: int | None = None
+    l3_id: int | None = None
     threats: list[ThreatRef] = Field(default_factory=list, max_length=200)
+
+    @model_validator(mode="after")
+    def _one_level(self):
+        if (self.l2_id is None) == (self.l3_id is None):
+            raise ValueError("Choose either an L2 use case or an L3 rule")
+        return self
 
 
 class RemovedIn(BaseModel):
@@ -282,7 +307,10 @@ def _weights(db: Session, settings) -> dict[str, float | None]:
     from app.api.scores import compute_scores
 
     res, _l1, l2s, _l3 = compute_scores(db, settings.default_verification_days)
-    return {x.code: (res.l2[x.code].weight if x.code in res.l2 else None) for x in l2s}
+    out = {x.code: (res.l2[x.code].weight if x.code in res.l2 else None) for x in l2s}
+    # L3 codes (XX-YYY-NN) never clash with L2 codes (XX-YYY)
+    out |= {code: r.weight for code, r in res.rules.items()}
+    return out
 
 
 class _Ctx:
@@ -294,7 +322,8 @@ class _Ctx:
         q = select(SystemLink).options(
             selectinload(SystemLink.l2)
             .selectinload(L2UseCase.children)
-            .selectinload(L3UseCase.references)
+            .selectinload(L3UseCase.references),
+            selectinload(SystemLink.l3).selectinload(L3UseCase.references),
         )
         for link in db.scalars(q):
             self.links.setdefault(link.system_id, []).append(link)
@@ -309,20 +338,20 @@ def _gaps(system: System, links: list[SystemLink]) -> tuple[list, list, list]:
     hints but do not count (issue #41)."""
     last = iv.latest_completed(system)
     result = (last.result or {}) if last else {}
-    comp_ls = {
-        c["name"]: {s["id"] for s in c.get("log_sources", []) if s.get("id") is not None}
-        for c in result.get("components", [])
-    }
+    comp_ls = _delivered(result)
     no_rules, ls_gaps = [], []
-    for link in sorted(links, key=lambda x: x.l2.code):
+    for link in sorted(links, key=_link_code):
         l2 = link.l2
-        active = [r for r in l2.children if iv.is_active(r)]
+        rule = link.l3
+        candidates = [rule] if rule is not None else l2.children
+        active = [r for r in candidates if iv.is_active(r)]
         if not active:
-            no_rules.append({"code": l2.code, "name": l2.name})
+            uc = rule or l2
+            no_rules.append({"code": uc.code, "name": uc.name})
             continue
         comps = sorted({s["component"] for s in link.sources})
         delivered = set().union(*(comp_ls.get(c, set()) for c in comps)) if comps else set()
-        state = iv.detection_state(l2, delivered)
+        state = link_detection(link, delivered)
         rules = []
         for r in active:
             needed = {x.id: x.name for x in r.references if x.kind == RefKind.log_source}
@@ -339,8 +368,8 @@ def _gaps(system: System, links: list[SystemLink]) -> tuple[list, list, list]:
         if rules:
             ls_gaps.append(
                 {
-                    "l2_code": l2.code,
-                    "l2_name": l2.name,
+                    "l2_code": (rule or l2).code,
+                    "l2_name": (rule or l2).name,
                     "components": comps,
                     "blind": state == "blind",
                     "rules": rules,
@@ -353,12 +382,92 @@ def _gaps(system: System, links: list[SystemLink]) -> tuple[list, list, list]:
     return no_rules, ls_gaps, requests
 
 
+def _level(link: SystemLink) -> str:
+    return "L3" if link.l3_id else "L2"
+
+
+def _link_code(link: SystemLink) -> str:
+    return link.l3.code if link.l3 is not None else link.l2.code
+
+
+def link_detection(link: SystemLink, delivered: set[int]) -> str:
+    if link.l3 is not None:
+        return iv.rule_detection(link.l3, delivered)
+    return iv.detection_state(link.l2, delivered)
+
+
+def _delivered(result: dict) -> dict[str, set[int]]:
+    """Component name -> log source ids of a completed interview."""
+    return {
+        c["name"]: {s["id"] for s in c.get("log_sources", []) if s.get("id") is not None}
+        for c in result.get("components", [])
+    }
+
+
+def _link_views(system: System, links: list[SystemLink], ctx: _Ctx) -> list[dict]:
+    last = iv.latest_completed(system)
+    comp_ls = _delivered((last.result or {}) if last else {})
+    out = []
+    for x in sorted(links, key=lambda x: (-x.risk_score, _link_code(x))):
+        uc = x.l3 if x.l3 is not None else x.l2
+        comps = {s["component"] for s in x.sources}
+        delivered = set().union(*(comp_ls.get(c, set()) for c in comps)) if comps else set()
+        out.append(
+            {
+                "level": _level(x),
+                "l2_id": x.l2_id,
+                "l3_id": x.l3_id,
+                "code": uc.code,
+                "name": uc.name,
+                "l2_code": x.l2.code,
+                "detection": link_detection(x, delivered),
+                "weight": ctx.weights.get(uc.code),
+                "risk_score": x.risk_score,
+                "risk_level": iv.risk_level(x.risk_score),
+                "sources": x.sources,
+            }
+        )
+    return out
+
+
+def _risks(system: System, link_views: list[dict]) -> tuple[list[dict], int | None]:
+    """Risk overview of the latest completed interview, with the links' current state."""
+    last = iv.latest_completed(system)
+    if last is None:
+        return [], None
+    result = last.result or {}
+    key_of = {c["name"]: c["key"] for c in result.get("components", [])}
+    proposals = [
+        v
+        | {
+            "sources": [
+                {"component": key_of[s["component"]], "category": s["category"]}
+                for s in v["sources"]
+                if s["component"] in key_of
+            ]
+        }
+        for v in link_views
+    ]
+    requests = [
+        {"component": r["component"], "category": r["category"], "text": r["text"]}
+        for r in result.get("requests", [])
+    ]
+    threshold = int(result.get("threshold") or iv.DEFAULT_THRESHOLD)
+    view = {
+        "threshold": threshold,
+        "components": result.get("components", []),
+        "proposals": proposals,
+        "requests": requests,
+    }
+    return iv.risk_overview(view), threshold
+
+
 def _row(system: System, ctx: _Ctx) -> dict:
     links = ctx.links.get(system.id, [])
     last = iv.latest_completed(system)
     last_date = last.interview_date if last else None
     no_rules, ls_gaps, requests = _gaps(system, links)
-    weights = [ctx.weights.get(x.l2.code) or 0.0 for x in links]
+    weights = [ctx.weights.get(_link_code(x)) or 0.0 for x in links]
     draft = iv.draft_of(system)
     return {
         "id": system.id,
@@ -486,7 +595,7 @@ def _validate_draft(db: Session, body: InterviewSave) -> dict:
         )
         if ls_ids - found:
             raise HTTPException(422, "Unknown log source; reload the page")
-    l2_ids = {a.l2_id for a in body.added} | {r.l2_id for r in body.removed}
+    l2_ids = {a.l2_id for a in body.added if a.l2_id is not None} | {r.l2_id for r in body.removed}
     l2_code: dict[int, str] = {}
     if l2_ids:
         l2_code = dict(
@@ -494,26 +603,34 @@ def _validate_draft(db: Session, body: InterviewSave) -> dict:
         )
         if l2_ids - set(l2_code):
             raise HTTPException(422, "Unknown L2 use case; reload the page")
-    seen: set[int] = set()
+    l3_ids = {a.l3_id for a in body.added if a.l3_id is not None}
+    l3_code: dict[int, str] = {}
+    if l3_ids:
+        l3_code = dict(
+            db.execute(select(L3UseCase.id, L3UseCase.code).where(L3UseCase.id.in_(l3_ids))).all()
+        )
+        if l3_ids - set(l3_code):
+            raise HTTPException(422, "Unknown L3 rule; reload the page")
+    seen: set[tuple[str, int]] = set()
     for a in body.added:
-        if a.l2_id in seen:
-            raise HTTPException(422, f"{l2_code[a.l2_id]} is added twice")
-        seen.add(a.l2_id)
+        ident = ("L3", a.l3_id) if a.l3_id is not None else ("L2", a.l2_id)
+        code = l3_code[a.l3_id] if a.l3_id is not None else l2_code[a.l2_id]
+        if ident in seen:
+            raise HTTPException(422, f"{code} is added twice")
+        seen.add(ident)
         if not a.threats:
-            raise HTTPException(
-                422, f"{l2_code[a.l2_id]}: choose at least one threat of the interview"
-            )
+            raise HTTPException(422, f"{code}: choose at least one threat of the interview")
         for r in a.threats:
             if (r.component, r.category) not in applies:
-                raise HTTPException(
-                    422, f"{l2_code[a.l2_id]} is tied to a threat that does not apply"
-                )
+                raise HTTPException(422, f"{code} is tied to a threat that does not apply")
     for r in body.requests:
         if not r.text:
             raise HTTPException(422, "A detection request needs a text")
         if (r.threat.component, r.threat.category) not in applies:
             raise HTTPException(422, "A detection request is tied to a threat that does not apply")
     data = body.model_dump(include={"components", "added", "removed", "requests"}, mode="json")
+    # an added entry carries either l2_id or l3_id
+    data["added"] = [{k: v for k, v in a.items() if v is not None} for a in data["added"]]
     # one removal per use case
     data["removed"] = list({r["l2_id"]: r for r in data["removed"]}.values())
     return data
@@ -567,19 +684,15 @@ def _detail(db: Session, s: System, settings) -> dict:
     row = _row(s, ctx)
     links = ctx.links.get(s.id, [])
     no_rules, ls_gaps, requests = _gaps(s, links)
+    link_views = _link_views(s, links, ctx)
+    risks, threshold = _risks(s, link_views)
+    last = iv.latest_completed(s)
+    comps = ((last.result or {}) if last else {}).get("components", [])
     return row | {
-        "links": [
-            {
-                "l2_id": x.l2_id,
-                "code": x.l2.code,
-                "name": x.l2.name,
-                "weight": ctx.weights.get(x.l2.code),
-                "risk_score": x.risk_score,
-                "risk_level": iv.risk_level(x.risk_score),
-                "sources": x.sources,
-            }
-            for x in sorted(links, key=lambda x: (-x.risk_score, x.l2.code))
-        ],
+        "links": link_views,
+        "risks": risks,
+        "threshold": threshold,
+        "components": [{"key": c["key"], "name": c["name"]} for c in comps],
         "gap_no_rules": no_rules,
         "gap_log_sources": ls_gaps,
         "gap_requests": requests,

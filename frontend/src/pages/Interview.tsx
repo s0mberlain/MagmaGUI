@@ -8,7 +8,9 @@ import {
   type InterviewAttachment,
   type InterviewCompare,
   type InterviewSave,
+  type AddedUseCase,
   type L2,
+  type L3,
   type Proposal,
   type RefItem,
   type Stride,
@@ -28,6 +30,7 @@ import {
   useUnsavedGuard,
 } from "../components/ui";
 import { Markdown, MarkdownField } from "../components/Markdown";
+import { RiskCoverage, useCaseHref } from "../components/RiskCoverage";
 import { fmtDate, fmtSize, fmtTime, today } from "../lib/format";
 import { INTERVIEW_STATUS_LABEL, riskLevel, STATE_LABEL, STRIDE, STRIDE_HINT, STRIDE_LABEL } from "../lib/stride";
 import { getLang, t } from "../i18n";
@@ -61,7 +64,7 @@ function formOf(iv: IV): Form {
         impact: x.impact,
       })),
     })),
-    added: v.added.map((a) => ({ l2_id: a.l2_id, threats: a.threats })),
+    added: v.added.map((a): AddedUseCase => (a.l3_id ? { l3_id: a.l3_id, threats: a.threats } : { l2_id: a.l2_id!, threats: a.threats })),
     removed: v.removed.map((r) => ({ l2_id: r.l2_id, reason: r.reason ?? "" })),
     requests: v.requests.map((r) => ({
       key: r.key,
@@ -382,7 +385,7 @@ export default function Interview() {
       {draft ? (
         <>
           <div className="tabs" role="tablist" aria-label={t("Interview steps")}>
-            {[t("1 · Context"), t("2 · Components and threats"), t("3 · Proposals")].map((label, i) => (
+            {[t("1 · Context"), t("2 · Components and threats"), t("3 · Risks and use cases")].map((label, i) => (
               <button
                 key={label}
                 type="button"
@@ -413,7 +416,7 @@ export default function Interview() {
           {step === 2 && (
             <StepComponents form={form} update={update} readOnly={!canEdit} dupNames={dupNames} />
           )}
-          {step === 3 && <StepProposals iv={iv} form={form} readOnly={!canEdit} saveWith={saveWith} busy={busy} />}
+          {step === 3 && <StepProposals iv={iv} readOnly={!canEdit} saveWith={saveWith} busy={busy} />}
           {canEdit && (
             <div className="row-actions">
               <button type="button" className="btn btn-danger" onClick={() => void removeDraft()}>
@@ -909,18 +912,27 @@ function StepComponents({
 
 /* ------------------------------------------------------------------ step 3 */
 
+const proposalKey = (p: Proposal) => (p.level === "L3" ? `l3-${p.l3_id}` : `l2-${p.l2_id}`);
+
 function ProposalCard({ p, children }: { p: Proposal; children?: ReactNode }) {
+  const level = p.level ?? "L2";
   return (
     <div className="iv-proposal">
       <div className="iv-proposal-head">
-        <Link className="code-link" to={`/usecases?l2=${encodeURIComponent(p.code)}`}>
+        <span className={`lvl lvl-${level}`}>{level}</span>
+        <Link className="code-link" to={useCaseHref({ level, code: p.code })}>
           <span className="code-tag">{p.code}</span>
           <span>{p.name}</span>
         </Link>
+        {level === "L3" && p.l2_code && (
+          <span className="small muted">{t("rule of {code} {name}", { code: p.l2_code, name: p.l2_name ?? "" })}</span>
+        )}
         {p.deleted && <span className="badge-gap">{t("deleted")}</span>}
         {!p.l1_applicable && <span className="chip chip-neutral">{t("L1 not applicable")}</span>}
         {p.manual && <span className="chip chip-info">{t("added by hand")}</span>}
-        {p.detection === "no_rules" && p.rules.length > 0 && <span className="badge-gap">{t("No active rule")}</span>}
+        {p.detection === "no_rules" && p.rules.length > 0 && (
+          <span className="badge-gap">{level === "L3" ? t("Rule not active") : t("No active rule")}</span>
+        )}
         <span className="grow" />
         <span className="small muted">{t("Risk score")}</span> <RiskScore value={p.risk_score} />
         {children}
@@ -961,20 +973,19 @@ function ProposalCard({ p, children }: { p: Proposal; children?: ReactNode }) {
 
 function StepProposals({
   iv,
-  form,
   readOnly,
   saveWith,
   busy,
 }: {
   iv: IV;
-  form: Form;
   readOnly: boolean;
   saveWith: (fn: (f: Form) => Form) => Promise<IV | null>;
   busy: boolean;
 }) {
   const v = iv.view;
   const [removing, setRemoving] = useState<Proposal | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<string[] | null>(null);
+  const [mode, setMode] = useState<"risk" | "usecase">("risk");
   const [showBelow, setShowBelow] = useState(false);
   const [showMismatch, setShowMismatch] = useState(true);
   const [request, setRequest] = useState<{ text: string; threat: string }>({ text: "", threat: "" });
@@ -999,6 +1010,29 @@ function StepProposals({
         : [...f.added, { l2_id, threats }];
       return { ...f, added, removed: f.removed.filter((r) => r.l2_id !== l2_id) };
     });
+  const addL3 = (l3_id: number, threats: ThreatRef[]) =>
+    saveWith((f) => {
+      const existing = f.added.find((a) => a.l3_id === l3_id);
+      const added = existing
+        ? f.added.map((a) =>
+            a.l3_id === l3_id
+              ? { ...a, threats: [...a.threats, ...threats.filter((x) => !a.threats.some((y) => y.component === x.component && y.category === x.category))] }
+              : a,
+          )
+        : [...f.added, { l3_id, threats }];
+      return { ...f, added };
+    });
+  const removeL3 = (l3_id: number) => saveWith((f) => ({ ...f, added: f.added.filter((a) => a.l3_id !== l3_id) }));
+  const switcher = (
+    <div className="view-switch" role="group" aria-label={t("View")}>
+      <button type="button" className={mode === "risk" ? "active" : ""} aria-pressed={mode === "risk"} onClick={() => setMode("risk")}>
+        {t("By risk")}
+      </button>
+      <button type="button" className={mode === "usecase" ? "active" : ""} aria-pressed={mode === "usecase"} onClick={() => setMode("usecase")}>
+        {t("By use case")}
+      </button>
+    </div>
+  );
 
   return (
     <div className="stack">
@@ -1025,14 +1059,37 @@ function StepProposals({
       )}
       {v.mapping_empty && <div className="note-box">{t("There is no STRIDE mapping yet, so nothing is proposed automatically. You can add use cases by hand.")}</div>}
 
+      {mode === "risk" && (
+        <RiskCoverage
+          risks={v.risks ?? []}
+          components={v.components}
+          onAdd={readOnly ? undefined : (r) => setAdding([`${r.component}:${r.category}`])}
+          addDisabled={busy}
+          actions={
+            <div className="row-actions">
+              {switcher}
+              {!readOnly && (
+                <button type="button" className="btn btn-sm" disabled={busy || !threatOptions.length} onClick={() => setAdding([])}>
+                  {t("+ Add use case")}
+                </button>
+              )}
+            </div>
+          }
+        />
+      )}
+
+      {mode === "usecase" && (
       <section className="card stack-sm" aria-labelledby="proph">
         <div className="section-head">
           <h2 id="proph">{t("Accepted use cases ({n})", { n: v.proposals.length })}</h2>
-          {!readOnly && (
-            <button type="button" className="btn btn-sm" disabled={busy || !threatOptions.length} onClick={() => setAdding(true)}>
-              {t("+ Add use case")}
-            </button>
-          )}
+          <div className="row-actions">
+            {switcher}
+            {!readOnly && (
+              <button type="button" className="btn btn-sm" disabled={busy || !threatOptions.length} onClick={() => setAdding([])}>
+                {t("+ Add use case")}
+              </button>
+            )}
+          </div>
         </div>
         {!v.proposals.length && (
           <p className="muted" style={{ margin: 0 }}>
@@ -1042,15 +1099,21 @@ function StepProposals({
           </p>
         )}
         {v.proposals.map((p) => (
-          <ProposalCard key={p.l2_id} p={p}>
+          <ProposalCard key={proposalKey(p)} p={p}>
             {!readOnly && (
-              <button type="button" className="btn btn-sm" disabled={busy} onClick={() => setRemoving(p)}>
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={busy}
+                onClick={() => (p.level === "L3" && p.l3_id ? void removeL3(p.l3_id) : setRemoving(p))}
+              >
                 {t("Remove")}
               </button>
             )}
           </ProposalCard>
         ))}
       </section>
+      )}
 
       {v.below_threshold.length > 0 && (
         <section className="card stack-sm">
@@ -1158,7 +1221,7 @@ function StepProposals({
             {t("Removed ({n})", { n: v.removed.length })}
           </h2>
           {v.removed.map((p) => (
-            <ProposalCard key={p.l2_id} p={{ ...p, rules: [] }}>
+            <ProposalCard key={proposalKey(p)} p={{ ...p, rules: [] }}>
               {!readOnly && (
                 <button
                   type="button"
@@ -1260,10 +1323,13 @@ function StepProposals({
       {adding && (
         <AddDialog
           options={threatOptions}
-          exclude={new Set(v.proposals.map((p) => p.l2_id))}
-          form={form}
-          onClose={() => setAdding(false)}
-          onAdd={(l2, refs) => void addL2(l2, refs.map(ref)).then((ok) => ok && setAdding(false))}
+          initial={adding}
+          excludeL2={new Set(v.proposals.filter((p) => p.level !== "L3").map((p) => p.l2_id))}
+          excludeL3={new Set(v.proposals.filter((p) => p.level === "L3").map((p) => p.l3_id!))}
+          onClose={() => setAdding(null)}
+          onAdd={(level, id, refs) =>
+            void (level === "L3" ? addL3(id, refs.map(ref)) : addL2(id, refs.map(ref))).then((ok) => ok && setAdding(null))
+          }
         />
       )}
     </div>
@@ -1300,25 +1366,43 @@ function RemoveDialog({ p, onClose, onRemove }: { p: Proposal; onClose: () => vo
 
 function AddDialog({
   options,
-  exclude,
-  form,
+  initial,
+  excludeL2,
+  excludeL3,
   onClose,
   onAdd,
 }: {
   options: { value: string; label: string }[];
-  exclude: Set<number>;
-  form: Form;
+  /** threats ticked when the dialog opens (e.g. the risk it was opened from) */
+  initial: string[];
+  excludeL2: Set<number>;
+  excludeL3: Set<number>;
   onClose: () => void;
-  onAdd: (l2: number, threats: string[]) => void;
+  onAdd: (level: "L2" | "L3", id: number, threats: string[]) => void;
 }) {
   const l2s = useLoad<L2[]>(() => api.l2s());
+  const l3s = useLoad<L3[]>(() => api.l3s());
   const l1s = useLoad(() => api.l1s());
-  const [l2, setL2] = useState("");
-  const [threats, setThreats] = useState<string[]>([]);
+  const [level, setLevel] = useState<"L2" | "L3">("L2");
+  const [query, setQuery] = useState("");
+  const [chosen, setChosen] = useState<{ level: "L2" | "L3"; id: number } | null>(null);
+  const [threats, setThreats] = useState<string[]>(initial);
   const [tried, setTried] = useState(false);
   const na = new Set((l1s.data ?? []).filter((x) => !x.applicable).map((x) => x.code));
-  const chosen = l2s.data?.find((x) => String(x.id) === l2);
-  void form;
+  const q = query.trim().toLowerCase();
+  const match = (code: string, name: string) => !q || code.toLowerCase().includes(q) || name.toLowerCase().includes(q);
+  const items =
+    level === "L2"
+      ? (l2s.data ?? [])
+          .filter((x) => !excludeL2.has(x.id) && match(x.code, x.name))
+          .map((x) => ({ id: x.id, code: x.code, name: x.name, sub: "", l1: x.l1_code, status: null }))
+      : (l3s.data ?? [])
+          .filter((x) => !excludeL3.has(x.id) && match(x.code, x.name))
+          .map((x) => ({ id: x.id, code: x.code, name: x.name, sub: x.l2_code, l1: x.l1_code, status: x.lifecycle_status }));
+  const LIMIT = 200;
+  const pick = chosen && chosen.level === level ? chosen : null;
+  const pickedItem = pick ? items.find((x) => x.id === pick.id) : undefined;
+  const loading = level === "L2" ? !l2s.data && !l2s.error : !l3s.data && !l3s.error;
   return (
     <Modal title={t("Add a use case by hand")} open onClose={onClose} wide>
       <form
@@ -1326,28 +1410,54 @@ function AddDialog({
         onSubmit={(e) => {
           e.preventDefault();
           setTried(true);
-          if (!l2 || !threats.length) return;
-          onAdd(Number(l2), threats);
+          if (!pick || !threats.length) return;
+          onAdd(pick.level, pick.id, threats);
         }}
       >
-        <ErrorNote error={l2s.error} />
+        <ErrorNote error={l2s.error ?? l3s.error} />
+        <div className="section-head">
+          <div className="view-switch" role="group" aria-label={t("Level")}>
+            <button type="button" className={level === "L2" ? "active" : ""} aria-pressed={level === "L2"} onClick={() => setLevel("L2")}>
+              {t("L2 use case")}
+            </button>
+            <button type="button" className={level === "L3" ? "active" : ""} aria-pressed={level === "L3"} onClick={() => setLevel("L3")}>
+              {t("L3 rule")}
+            </button>
+          </div>
+          <span className="small muted">
+            {level === "L2" ? t("All active rules of the use case count.") : t("Only this rule counts; its priority is raised by the system risk.")}
+          </span>
+        </div>
         <label className="field">
-          {t("L2 use case")}
-          <select className={"input" + (tried && !l2 ? " is-invalid" : "")} value={l2} onChange={(e) => setL2(e.target.value)}>
-            <option value="">{t("Choose a use case")}</option>
-            {l2s.data
-              ?.filter((x) => !exclude.has(x.id))
-              .map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.code} · {x.name}
-                  {na.has(x.l1_code) ? ` (${t("L1 not applicable")})` : ""}
-                </option>
-              ))}
-          </select>
+          {t("Search")}
+          <input
+            className="input"
+            type="search"
+            value={query}
+            placeholder={level === "L2" ? t("Code or name, e.g. AO-ACC") : t("Code or name, e.g. AO-ACC-01")}
+            onChange={(e) => setQuery(e.target.value)}
+          />
         </label>
-        {chosen && na.has(chosen.l1_code) && (
-          <p className="form-notice">{t("This use case belongs to an L1 marked as not applicable.")}</p>
-        )}
+        <div className={"uc-picker-list" + (tried && !pick ? " is-invalid" : "")} role="radiogroup" aria-label={level === "L2" ? t("L2 use case") : t("L3 rule")}>
+          {loading && <p className="muted small" style={{ margin: 8 }}>{t("Loading…")}</p>}
+          {!loading && !items.length && <p className="muted small" style={{ margin: 8 }}>{t("Nothing matches.")}</p>}
+          {items.slice(0, LIMIT).map((x) => (
+            <label key={x.id} className={pick?.id === x.id ? "is-chosen" : undefined}>
+              <input type="radio" name="uc" checked={pick?.id === x.id} onChange={() => setChosen({ level, id: x.id })} />
+              <span>
+                <span className="mono small">{x.code}</span> {x.name}
+                <span className="uc-sub">
+                  {x.sub && ` · ${t("in {code}", { code: x.sub })}`}
+                  {na.has(x.l1) && ` · ${t("L1 not applicable")}`}
+                </span>{" "}
+                {x.status && <StatusPill status={x.status} />}
+              </span>
+            </label>
+          ))}
+          {items.length > LIMIT && <p className="muted small" style={{ margin: 8 }}>{t("{n} more; refine the search.", { n: items.length - LIMIT })}</p>}
+        </div>
+        {tried && !pick && <span className="field-error">{t("Choose a use case.")}</span>}
+        {pickedItem && na.has(pickedItem.l1) && <p className="form-notice">{t("This use case belongs to an L1 marked as not applicable.")}</p>}
         <fieldset className="fieldset">
           <legend className="small strong">{t("Threats it covers (at least one)")}</legend>
           {options.map((o) => (
@@ -1524,6 +1634,8 @@ function CompletedView({
 
       {cmp.data && <Comparison c={cmp.data} />}
 
+      <RiskCoverage risks={v.risks ?? []} components={v.components} />
+
       <section className="card stack-sm">
         <h2 className="h-sm">{t("Components and threats")}</h2>
         <ThreatTable components={v.components} />
@@ -1533,7 +1645,7 @@ function CompletedView({
         <h2 className="h-sm">{t("Accepted use cases ({n})", { n: v.proposals.length })}</h2>
         {!v.proposals.length && <p className="muted" style={{ margin: 0 }}>{t("No use cases accepted.")}</p>}
         {v.proposals.map((p) => (
-          <ProposalCard key={p.l2_id} p={p} />
+          <ProposalCard key={proposalKey(p)} p={p} />
         ))}
       </section>
 
@@ -1541,7 +1653,7 @@ function CompletedView({
         <section className="card stack-sm">
           <h2 className="h-sm">{t("Removed ({n})", { n: v.removed.length })}</h2>
           {v.removed.map((p) => (
-            <ProposalCard key={p.l2_id} p={{ ...p, rules: [] }} />
+            <ProposalCard key={proposalKey(p)} p={{ ...p, rules: [] }} />
           ))}
         </section>
       )}

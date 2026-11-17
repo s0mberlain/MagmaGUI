@@ -676,19 +676,27 @@ class InterviewAttachment(Base):
 
 
 class SystemLink(Base):
-    """An L2 use case the latest completed interview of a system accepted.
+    """An L2 use case (or a single L3 rule of it) the latest completed interview of a system
+    accepted.
 
     Replaced as a whole when the next interview of the system is completed. Follows the L2 by
-    id (also when its code changes) and disappears with it.
+    id (also when its code changes) and disappears with it. An L3 link (`l3_id` set) keeps the
+    rule's L2 in `l2_id`, so filters by L2 still find it; it disappears with the rule.
     """
 
     __tablename__ = "system_links"
-    __table_args__ = (UniqueConstraint("system_id", "l2_id"),)
+    __table_args__ = (
+        UniqueConstraint("system_id", "l2_id", "l3_id", name="uq_system_links_system_l2_l3"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     system_id: Mapped[int] = mapped_column(ForeignKey("systems.id", ondelete="CASCADE"), index=True)
     l2_id: Mapped[int] = mapped_column(
         ForeignKey("l2_use_cases.id", ondelete="CASCADE"), index=True
+    )
+    # set when a single L3 rule (not the whole L2) was selected for the threats
+    l3_id: Mapped[int | None] = mapped_column(
+        ForeignKey("l3_use_cases.id", ondelete="CASCADE"), index=True, default=None
     )
     interview_id: Mapped[int] = mapped_column(ForeignKey("interviews.id", ondelete="CASCADE"))
     # highest risk score (likelihood x impact, 1..25) of the threats the link came from
@@ -698,6 +706,7 @@ class SystemLink(Base):
 
     system: Mapped[System] = relationship()
     l2: Mapped[L2UseCase] = relationship()
+    l3: Mapped[L3UseCase | None] = relationship()
 
 
 class StrideMapping(Base):

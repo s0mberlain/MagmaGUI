@@ -75,6 +75,7 @@ const SERVER_MESSAGES = [
   st("A detection request is tied to a threat that does not apply"),
   st("Unknown log source; reload the page"),
   st("Unknown L2 use case; reload the page"),
+  st("Unknown L3 rule; reload the page"),
   st("A completed interview cannot be changed; start a new one"),
   st("Evidence can only be added while the interview is a draft"),
   st("Evidence of a completed interview cannot be removed"),

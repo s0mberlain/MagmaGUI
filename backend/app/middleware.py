@@ -1,7 +1,8 @@
-"""ASGI middleware: security headers on every response, the client address for the audit log
-and a cap on the request body size."""
+"""ASGI middleware: security headers on every response, the client address for the audit log,
+a cap on the request body size and an Origin check for cookie-authenticated changes."""
 
 import logging
+from urllib.parse import urlsplit
 
 from app import audit
 
@@ -26,11 +27,47 @@ class BodyTooLarge(Exception):
     pass
 
 
+UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def _origin_of(url: str) -> str | None:
+    try:
+        p = urlsplit(url)
+    except ValueError:
+        return None
+    if not p.scheme or not p.netloc:
+        return None
+    return f"{p.scheme.lower()}://{p.netloc.lower()}"
+
+
+def cross_site(headers: dict[bytes, bytes], base_url: str) -> bool:
+    """Issue #49: a browser request that changes something with the session cookie must come
+    from the app itself. Requests without Origin and Referer (scripts, API clients) and requests
+    with a bearer token are not affected; SameSite=Strict on the cookie stays the first line."""
+    if b"magma_session=" not in headers.get(b"cookie", b""):
+        return False
+    if headers.get(b"authorization", b"")[:7].lower() == b"bearer ":
+        return False
+    sent = headers.get(b"origin") or headers.get(b"referer")
+    if not sent:
+        return False
+    origin = _origin_of(sent.decode("latin-1"))
+    if origin is None:
+        return True  # "null" or garbage: sandboxed frames, privacy redirects
+    allowed = {o for o in (_origin_of(base_url),) if o}
+    host = headers.get(b"host")
+    if host:
+        h = host.decode("latin-1").lower()
+        allowed |= {f"http://{h}", f"https://{h}"}
+    return origin not in allowed
+
+
 class SecurityHeaders:
-    def __init__(self, app, hsts: bool = False, max_body: int = 0):
+    def __init__(self, app, hsts: bool = False, max_body: int = 0, base_url: str = ""):
         self.app = app
         self.hsts = hsts
         self.max_body = max_body  # bytes, 0 = no limit
+        self.base_url = base_url
         self._proxy_warned = False
 
     def _check_proxy(self, scope, client) -> None:
@@ -69,6 +106,22 @@ class SecurityHeaders:
             return await self.app(scope, receive, send)
         client = scope.get("client")
         self._check_proxy(scope, client)
+        if scope.get("method") in UNSAFE_METHODS and cross_site(
+            dict(scope.get("headers") or []), self.base_url
+        ):
+            body = b'{"detail":"Cross-site request refused"}'
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 403,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"content-length", str(len(body)).encode()),
+                    ],
+                }
+            )
+            await send({"type": "http.response.body", "body": body})
+            return
         too_large = False
         if self.max_body:
             length = dict(scope.get("headers") or []).get(b"content-length")

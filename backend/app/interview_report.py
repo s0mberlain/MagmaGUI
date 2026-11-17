@@ -202,16 +202,16 @@ def build(out, system, lang: str, app_name: str) -> bytes:
     )
     if system.description:
         pdf.ln(1)
-        pdf.p(system.description)
+        pdf.md(system.description)
     if out.notes:
         pdf.h3(tr("notes"))
-        pdf.p(out.notes)
+        pdf.md(out.notes)
 
     pdf.h2(tr("components"), need=30)
     for c in view.get("components", []):
         pdf.h3(c["name"])
         if c.get("description"):
-            pdf.p(c["description"], color=MUTED)
+            pdf.md(c["description"], color=MUTED)
         names = ", ".join(s["name"] for s in c.get("log_sources", [])) or tr("none")
         pdf.p(f"{tr('log_sources')}: {names}", size=9)
         applies = [t for t in c["threats"] if t["state"] == "applies"]
@@ -239,7 +239,7 @@ def build(out, system, lang: str, app_name: str) -> bytes:
                     pdf.set_font("Helvetica", "B", 8.5)
                     pdf.set_text_color(*INK)
                     pdf.cell(0, 5, _t(tr(t["category"])), new_x="LMARGIN", new_y="NEXT")
-                    pdf.p(t["description"], size=8.5)
+                    pdf.md(t["description"], size=8.5)
         else:
             pdf.p(tr("no_threats"), size=9, color=MUTED)
         rest = [

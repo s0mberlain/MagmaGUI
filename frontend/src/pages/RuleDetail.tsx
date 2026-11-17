@@ -8,7 +8,17 @@ import LifecyclePanel from "../components/LifecyclePanel";
 import { DriverBlock } from "../components/Drivers";
 import { MarkdownField } from "../components/Markdown";
 import OutputPanel from "../components/OutputPanel";
-import { Chips, confirmDialog, ErrorNote, MultiSelect, StatusPill, useLoad, useUnsavedGuard } from "../components/ui";
+import {
+  Chips,
+  confirmDialog,
+  DraftRestoreBanner,
+  ErrorNote,
+  MultiSelect,
+  StatusPill,
+  useDraftBackup,
+  useLoad,
+  useUnsavedGuard,
+} from "../components/ui";
 import { fmtDate, num, pct, refHref } from "../lib/format";
 import { renderRuleName, ruleNameValues } from "../lib/ruleName";
 import { VerifiedCell, VerifyDialog } from "./UseCases";
@@ -103,6 +113,7 @@ export default function RuleDetail() {
 
   const isDirty = !!form && !!rule.data && JSON.stringify(form) !== JSON.stringify(toForm(rule.data));
   useUnsavedGuard(isDirty);
+  const backup = useDraftBackup(`magma-draft:l3:${code}`, form, isDirty, rule.data?.updated_at ?? null);
 
   if (rule.error) return <ErrorNote error={rule.error} />;
   if (!rule.data || !form) return <p className="muted">{t("Loading…")}</p>;
@@ -122,6 +133,7 @@ export default function RuleDetail() {
   const discard = () => {
     setForm(toForm(r));
     setError(null);
+    backup.clear();
   };
 
   async function save(ev: FormEvent) {
@@ -155,6 +167,7 @@ export default function RuleDetail() {
         expected_updated_at: r.updated_at,
       });
       base.current = null; // saved: take over what the server stored
+      backup.clear();
       rule.setData(updated);
       setSaved(t("Saved."));
     } catch (err) {
@@ -205,6 +218,16 @@ export default function RuleDetail() {
           <span aria-hidden="true">/</span>
           <span>{r.code}</span>
         </nav>
+        {backup.offer && (
+          <DraftRestoreBanner
+            at={backup.offer.at}
+            onRestore={() => {
+              setForm(backup.offer!.value);
+              backup.dismiss();
+            }}
+            onDiscard={backup.clear}
+          />
+        )}
 
         <header className="page-header">
           <div className="stack-sm">

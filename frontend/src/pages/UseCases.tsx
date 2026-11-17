@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   api,
+  ApiError,
   type BusinessDriver,
   type ComplianceSource,
   type ConfigCommit,
@@ -162,7 +163,7 @@ export default function UseCases() {
   );
 
   const q = query.trim().toLowerCase();
-  // The search also looks into the rules (id, name, ATT&CK technique, SIEM rule id); they are
+  // The search also looks into the rules (id, name, SIEM name, ATT&CK technique, SIEM rule id); they are
   // loaded once, when the first search starts.
   const searching = q.length > 0;
   const allRules = useLoad<L3[] | null>(() => (searching ? api.l3s() : Promise.resolve(null)), [searching]);
@@ -170,7 +171,7 @@ export default function UseCases() {
     const hits = new Map<string, L3[]>();
     if (!q) return hits;
     for (const r of allRules.data ?? []) {
-      const text = [r.code, r.name, ...r.attack_techniques, ...(r.siem_rule_ids ?? [])].join(" ").toLowerCase();
+      const text = [r.code, r.name, r.siem_name ?? "", ...r.attack_techniques, ...(r.siem_rule_ids ?? [])].join(" ").toLowerCase();
       if (!text.includes(q) || !ruleMatches(r)) continue;
       hits.set(r.l2_code, [...(hits.get(r.l2_code) ?? []), r]);
     }
@@ -926,7 +927,32 @@ function EditL2Dialog({ l2, onClose, onSaved }: { l2: L2; onClose: () => void; o
     if (!ok) return;
     setBusy(true);
     try {
-      await api.deleteL2(l2.code);
+      try {
+        await api.deleteL2(l2.code);
+      } catch (err) {
+        const systems = err instanceof ApiError && err.status === 409 ? (err.data as { systems?: string[] })?.systems : null;
+        if (!systems?.length) throw err;
+        const sure = await confirmDialog(
+          t("{code} is linked to {n} systems through their interviews. Deleting it removes these links, and their coverage changes.", {
+            code: l2.code,
+            n: systems.length,
+          }),
+          {
+            title: t("Use case is linked to systems"),
+            confirmLabel: t("Delete and remove links"),
+            danger: true,
+            body: (
+              <ul className="confirm-list">
+                {systems.map((x) => (
+                  <li key={x}>{x}</li>
+                ))}
+              </ul>
+            ),
+          },
+        );
+        if (!sure) return;
+        await api.deleteL2(l2.code, true);
+      }
       onSaved();
       onClose();
     } catch (err) {

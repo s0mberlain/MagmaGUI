@@ -31,12 +31,18 @@ function ssoErrorText(code: string): string {
   }
 }
 
+/** Only a path inside the app; "//host", "/\\host" and full URLs fall back to "/" (#43). */
+export function safePath(path: string | undefined | null): string {
+  if (!path || !path.startsWith("/") || path.startsWith("//") || /[\\\u0000-\u001f]/.test(path)) return "/";
+  return path;
+}
+
 export default function Login() {
   const { user, loading, login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const state = location.state as { from?: string; expired?: boolean } | null;
-  const from = state?.from ?? "/";
+  const from = safePath(state?.from);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");

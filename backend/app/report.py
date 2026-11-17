@@ -1,6 +1,9 @@
 """PDF management report (PLAN 2.16), built from the same functions as the API."""
 
+import re
+import unicodedata
 from datetime import UTC, date, datetime
+from pathlib import Path
 
 from fpdf import FPDF
 from sqlalchemy import func, select
@@ -19,28 +22,55 @@ DATA1 = (29, 78, 216)
 DATA2 = (147, 197, 253)
 DATA3 = (234, 88, 12)
 
-_REPL = {
-    "–": "-",
-    "—": "-",
-    "→": "->",
-    "×": "x",
-    "−": "-",
-    "≥": ">=",
-    "…": "...",
-    "“": '"',
-    "”": '"',
-    "’": "'",
-    "‘": "'",
-    "·": "-",
-}
+FONT_DIR = Path(__file__).parent / "fonts"
+FONT = "DejaVu"  # Unicode TTF bundled with the app (issue #44); the core fonts are latin-1 only
 
 
 def _t(s: object) -> str:
-    """Core PDF fonts are latin-1 only."""
-    s = str(s)
-    for k, v in _REPL.items():
-        s = s.replace(k, v)
-    return s.encode("latin-1", "replace").decode("latin-1")
+    """Text for the PDF: DejaVu Sans covers Latin, Greek, Cyrillic, arrows and common symbols.
+    Control characters are dropped; glyphs the font lacks (e.g. CJK, emoji) are replaced."""
+    out = []
+    for ch in str(s):
+        if ch in "\n\t\u200b":  # zero-width space keeps fpdf2 markers apart (md_text)
+            out.append(ch)
+        elif unicodedata.category(ch)[0] == "C":
+            continue
+        elif ord(ch) > 0xFFFF or unicodedata.east_asian_width(ch) in ("W", "F"):
+            out.append("?")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+_LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
+_CODE = re.compile(r"`([^`]+)`")
+_ITALIC = re.compile(r"(?<![*\w])[*_]([^*_\n]+)[*_](?![*\w])")
+
+
+def md_text(src: str) -> str:
+    """Markdown (as typed in the app) to the small markup fpdf2 understands: **bold** stays,
+    lists get bullets, headings become bold lines, links show their address, other markers go
+    (issue #44). fpdf2's own markers for italics and underline are neutralised first."""
+    lines = []
+    src = re.sub(r"__(\S(?:.*?\S)?)__", r"**\1**", str(src))  # __bold__ is bold too
+    for raw in src.replace("__", "_\u200b_").replace("--", "-\u200b-").splitlines():
+        line = raw.rstrip()
+        stripped = line.lstrip()
+        indent = "    " * ((len(line) - len(stripped)) // 2)
+        m = re.match(r"^(#{1,6})\s+(.*)$", stripped)
+        if m:
+            line = f"**{m.group(2).strip('* ')}**"
+        elif re.match(r"^[-*+]\s+", stripped):
+            line = indent + "\u2022 " + re.sub(r"^[-*+]\s+", "", stripped)
+        elif re.match(r"^\d+[.)]\s+", stripped):
+            line = indent + stripped
+        elif stripped.startswith(">"):
+            line = "    " + stripped.lstrip("> ")
+        line = _LINK.sub(lambda x: f"{x.group(1)} ({x.group(2)})", line)
+        line = _CODE.sub(r"\1", line)
+        line = _ITALIC.sub(r"\1", line)
+        lines.append(line)
+    return _t("\n".join(lines))
 
 
 def pct(v: float | None, digits: int = 0) -> str:
@@ -59,6 +89,15 @@ class Report(FPDF):
         self.set_auto_page_break(True, margin=16)
         self.set_title(title)
         self.set_creator("MaGMa UCF")
+        self.add_font(FONT, "", str(FONT_DIR / "DejaVuSans.ttf"))
+        self.add_font(FONT, "B", str(FONT_DIR / "DejaVuSans-Bold.ttf"))
+
+    def set_font(self, family=None, style="", size=0):
+        # every caller asks for Helvetica; the bundled Unicode font replaces it (issue #44)
+        if family and family.lower() in ("helvetica", "arial"):
+            family = FONT
+        style = (style or "").replace("I", "")  # no italic face bundled
+        super().set_font(family, style, size)
 
     def footer(self) -> None:
         self.set_y(-11)
@@ -89,6 +128,14 @@ class Report(FPDF):
         self.set_font("Helvetica", "", size)
         self.set_text_color(*color)
         self.multi_cell(0, 4.8, _t(text), align="L", new_x="LMARGIN", new_y="NEXT")
+
+    def md(self, text: str, size: float = 9.5, color=INK2) -> None:
+        """A paragraph of Markdown text from the app (bold, lists, links)."""
+        self.set_font("Helvetica", "", size)
+        self.set_text_color(*color)
+        self.multi_cell(
+            0, 4.8, md_text(text), align="L", new_x="LMARGIN", new_y="NEXT", markdown=True
+        )
 
     def bar(
         self, x: float, y: float, w: float, v: float | None, color=DATA1, h: float = 2.2

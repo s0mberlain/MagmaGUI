@@ -258,7 +258,12 @@ def test_inline_log_source_and_removed_log_source(analyst, admin):
     ]
     names = [i["name"] for i in analyst.get("/api/references/log_source").json()]
     assert "Azure AD sign-in" in names
-    assert admin.delete(f"/api/references/log_source/{new_id}").status_code == 204
+    # issue #39: the interview counts as a user of the log source
+    items = {i["id"]: i for i in analyst.get("/api/references/log_source").json()}
+    assert items[new_id]["used_by_systems"] == [s["name"]]
+    r = admin.delete(f"/api/references/log_source/{new_id}")
+    assert r.status_code == 409 and r.json()["used_by_systems"] == [s["name"]]
+    assert admin.delete(f"/api/references/log_source/{new_id}?confirm=true").status_code == 204
     again = analyst.get(f"/api/interviews/{iv['id']}").json()
     assert again["view"]["components"][0]["log_sources"] == []
 
@@ -477,11 +482,19 @@ def test_confirm_and_unconfirm(analyst, admin):
     assert r.json()["status"] == "confirmed"
     row = analyst.get(f"/api/systems/{s['id']}").json()["interviews"][0]
     assert (row["confirmed_by"], row["confirmed_at"]) == ("J. Jansen", TODAY.isoformat())
-    r = analyst.delete(url)
+    # issue #42: no silent overwrite, removal needs a reason and keeps the old values
+    r = analyst.put(url, json={"confirmed_by": "Mallory", "confirmed_at": TODAY.isoformat()})
+    assert r.status_code == 409
+    assert analyst.request("DELETE", url, json={"reason": " "}).status_code == 422
+    r = analyst.request("DELETE", url, json={"reason": "Wrong person recorded"})
     assert r.status_code == 200
     assert r.json()["status"] == "completed"
-    actions = [e["action"] for e in admin.get("/api/audit?limit=20").json()]
+    log = admin.get("/api/audit?limit=20").json()
+    actions = [e["action"] for e in log]
     assert "unconfirm" in actions and "confirm" in actions
+    un = next(e for e in log if e["action"] == "unconfirm")
+    assert un["changes"]["confirmed_by"] == "J. Jansen"
+    assert un["changes"]["reason"] == "Wrong person recorded"
 
 
 def test_delete_draft_keeps_links(analyst):
@@ -632,8 +645,12 @@ def test_coverage_and_gaps(analyst):
     expected = round(((weights["AO-ACC"] or 0) + (weights["AO-DBC"] or 0)) / 2, 4)
     assert d["coverage"] == expected
     assert d["gap_no_rules"] == [{"code": "AO-DBC", "name": d["gap_no_rules"][0]["name"]}]
-    assert [g["rule_code"] for g in d["gap_log_sources"]] == ["AO-ACC-01"]
-    assert d["gap_log_sources"][0]["missing"] == ["Database log"]
+    # issue #41: grouped per L2; AO-ACC is blind (its only logged rule gets nothing)
+    assert [g["l2_code"] for g in d["gap_log_sources"]] == ["AO-ACC"]
+    g = d["gap_log_sources"][0]
+    assert g["blind"] is True
+    assert [r["rule_code"] for r in g["rules"]] == ["AO-ACC-01"]
+    assert g["rules"][0]["missing"] == ["Database log"] and g["rules"][0]["partial"] is False
     assert d["gap_requests"] == [
         {"text": "Bulk transfers", "component": "Web front end", "category": "spoofing"}
     ]
@@ -777,7 +794,12 @@ def test_deleted_l2_disappears_from_links(admin, analyst):
         ),
     )
     assert "AO-ZZZ" in codes(analyst.get(f"/api/systems/{s['id']}").json()["links"])
-    assert admin.delete("/api/l2/AO-ZZZ").status_code == 204
+    # issue #48: the linked systems are named first
+    r = admin.delete("/api/l2/AO-ZZZ")
+    assert r.status_code == 409 and r.json()["systems"] == [s["name"]]
+    assert admin.delete("/api/l2/AO-ZZZ?confirm=true").status_code == 204
+    log = admin.get("/api/audit?limit=10").json()
+    assert any(e["action"] == "unlink" and e["entity_key"] == s["name"] for e in log)
     assert "AO-ZZZ" not in codes(analyst.get(f"/api/systems/{s['id']}").json()["links"])
     view = analyst.get(f"/api/interviews/{done['id']}").json()["view"]
     zzz = next(p for p in view["proposals"] if p["code"] == "AO-ZZZ")

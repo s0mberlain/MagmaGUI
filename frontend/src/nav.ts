@@ -23,7 +23,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: t("Use cases"), path: "/usecases", group: "work" },
   { label: t("Verification"), path: "/verification", group: "work" },
   { label: t("Priorities"), path: "/priorities", group: "work" },
-  { label: t("Usecase Threat Modelling"), path: "/systems", group: "work" },
+  { label: t("Threat modelling"), path: "/systems", group: "work" },
   { label: t("ATT&CK coverage"), path: "/attack", group: "analysis" },
   { label: t("Output metrics"), path: "/output", group: "analysis" },
   { label: t("History & trends"), path: "/history", group: "analysis" },

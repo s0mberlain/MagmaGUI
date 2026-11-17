@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, type SystemDetail as Detail } from "../api";
 import { useAuth } from "../auth";
 import { confirmDialog, ErrorNote, useLoad } from "../components/ui";
-import { fmtDate, num, pct } from "../lib/format";
+import { fmtDate, fmtTime, num, pct } from "../lib/format";
 import { CLASSIFICATION_LABEL, INTERVIEW_STATUS_LABEL, STRIDE_LABEL } from "../lib/stride";
 import { StatePill, SystemDialog, systemInput } from "./Systems";
 import { t } from "../i18n";
@@ -88,12 +88,14 @@ export default function SystemDetail() {
     [t("Review interval"), t("{n} months", { n: s.review_interval_months })],
     [t("Next interview due"), s.next_due ? fmtDate(s.next_due) : t("now")],
   ];
-  const gapCount = s.gap_no_rules.length + s.gap_log_sources.length + s.gap_requests.length;
+  const blind = s.gap_log_sources.filter((g) => g.blind);
+  const partial = s.gap_log_sources.filter((g) => !g.blind);
+  const gapCount = s.gap_no_rules.length + blind.length + s.gap_requests.length;
 
   return (
     <>
       <nav className="crumbs" aria-label={t("Breadcrumb")}>
-        <Link to="/systems">{t("Usecase Threat Modelling")}</Link> / <span>{s.name}</span>
+        <Link to="/systems">{t("Systems")}</Link> / <span>{s.name}</span>
       </nav>
       <header className="page-header">
         <div>
@@ -225,7 +227,12 @@ export default function SystemDetail() {
 
       <section className="card stack-sm" aria-labelledby="gaph">
         <h2 id="gaph" className="h-sm">
-          {t("Gaps")}
+          {t("Gaps")}{" "}
+          {gapCount > 0 && (
+            <span className="muted small">
+              {t("{a} without rules · {b} blind · {c} requests", { a: s.gap_no_rules.length, b: blind.length, c: s.gap_requests.length })}
+            </span>
+          )}
         </h2>
         {!gapCount && <p className="muted" style={{ margin: 0 }}>{t("No gaps.")}</p>}
         {s.gap_no_rules.length > 0 && (
@@ -243,22 +250,17 @@ export default function SystemDetail() {
             </ul>
           </div>
         )}
-        {s.gap_log_sources.length > 0 && (
+        {blind.length > 0 && (
           <div>
-            <h3 className="small strong">{t("Rules that need a log source the component does not deliver")}</h3>
-            <ul className="plain-list">
-              {s.gap_log_sources.map((g) => (
-                <li key={g.rule_code}>
-                  <Link to={`/usecases/l3/${encodeURIComponent(g.rule_code)}`}>
-                    <span className="mono small">{g.rule_code}</span> {g.rule_name}
-                  </Link>{" "}
-                  <span className="muted small">
-                    · {t("missing: {list}", { list: g.missing.join(", ") })} · {g.components.join(", ")}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <h3 className="small strong">{t("Linked use cases whose rules get none of their log sources")}</h3>
+            <GapGroups groups={blind} />
           </div>
+        )}
+        {partial.length > 0 && (
+          <details>
+            <summary className="small strong">{t("Rules that get only some of their log sources ({n} use cases)", { n: partial.length })}</summary>
+            <GapGroups groups={partial} />
+          </details>
         )}
         {s.gap_requests.length > 0 && (
           <div>
@@ -296,6 +298,14 @@ export default function SystemDetail() {
                 <tr key={i.id}>
                   <td>
                     <Link to={`/interviews/${i.id}`}>{fmtDate(i.interview_date)}</Link>
+                    {i.completed_at && <span className="muted small"> · {t("completed {time}", { time: fmtTime(i.completed_at) })}</span>}
+                    {i.previous_id && (
+                      <div className="small muted">
+                        {t("Re-interview of {date}", {
+                          date: fmtDate(s.interviews.find((x) => x.id === i.previous_id)?.interview_date ?? null),
+                        })}
+                      </div>
+                    )}
                   </td>
                   <td>{i.analyst}</td>
                   <td>
@@ -323,5 +333,31 @@ export default function SystemDetail() {
         />
       )}
     </>
+  );
+}
+
+/** Log source gaps grouped by L2 use case (#41). */
+function GapGroups({ groups }: { groups: Detail["gap_log_sources"] }) {
+  return (
+    <ul className="plain-list gap-groups">
+      {groups.map((g) => (
+        <li key={g.l2_code}>
+          <Link to={`/usecases?l2=${encodeURIComponent(g.l2_code)}`}>
+            <span className="mono small">{g.l2_code}</span> {g.l2_name}
+          </Link>{" "}
+          <span className="muted small">· {g.components.join(", ")}</span>
+          <ul className="plain-list small gap-rules">
+            {g.rules.map((r) => (
+              <li key={r.rule_code}>
+                <Link to={`/usecases/l3/${encodeURIComponent(r.rule_code)}`}>
+                  <span className="mono">{r.rule_code}</span> {r.rule_name}
+                </Link>{" "}
+                <span className="muted">· {t("missing: {list}", { list: r.missing.join(", ") })}</span>
+              </li>
+            ))}
+          </ul>
+        </li>
+      ))}
+    </ul>
   );
 }

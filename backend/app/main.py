@@ -133,7 +133,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.add_middleware(
-        SecurityHeaders, hsts=settings.cookie_secure, max_body=settings.max_body_mb * 1024 * 1024
+        SecurityHeaders,
+        hsts=settings.cookie_secure,
+        max_body=settings.max_body_mb * 1024 * 1024,
+        base_url=settings.base_url,
     )
 
     @app.exception_handler(IntegrityError)

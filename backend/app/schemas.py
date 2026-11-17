@@ -134,6 +134,8 @@ class RefItemOut(ORM):
 class RefItemUsageOut(RefItemOut):
     # Codes of what uses the entry: L2 use cases for threat actors, L3 rules for the other kinds.
     used_by: list[str] = []
+    # Log sources only: systems whose interview lists the entry on a component (issue #39).
+    used_by_systems: list[str] = []
 
 
 class BusinessDriverIn(BaseModel):
@@ -401,6 +403,8 @@ class L3Out(BaseModel):
     comments: str
     attack_techniques: list[str]
     siem_rule_ids: list[str] = []
+    # built from the SIEM name format in the settings (issues #29, #50)
+    siem_name: str | None = None
     onboarded_at: date | None
     last_verified_at: date | None
     last_verified_by: str | None

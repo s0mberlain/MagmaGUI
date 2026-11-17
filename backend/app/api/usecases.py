@@ -1,13 +1,15 @@
 """L1 / L2 / L3 use cases. Parents are derived from the identifier prefix, as in the Excel tool."""
 
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app import audit, drivers, growth, lifecycle
+from app import audit, drivers, growth, lifecycle, rulename
 from app.api.deps import DB, SettingsDep
 from app.interviews import system_risk_by_l2
 from app.models import (
@@ -197,6 +199,7 @@ def l3_out(
     targets: dict[int, float] | None = None,
     issues: dict[int, date] | None = None,
     system_risks: dict[int, tuple[int, str]] | None = None,
+    siem_name: Callable[[L3UseCase], str] | None = None,
 ) -> L3Out:
     score = score_rule(
         RuleInput(
@@ -235,6 +238,7 @@ def l3_out(
         comments=l3.comments,
         attack_techniques=l3.attack_techniques or [],
         siem_rule_ids=l3.siem_rule_ids or [],
+        siem_name=siem_name(l3) if siem_name else None,
         onboarded_at=l3.onboarded_at,
         last_verified_at=l3.last_verified_at,
         last_verified_by=l3.last_verified_by,
@@ -453,14 +457,33 @@ def update_l2(code: str, body: L2Update, user: Editor, db: DB) -> L2Out:
     return l2_out(l2)
 
 
-@router.delete("/l2/{code}", status_code=204)
-def delete_l2(code: str, user: Admin, db: DB) -> None:
+@router.delete("/l2/{code}", status_code=204, response_model=None)
+def delete_l2(
+    code: str,
+    user: Admin,
+    db: DB,
+    confirm: bool = Query(False, description="Also remove the links of systems to this L2"),
+) -> JSONResponse | None:
     l2 = _by_code(db, L2UseCase, code, "L2 use case")
     if l2.children:
         raise HTTPException(status.HTTP_409_CONFLICT, "Delete or move its L3 rules first")
-    audit.record(db, user, "delete", "l2", code)
+    # issue #48: systems linked through an interview lose the link, so say so first
+    systems = sorted(s.name for s in l2.linked_systems)
+    if systems and not confirm:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "detail": f"{code} is linked to {len(systems)} systems; "
+                "repeat with confirm=true to remove the links",
+                "systems": systems,
+            },
+        )
+    audit.record(db, user, "delete", "l2", code, {"unlinked_systems": systems} if systems else None)
+    for name in systems:
+        audit.record(db, user, "unlink", "system", name, {"l2": code, "reason": "L2 deleted"})
     db.delete(l2)
     db.commit()
+    return None
 
 
 # ---------------------------------------------------------------- L3
@@ -512,8 +535,10 @@ def list_l3(
     targets = settings.risk_target_map
     issues = _issues(db)
     risks = system_risk_by_l2(db)
+    name = rulename.formatter(db)
     return [
-        l3_out(x, settings.default_verification_days, targets, issues, risks) for x in db.scalars(q)
+        l3_out(x, settings.default_verification_days, targets, issues, risks, name)
+        for x in db.scalars(q)
     ]
 
 
@@ -526,6 +551,7 @@ def get_l3(code: str, _: Reader, db: DB, settings: SettingsDep) -> L3Out:
         settings.risk_target_map,
         _issues(db),
         system_risk_by_l2(db),
+        rulename.formatter(db),
     )
 
 
@@ -553,6 +579,7 @@ def create_l3(body: L3Create, user: Editor, db: DB, settings: SettingsDep) -> L3
         settings.risk_target_map,
         _issues(db),
         system_risk_by_l2(db),
+        rulename.formatter(db),
     )
 
 
@@ -572,6 +599,7 @@ def update_l3(code: str, body: L3Update, user: Editor, db: DB, settings: Setting
         settings.risk_target_map,
         _issues(db),
         system_risk_by_l2(db),
+        rulename.formatter(db),
     )
 
 

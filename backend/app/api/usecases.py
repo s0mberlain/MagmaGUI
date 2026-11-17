@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app import audit, drivers, growth, lifecycle, rulename
 from app.api.deps import DB, SettingsDep
-from app.interviews import system_risk_by_l2
+from app.interviews import SystemRisks, system_risks
 from app.models import (
     BusinessDriver,
     ComplianceDriver,
@@ -198,7 +198,7 @@ def l3_out(
     default_interval: int = 180,
     targets: dict[int, float] | None = None,
     issues: dict[int, date] | None = None,
-    system_risks: dict[int, tuple[int, str]] | None = None,
+    system_risks: SystemRisks | None = None,
     siem_name: Callable[[L3UseCase], str] | None = None,
 ) -> L3Out:
     score = score_rule(
@@ -219,7 +219,7 @@ def l3_out(
         l3,
         targets or growth.DEFAULT_RISK_TARGETS,
         score.potential,
-        (system_risks or {}).get(l3.l2_id),
+        system_risks.for_rule(l3) if system_risks else None,
     )
     by_kind: dict[RefKind, list[str]] = {k: [] for k in RefKind}
     for r in l3.references:
@@ -534,7 +534,7 @@ def list_l3(
         q = q.where(L3UseCase.lifecycle_status == status_)
     targets = settings.risk_target_map
     issues = _issues(db)
-    risks = system_risk_by_l2(db)
+    risks = system_risks(db)
     name = rulename.formatter(db)
     return [
         l3_out(x, settings.default_verification_days, targets, issues, risks, name)
@@ -550,7 +550,7 @@ def get_l3(code: str, _: Reader, db: DB, settings: SettingsDep) -> L3Out:
         settings.default_verification_days,
         settings.risk_target_map,
         _issues(db),
-        system_risk_by_l2(db),
+        system_risks(db),
         rulename.formatter(db),
     )
 
@@ -578,7 +578,7 @@ def create_l3(body: L3Create, user: Editor, db: DB, settings: SettingsDep) -> L3
         settings.default_verification_days,
         settings.risk_target_map,
         _issues(db),
-        system_risk_by_l2(db),
+        system_risks(db),
         rulename.formatter(db),
     )
 
@@ -598,7 +598,7 @@ def update_l3(code: str, body: L3Update, user: Editor, db: DB, settings: Setting
         settings.default_verification_days,
         settings.risk_target_map,
         _issues(db),
-        system_risk_by_l2(db),
+        system_risks(db),
         rulename.formatter(db),
     )
 

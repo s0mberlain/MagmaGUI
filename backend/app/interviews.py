@@ -7,19 +7,20 @@ proposed L2 use cases. With the log source filter on (issue #36, default), an L2
 a threat when its active L3 rules use log sources and the threatened component delivers log
 sources, but none of them meet (issue #38: an L2 without rules or without recorded log sources,
 and a component without log sources, are not filtered, because that is a gap to show). The
-analyst can remove proposals, add L2s by hand and record detection
+analyst can remove proposals, add L2 use cases or single L3 rules by hand and record detection
 requests. Completing the interview freezes it and replaces the system's links.
 
 Stored draft (`Interview.data`):
     components: [{key, name, description, log_source_ids, threats: [{category, state,
                   description, likelihood, impact}]}]
-    added:      [{l2_id, threats: [{component: key, category}]}]
+    added:      [{l2_id | l3_id, threats: [{component: key, category}]}]  (one of the two ids)
     removed:    [{l2_id, reason}]
     requests:   [{key, text, threat: {component: key, category}}]
 
 `evaluate()` resolves ids to names and works out the proposals; for a draft this runs on every
 read (so mapping, threshold, renamed or deleted use cases and log sources take effect), for a
-completed interview its output is frozen in `Interview.result`.
+completed interview its output is frozen in `Interview.result`. `risk_overview()` turns the
+evaluated threats and accepted use cases into one row per risk with its coverage.
 """
 
 from datetime import date
@@ -223,9 +224,16 @@ def detection_state(l2: L2UseCase, delivered: set[int]) -> str:
     return "unknown"
 
 
-def _rule_views(l2: L2UseCase, delivered: set[int]) -> list[dict]:
+def rule_detection(rule: L3UseCase, delivered: set[int]) -> str:
+    """detection_state() for a single selected L3 rule (no_rules = the rule is not active)."""
+    if not is_active(rule):
+        return "no_rules"
+    return rule_coverage(set(_rule_ls(rule)), delivered)
+
+
+def _rule_views(l2: L2UseCase, delivered: set[int], only: L3UseCase | None = None) -> list[dict]:
     rules = []
-    for r in l2.children:
+    for r in [only] if only is not None else l2.children:
         ls = _rule_ls(r)
         active = is_active(r)
         cov = rule_coverage(set(ls), delivered) if active else "inactive"
@@ -307,6 +315,24 @@ def evaluate(
 
     proposals: dict[int, dict] = {}
 
+    def source_views(pairs) -> tuple[list[dict], set[int]]:
+        delivered: set[int] = set()
+        srcs = []
+        for key, cat in pairs:
+            delivered |= comp_ls.get(key, set())
+            srcs.append(
+                {
+                    "component": key,
+                    "component_name": threats[(key, cat)]["component_name"],
+                    "category": cat,
+                    "score": threats[(key, cat)]["score"],
+                }
+            )
+        srcs.sort(
+            key=lambda s: (-(s["score"] or 0), s["component_name"], STRIDE.index(s["category"]))
+        )
+        return srcs, delivered
+
     def propose(l2_id: int, key: str, cat: str, auto: bool) -> None:
         p = proposals.setdefault(l2_id, {"sources": {}, "auto": False, "manual": False})
         p["sources"][(key, cat)] = threats[(key, cat)]["score"]
@@ -346,9 +372,11 @@ def evaluate(
                 }
             )
 
+    added_l3 = [a for a in data.get("added", []) if a.get("l3_id")]
+    l3s = _l3_index(db, [a["l3_id"] for a in added_l3])
     for a in data.get("added", []):
-        if a["l2_id"] not in l2s:
-            continue  # deleted since (EC-1)
+        if a.get("l3_id") or a.get("l2_id") not in l2s:
+            continue  # L3 picks below; deleted since (EC-1)
         refs = [(r["component"], r["category"]) for r in a.get("threats", [])]
         for key, cat in refs:
             if (key, cat) in threats:
@@ -359,21 +387,7 @@ def evaluate(
     accepted, removed = [], []
     for l2_id, p in proposals.items():
         l2 = l2s[l2_id]
-        delivered: set[int] = set()
-        srcs = []
-        for (key, cat), score in p["sources"].items():
-            delivered |= comp_ls.get(key, set())
-            srcs.append(
-                {
-                    "component": key,
-                    "component_name": threats[(key, cat)]["component_name"],
-                    "category": cat,
-                    "score": score,
-                }
-            )
-        srcs.sort(
-            key=lambda s: (-(s["score"] or 0), s["component_name"], STRIDE.index(s["category"]))
-        )
+        srcs, delivered = source_views(p["sources"])
         scores = [s["score"] for s in srcs if s["score"] is not None]
         view = _l2_brief(l2) | {
             "risk_score": max(scores) if scores else None,
@@ -387,6 +401,31 @@ def evaluate(
             removed.append(view | {"reason": removed_reason[l2_id]})
         else:
             accepted.append(view)
+    # single L3 rules chosen by hand: always accepted (removing one deletes the choice)
+    for a in added_l3:
+        rule = l3s.get(a["l3_id"])
+        if rule is None:
+            continue  # deleted since (EC-1)
+        pairs = [
+            (r["component"], r["category"])
+            for r in a.get("threats", [])
+            if (r["component"], r["category"]) in threats
+        ]
+        if not pairs:
+            continue
+        srcs, delivered = source_views(pairs)
+        scores = [s["score"] for s in srcs if s["score"] is not None]
+        accepted.append(
+            _l3_brief(rule)
+            | {
+                "risk_score": max(scores) if scores else None,
+                "sources": srcs,
+                "auto": False,
+                "manual": True,
+                "rules": _rule_views(rule.parent, delivered, only=rule),
+                "detection": rule_detection(rule, delivered),
+            }
+        )
     # a removal of something that is no longer proposed is still listed (with its reason)
     for l2_id, reason in removed_reason.items():
         if l2_id not in proposals and l2_id in l2s:
@@ -445,11 +484,13 @@ def evaluate(
         )
 
     added = [
-        {"l2_id": a["l2_id"], "threats": a.get("threats", [])}
+        {"l3_id": a["l3_id"], "threats": a.get("threats", [])}
+        if a.get("l3_id")
+        else {"l2_id": a["l2_id"], "threats": a.get("threats", [])}
         for a in data.get("added", [])
-        if a["l2_id"] in l2s
+        if (a["l3_id"] in l3s if a.get("l3_id") else a.get("l2_id") in l2s)
     ]
-    return {
+    out = {
         "threshold": threshold_value,
         "mapping_empty": not any(mapped.values()),
         "log_source_filter": filter_log_sources,
@@ -480,10 +521,43 @@ def evaluate(
             if not c["log_sources"] and any(t["state"] == "applies" for t in c["threats"])
         ],
     }
+    out["risks"] = risk_overview(out)
+    return out
+
+
+def _l3_index(db: Session, ids: list[int]) -> dict[int, L3UseCase]:
+    if not ids:
+        return {}
+    q = (
+        select(L3UseCase)
+        .where(L3UseCase.id.in_(ids))
+        .options(
+            selectinload(L3UseCase.references),
+            selectinload(L3UseCase.parent).selectinload(L2UseCase.parent),
+        )
+    )
+    return {x.id: x for x in db.scalars(q)}
+
+
+def _l3_brief(rule: L3UseCase) -> dict:
+    l2 = rule.parent
+    return {
+        "level": "L3",
+        "l2_id": l2.id,
+        "l3_id": rule.id,
+        "code": rule.code,
+        "name": rule.name,
+        "l2_code": l2.code,
+        "l2_name": l2.name,
+        "l1_code": l2.parent.code,
+        "l1_applicable": l2.parent.applicable,
+    }
 
 
 def _l2_brief(l2: L2UseCase) -> dict:
     return {
+        "level": "L2",
+        "l3_id": None,
         "l2_id": l2.id,
         "code": l2.code,
         "name": l2.name,
@@ -493,12 +567,106 @@ def _l2_brief(l2: L2UseCase) -> dict:
 
 
 def mark_deleted(db: Session, result: dict) -> dict:
-    """A completed interview keeps code and name as recorded; flag L2s deleted since (EC-1/2)."""
-    ids = {p["l2_id"] for p in result.get("proposals", []) + result.get("removed", [])}
+    """A completed interview keeps code and name as recorded; flag use cases deleted since
+    (EC-1/2). Results completed before the risk overview existed get it here."""
+    items = result.get("proposals", []) + result.get("removed", [])
+    ids = {p["l2_id"] for p in items}
+    rule_ids = {p["l3_id"] for p in items if p.get("l3_id")}
     existing = set(db.scalars(select(L2UseCase.id).where(L2UseCase.id.in_(ids)))) if ids else set()
-    for p in result.get("proposals", []) + result.get("removed", []):
-        p["deleted"] = p["l2_id"] not in existing
+    rules = (
+        set(db.scalars(select(L3UseCase.id).where(L3UseCase.id.in_(rule_ids))))
+        if rule_ids
+        else set()
+    )
+    for p in items:
+        p["deleted"] = p["l3_id"] not in rules if p.get("l3_id") else p["l2_id"] not in existing
+    result["risks"] = risk_overview(result)
     return result
+
+
+# ---------------------------------------------------------------- risk overview
+
+# how far an accepted use case covers a threat, from its detection state
+UC_STATE = {
+    "ok": "ok",
+    "partial": "partial",
+    "unknown": "partial",
+    "blind": "gap",
+    "no_rules": "gap",
+}
+
+
+def risk_coverage(score: int | None, threshold_value: int, states: list[str]) -> str:
+    """Coverage of one threat: unrated (no score yet) | covered (a use case sees it) | partial |
+    gap (nothing that works addresses it) | below (under the threshold, no use case: accepted)."""
+    if score is None:
+        return "unrated"
+    if "ok" in states:
+        return "covered"
+    if "partial" in states:
+        return "partial"
+    if not states and score < threshold_value:
+        return "below"
+    return "gap"
+
+
+def risk_overview(view: dict) -> list[dict]:
+    """One row per applying threat with the accepted L2/L3 use cases that address it, highest
+    risk first. `view` is an evaluated interview (or the same shape built from system links);
+    proposals refer to threats by component key."""
+    thr = int(view.get("threshold") or DEFAULT_THRESHOLD)
+    by_threat: dict[tuple[str, str], list[dict]] = {}
+    for p in view.get("proposals", []):
+        for s in p.get("sources", []):
+            by_threat.setdefault((s["component"], s["category"]), []).append(p)
+    reqs: dict[tuple[str, str], list[str]] = {}
+    for r in view.get("requests", []):
+        reqs.setdefault((r["component"], r["category"]), []).append(r["text"])
+    rows = []
+    for c in view.get("components", []):
+        for t in c.get("threats", []):
+            if t.get("state") != "applies":
+                continue
+            ref = (c["key"], t["category"])
+            ucs = []
+            for p in by_threat.get(ref, []):
+                det = p.get("detection")
+                ucs.append(
+                    {
+                        "level": p.get("level", "L2"),
+                        "l2_id": p["l2_id"],
+                        "l3_id": p.get("l3_id"),
+                        "code": p["code"],
+                        "name": p["name"],
+                        "l2_code": p.get("l2_code"),
+                        "detection": det,
+                        "state": "gap" if p.get("deleted") else UC_STATE.get(det or "", "partial"),
+                        "weight": p.get("weight"),
+                        "manual": p.get("manual", False),
+                        "deleted": p.get("deleted", False),
+                    }
+                )
+            order = {"ok": 0, "partial": 1, "gap": 2}
+            ucs.sort(key=lambda u: (order[u["state"]], u["level"], u["code"]))
+            score = t.get("score")
+            rows.append(
+                {
+                    "component": c["key"],
+                    "component_name": c["name"],
+                    "category": t["category"],
+                    "description": t.get("description", ""),
+                    "likelihood": t.get("likelihood"),
+                    "impact": t.get("impact"),
+                    "score": score,
+                    "level": risk_level(score),
+                    "above_threshold": score is not None and score >= thr,
+                    "coverage": risk_coverage(score, thr, [u["state"] for u in ucs]),
+                    "use_cases": ucs,
+                    "requests": reqs.get(ref, []),
+                }
+            )
+    rows.sort(key=lambda r: (-(r["score"] or 0), r["component_name"], STRIDE.index(r["category"])))
+    return rows
 
 
 # ---------------------------------------------------------------- interviews of a system
@@ -544,6 +712,7 @@ def replace_links(db: Session, system: System, interview: Interview, result: dic
             SystemLink(
                 system_id=system.id,
                 l2_id=p["l2_id"],
+                l3_id=p.get("l3_id"),
                 interview_id=interview.id,
                 risk_score=p["risk_score"] or 0,
                 sources=[
@@ -595,21 +764,33 @@ def compare(old: dict, new: dict) -> dict:
 # ---------------------------------------------------------------- effects elsewhere
 
 
-def system_risk_by_l2(db: Session) -> dict[int, tuple[int, str]]:
-    """L2 id -> (system risk level 1..5, system name) from links of non-archived systems; when
-    several systems link the same L2, the highest level wins."""
-    out: dict[int, tuple[int, str]] = {}
-    q = (
-        select(SystemLink.l2_id, SystemLink.risk_score, System.name)
-        .join(System, System.id == SystemLink.system_id)
-        .where(System.archived.is_(False))
-        .order_by(System.name)
-    )
-    for l2_id, score, name in db.execute(q):
-        lvl = risk_level(score)
-        if lvl and (l2_id not in out or lvl > out[l2_id][0]):
-            out[l2_id] = (lvl, name)
-    return out
+class SystemRisks:
+    """System risk levels from links of non-archived systems: an L2 link raises every rule of
+    the L2, an L3 link only that rule. When several links apply, the highest level wins."""
+
+    def __init__(self, db: Session):
+        self.l2: dict[int, tuple[int, str]] = {}
+        self.l3: dict[int, tuple[int, str]] = {}
+        q = (
+            select(SystemLink.l2_id, SystemLink.l3_id, SystemLink.risk_score, System.name)
+            .join(System, System.id == SystemLink.system_id)
+            .where(System.archived.is_(False))
+            .order_by(System.name)
+        )
+        for l2_id, l3_id, score, name in db.execute(q):
+            lvl = risk_level(score)
+            target, key = (self.l3, l3_id) if l3_id else (self.l2, l2_id)
+            if lvl and (key not in target or lvl > target[key][0]):
+                target[key] = (lvl, name)
+
+    def for_rule(self, rule: L3UseCase) -> tuple[int, str] | None:
+        """(system risk level 1..5, system name) for a rule, or None."""
+        options = [x for x in (self.l2.get(rule.l2_id), self.l3.get(rule.id)) if x]
+        return max(options, key=lambda x: x[0]) if options else None
+
+
+def system_risks(db: Session) -> SystemRisks:
+    return SystemRisks(db)
 
 
 def log_source_users(db: Session) -> dict[int, list[str]]:

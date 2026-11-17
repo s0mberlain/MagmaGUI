@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, type SystemDetail as Detail } from "../api";
 import { useAuth } from "../auth";
 import { confirmDialog, ErrorNote, useLoad } from "../components/ui";
+import { RiskCoverage, useCaseHref } from "../components/RiskCoverage";
 import { fmtDate, fmtTime, num, pct } from "../lib/format";
 import { CLASSIFICATION_LABEL, INTERVIEW_STATUS_LABEL, STRIDE_LABEL } from "../lib/stride";
 import { StatePill, SystemDialog, systemInput } from "./Systems";
@@ -136,6 +137,20 @@ export default function SystemDetail() {
         </p>
       )}
 
+      {s.last_interview && (
+        <RiskCoverage
+          risks={s.risks}
+          components={s.components}
+          showWeight
+          title={t("Risks and use cases")}
+          actions={
+            <span className="small muted">
+              {t("From the interview of {date}; use case state as of now.", { date: fmtDate(s.last_interview) })}
+            </span>
+          }
+        />
+      )}
+
       <div className="split">
         <section className="card split-side stack-sm" aria-labelledby="ownh">
           <h2 id="ownh" className="h-sm">
@@ -167,7 +182,7 @@ export default function SystemDetail() {
               <dd>{pct(s.coverage)}</dd>
             </div>
             <div>
-              <dt>{t("Linked L2")}</dt>
+              <dt>{t("Linked use cases")}</dt>
               <dd>{s.links.length}</dd>
             </div>
             <div>
@@ -176,7 +191,7 @@ export default function SystemDetail() {
             </div>
           </dl>
           <p className="muted small" style={{ margin: 0 }}>
-            {t("Coverage = average weight of the linked L2 use cases; L2 without scored rules count as 0.")}
+            {t("Coverage = average weight of the linked L2 use cases and L3 rules; use cases without scored rules count as 0.")}
           </p>
           {s.links.length ? (
             <div className="scroll-x">
@@ -191,12 +206,15 @@ export default function SystemDetail() {
                 </thead>
                 <tbody>
                   {s.links.map((l) => (
-                    <tr key={l.l2_id}>
+                    <tr key={`${l.level}-${l.l3_id ?? l.l2_id}`}>
                       <td>
-                        <Link className="code-link" to={`/usecases?l2=${encodeURIComponent(l.code)}`}>
-                          <span className="code-tag">{l.code}</span>
-                          <span>{l.name}</span>
-                        </Link>
+                        <div className="code-link-row">
+                          <span className={`lvl lvl-${l.level}`}>{l.level}</span>
+                          <Link className="code-link" to={useCaseHref(l)}>
+                            <span className="code-tag">{l.code}</span>
+                            <span>{l.name}</span>
+                          </Link>
+                        </div>
                       </td>
                       <td className="small">
                         {l.sources.map((x) => `${x.component}: ${STRIDE_LABEL[x.category]}`).join("; ")}
@@ -242,7 +260,7 @@ export default function SystemDetail() {
               {s.gap_no_rules.map((g) => (
                 <li key={g.code}>
                   <span className="badge-gap">{t("No rules")}</span>{" "}
-                  <Link to={`/usecases?l2=${encodeURIComponent(g.code)}`}>
+                  <Link to={useCaseHref({ level: levelOf(g.code), code: g.code })}>
                     <span className="mono small">{g.code}</span> {g.name}
                   </Link>
                 </li>
@@ -342,7 +360,7 @@ function GapGroups({ groups }: { groups: Detail["gap_log_sources"] }) {
     <ul className="plain-list gap-groups">
       {groups.map((g) => (
         <li key={g.l2_code}>
-          <Link to={`/usecases?l2=${encodeURIComponent(g.l2_code)}`}>
+          <Link to={useCaseHref({ level: levelOf(g.l2_code), code: g.l2_code })}>
             <span className="mono small">{g.l2_code}</span> {g.l2_name}
           </Link>{" "}
           <span className="muted small">· {g.components.join(", ")}</span>
@@ -360,4 +378,9 @@ function GapGroups({ groups }: { groups: Detail["gap_log_sources"] }) {
       ))}
     </ul>
   );
+}
+
+/** L3 codes are XX-YYY-NN (more parts may follow), L2 codes XX-YYY. */
+function levelOf(code: string): "L2" | "L3" {
+  return code.split("-").length > 2 ? "L3" : "L2";
 }

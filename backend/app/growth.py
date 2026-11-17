@@ -43,8 +43,8 @@ def effective(
     potential: float | None,
     system_risk: tuple[int, str] | None = None,
 ) -> Effective:
-    """`system_risk`: (level, system name) when the rule's L2 is linked to a non-archived system
-    (app/interviews.py system_risk_by_l2); the higher of it and the own risk level is used."""
+    """`system_risk`: (level, system name) when the rule or its L2 is linked to a non-archived
+    system (app/interviews.py SystemRisks); the higher of it and the own risk level is used."""
     l2 = rule.parent
     if rule.risk_level is not None:
         risk, rsrc = rule.risk_level, "rule"

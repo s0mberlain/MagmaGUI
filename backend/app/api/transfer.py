@@ -189,7 +189,8 @@ def export_json(_: Reader, db: DB) -> dict:
                     ).split()
                 },
                 "links": [
-                    {"l2": l2_code.get(x.l2_id), "risk_score": x.risk_score, "sources": x.sources}
+                    {"l2": l2_code.get(x.l2_id), "l3": l3_code.get(x.l3_id) if x.l3_id else None}
+                    | {"risk_score": x.risk_score, "sources": x.sources}
                     for x in db.scalars(select(SystemLink).where(SystemLink.system_id == s.id))
                 ],
                 "interviews": [

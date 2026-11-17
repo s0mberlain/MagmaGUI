@@ -706,10 +706,50 @@ export interface SystemRow extends SystemInput {
   can_delete: boolean;
 }
 
+export type UseCaseLevel = "L2" | "L3";
+export type Detection = "no_rules" | "unknown" | "blind" | "partial" | "ok";
+export type RiskCoverageState = "covered" | "partial" | "gap" | "below" | "unrated";
+
+/** A use case chosen by hand: a whole L2 or a single L3 rule. */
+export type AddedUseCase = { l2_id: number; l3_id?: undefined; threats: ThreatRef[] } | { l3_id: number; l2_id?: undefined; threats: ThreatRef[] };
+
+/** One applying threat with the accepted use cases that address it (risk overview). */
+export interface RiskRow {
+  component: string;
+  component_name: string;
+  category: Stride;
+  description: string;
+  likelihood: number | null;
+  impact: number | null;
+  score: number | null;
+  level: number | null;
+  above_threshold: boolean;
+  coverage: RiskCoverageState;
+  use_cases: {
+    level: UseCaseLevel;
+    l2_id: number;
+    l3_id: number | null;
+    code: string;
+    name: string;
+    l2_code: string | null;
+    detection: Detection | null;
+    /** how far the use case covers the threat */
+    state: "ok" | "partial" | "gap";
+    weight: number | null;
+    manual: boolean;
+    deleted: boolean;
+  }[];
+  requests: string[];
+}
+
 export interface SystemLinkInfo {
+  level: UseCaseLevel;
   l2_id: number;
+  l3_id: number | null;
   code: string;
   name: string;
+  l2_code: string;
+  detection: Detection | null;
   weight: number | null;
   risk_score: number;
   risk_level: number | null;
@@ -729,6 +769,11 @@ export interface InterviewRow {
 
 export interface SystemDetail extends SystemRow {
   links: SystemLinkInfo[];
+  /** risk overview of the latest completed interview with the current state of its links */
+  risks: RiskRow[];
+  threshold: number | null;
+  /** components of that interview (threat matrix rows) */
+  components: { key: string; name: string }[];
   gap_no_rules: { code: string; name: string }[];
   /** #41: grouped per L2; `blind` = no active rule gets any log source it needs (counts as gap) */
   gap_log_sources: {
@@ -778,7 +823,13 @@ export interface ProposalRule {
 }
 
 export interface Proposal {
+  /** missing in interviews completed before L3 rules could be chosen: L2 */
+  level?: UseCaseLevel;
   l2_id: number;
+  /** L3 rule chosen by hand (level L3) */
+  l3_id?: number | null;
+  l2_code?: string;
+  l2_name?: string;
   code: string;
   name: string;
   l1_code: string;
@@ -789,7 +840,7 @@ export interface Proposal {
   manual: boolean;
   rules: ProposalRule[];
   /** #38/#41: how well the active rules see the threatened components */
-  detection?: "no_rules" | "unknown" | "blind" | "partial" | "ok";
+  detection?: Detection;
   reason?: string;
   /** completed interviews: the use case was deleted since */
   deleted?: boolean;
@@ -809,8 +860,9 @@ export interface InterviewView {
     score: number;
     l2s: { l2_id: number; code: string; name: string; l1_code: string; l1_applicable: boolean }[];
   }[];
-  added: { l2_id: number; threats: ThreatRef[] }[];
+  added: AddedUseCase[];
   removed_ids: number[];
+  risks: RiskRow[];
   requests: { key: string; text: string; component: string; component_name: string; category: Stride }[];
   log_source_gaps: { l2_code: string; rule_code: string; rule_name: string; missing: string[]; partial?: boolean }[];
   /** #38: accepted use cases without any active rule */
@@ -897,7 +949,7 @@ export interface InterviewSave {
     log_source_ids: number[];
     threats: { category: Stride; state: ThreatState; description: string; likelihood: number | null; impact: number | null }[];
   }[];
-  added: { l2_id: number; threats: ThreatRef[] }[];
+  added: AddedUseCase[];
   removed: { l2_id: number; reason: string }[];
   requests: { key: string; text: string; threat: ThreatRef }[];
 }

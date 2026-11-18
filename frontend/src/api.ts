@@ -737,6 +737,8 @@ export interface RiskRow {
     state: "ok" | "partial" | "gap";
     weight: number | null;
     manual: boolean;
+    /** #57: proposed for this risk by the mapping, not only added by hand */
+    auto?: boolean;
     deleted: boolean;
   }[];
   requests: string[];
@@ -784,6 +786,8 @@ export interface SystemDetail extends SystemRow {
     rules: { rule_code: string; rule_name: string; missing: string[]; partial: boolean }[];
   }[];
   gap_requests: { text: string; component: string; category: Stride }[];
+  /** #59: risks above the threshold that no linked use case addresses */
+  gap_risks?: { component: string; component_name: string; category: Stride; score: number | null; level: number | null }[];
   interviews: InterviewRow[];
 }
 
@@ -842,6 +846,8 @@ export interface Proposal {
   /** #38/#41: how well the active rules see the threatened components */
   detection?: Detection;
   reason?: string;
+  /** #57: removed only from these risks (the rest of the L2 stays accepted) */
+  threats?: { component: string; component_name: string; category: Stride }[];
   /** completed interviews: the use case was deleted since */
   deleted?: boolean;
 }
@@ -950,7 +956,8 @@ export interface InterviewSave {
     threats: { category: Stride; state: ThreatState; description: string; likelihood: number | null; impact: number | null }[];
   }[];
   added: AddedUseCase[];
-  removed: { l2_id: number; reason: string }[];
+  /** without threats the whole L2 is removed; with threats only from those risks (#57) */
+  removed: { l2_id: number; reason: string; threats?: ThreatRef[] }[];
   requests: { key: string; text: string; threat: ThreatRef }[];
 }
 

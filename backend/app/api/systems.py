@@ -135,6 +135,8 @@ class SystemDetail(SystemRow):
     gap_no_rules: list[dict]
     gap_log_sources: list[dict]
     gap_requests: list[dict]
+    # issue #59: risks above the threshold that no linked use case addresses
+    gap_risks: list[dict] = []
     interviews: list[InterviewRow]
 
 
@@ -174,8 +176,11 @@ class AddedIn(BaseModel):
 
 
 class RemovedIn(BaseModel):
+    """A proposed L2 removed by hand: as a whole, or only from the listed threats (#57)."""
+
     l2_id: int
     reason: Text = ""
+    threats: list[ThreatRef] = Field(default_factory=list, max_length=200)
 
 
 class RequestIn(BaseModel):
@@ -462,11 +467,33 @@ def _risks(system: System, link_views: list[dict]) -> tuple[list[dict], int | No
     return iv.risk_overview(view), threshold
 
 
+def _uncovered(risks: list[dict]) -> list[dict]:
+    """Risks with coverage "gap" that no use case addresses (issue #59). Gaps of risks that
+    have use cases are already listed by use case (no rules / blind)."""
+    return [
+        {
+            "component": r["component"],
+            "component_name": r["component_name"],
+            "category": r["category"],
+            "score": r["score"],
+            "level": r["level"],
+        }
+        for r in risks
+        if r["coverage"] == "gap" and not r["use_cases"]
+    ]
+
+
+def gap_count(no_rules: list, ls_gaps: list, requests: list, uncovered: list) -> int:
+    """The number of gaps of a system (list column, detail stat and Gaps section agree)."""
+    return len(no_rules) + sum(1 for g in ls_gaps if g["blind"]) + len(requests) + len(uncovered)
+
+
 def _row(system: System, ctx: _Ctx) -> dict:
     links = ctx.links.get(system.id, [])
     last = iv.latest_completed(system)
     last_date = last.interview_date if last else None
     no_rules, ls_gaps, requests = _gaps(system, links)
+    risks, _ = _risks(system, _link_views(system, links, ctx)) if last else ([], None)
     weights = [ctx.weights.get(_link_code(x)) or 0.0 for x in links]
     draft = iv.draft_of(system)
     return {
@@ -484,7 +511,7 @@ def _row(system: System, ctx: _Ctx) -> dict:
         "updated_at": system.updated_at,
         "linked": len(links),
         "coverage": round(sum(weights) / len(weights), 4) if weights else None,
-        "gaps": len(no_rules) + sum(1 for g in ls_gaps if g["blind"]) + len(requests),
+        "gaps": gap_count(no_rules, ls_gaps, requests, _uncovered(risks)),
         "last_interview": last_date,
         "next_due": iv.add_months(last_date, system.review_interval_months) if last_date else None,
         "state": iv.interview_state(system, last_date),
@@ -631,8 +658,18 @@ def _validate_draft(db: Session, body: InterviewSave) -> dict:
     data = body.model_dump(include={"components", "added", "removed", "requests"}, mode="json")
     # an added entry carries either l2_id or l3_id
     data["added"] = [{k: v for k, v in a.items() if v is not None} for a in data["added"]]
-    # one removal per use case
-    data["removed"] = list({r["l2_id"]: r for r in data["removed"]}.values())
+    # one removal per use case; a removal from single threats keeps only threats that apply
+    # (#57) and is dropped when none is left (it must not turn into a whole removal)
+    removed = []
+    for r in {r["l2_id"]: r for r in data["removed"]}.values():
+        if r["threats"]:
+            r["threats"] = [x for x in r["threats"] if (x["component"], x["category"]) in applies]
+            if not r["threats"]:
+                continue
+        else:
+            r.pop("threats")
+        removed.append(r)
+    data["removed"] = removed
     return data
 
 
@@ -696,6 +733,7 @@ def _detail(db: Session, s: System, settings) -> dict:
         "gap_no_rules": no_rules,
         "gap_log_sources": ls_gaps,
         "gap_requests": requests,
+        "gap_risks": _uncovered(risks),
         "interviews": [
             InterviewRow.model_validate(i, from_attributes=True)
             for i in sorted(s.interviews, key=lambda i: (i.interview_date, i.id), reverse=True)

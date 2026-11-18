@@ -91,7 +91,10 @@ export default function SystemDetail() {
   ];
   const blind = s.gap_log_sources.filter((g) => g.blind);
   const partial = s.gap_log_sources.filter((g) => !g.blind);
-  const gapCount = s.gap_no_rules.length + blind.length + s.gap_requests.length;
+  const uncovered = s.gap_risks ?? [];
+  // #59: the same gaps as the "Gap" filter of the risk overview (risks without use case) plus
+  // the gaps of linked use cases and open detection requests
+  const gapCount = uncovered.length + s.gap_no_rules.length + blind.length + s.gap_requests.length;
 
   return (
     <>
@@ -248,11 +251,31 @@ export default function SystemDetail() {
           {t("Gaps")}{" "}
           {gapCount > 0 && (
             <span className="muted small">
-              {t("{a} without rules · {b} blind · {c} requests", { a: s.gap_no_rules.length, b: blind.length, c: s.gap_requests.length })}
+              {t("{r} risks without use case · {a} without rules · {b} blind · {c} requests", {
+                r: uncovered.length,
+                a: s.gap_no_rules.length,
+                b: blind.length,
+                c: s.gap_requests.length,
+              })}
             </span>
           )}
         </h2>
         {!gapCount && <p className="muted" style={{ margin: 0 }}>{t("No gaps.")}</p>}
+        {uncovered.length > 0 && (
+          <div>
+            <h3 className="small strong">{t("Risks that no use case addresses")}</h3>
+            <ul className="plain-list">
+              {uncovered.map((g) => (
+                <li key={`${g.component}:${g.category}`}>
+                  <span className={`risk risk-${g.level ?? 0}`} title={t("Risk level {r}", { r: g.level ?? "–" })}>
+                    {g.score ?? "–"}
+                  </span>{" "}
+                  {g.component_name} / {STRIDE_LABEL[g.category] ?? g.category}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {s.gap_no_rules.length > 0 && (
           <div>
             <h3 className="small strong">{t("Linked use cases without rules")}</h3>

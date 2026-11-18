@@ -75,7 +75,15 @@ def save(client, iv: dict, expect: int = 200, **changes) -> dict:
             for c in stored["components"]
         ],
         "added": stored["added"],
-        "removed": [{"l2_id": r["l2_id"], "reason": r["reason"]} for r in stored["removed"]],
+        "removed": [
+            {"l2_id": r["l2_id"], "reason": r["reason"]}
+            | (
+                {"threats": [{"component": x["component"], "category": x["category"]} for x in r["threats"]]}
+                if r.get("threats")
+                else {}
+            )
+            for r in stored["removed"]
+        ],
         "requests": [
             {
                 "key": r["key"],

@@ -53,11 +53,14 @@ const riskId = (r: { component: string; category: Stride }) => `risk-${r.compone
 
 type Filter = "all" | "open" | RiskCoverageState;
 
+export type RiskUseCase = RiskRow["use_cases"][number];
+
 export function RiskCoverage({
   risks,
   components,
   showWeight = false,
   onAdd,
+  onRemove,
   addDisabled,
   title,
   actions,
@@ -68,6 +71,8 @@ export function RiskCoverage({
   showWeight?: boolean;
   /** offers "+ Use case" on every risk */
   onAdd?: (r: RiskRow) => void;
+  /** #57: offers to take a use case off a risk */
+  onRemove?: (r: RiskRow, u: RiskUseCase) => void;
   addDisabled?: boolean;
   title?: string;
   actions?: React.ReactNode;
@@ -230,6 +235,18 @@ export function RiskCoverage({
                         {u.level === "L3" && u.l2_code && <span className="small muted">{t("in {code}", { code: u.l2_code })}</span>}
                         <span className={`uc-state uc-${u.state}`}>{detectionLabel(u.detection, u.level, u.deleted)}</span>
                         {showWeight && <span className="small muted">{t("weight {w}", { w: num(u.weight) })}</span>}
+                        {onRemove && (
+                          <button
+                            type="button"
+                            className="link-btn small rcov-uc-remove"
+                            disabled={addDisabled}
+                            title={t("Remove {code} from this risk", { code: u.code })}
+                            aria-label={t("Remove {code} from this risk", { code: u.code })}
+                            onClick={() => onRemove(r, u)}
+                          >
+                            {t("Remove")}
+                          </button>
+                        )}
                       </li>
                     ))}
                   </ul>

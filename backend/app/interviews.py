@@ -14,7 +14,8 @@ Stored draft (`Interview.data`):
     components: [{key, name, description, log_source_ids, threats: [{category, state,
                   description, likelihood, impact}]}]
     added:      [{l2_id | l3_id, threats: [{component: key, category}]}]  (one of the two ids)
-    removed:    [{l2_id, reason}]
+    removed:    [{l2_id, reason, threats?: [{component: key, category}]}]  (without threats the
+                whole L2 is removed; with threats it is only taken off those risks, issue #57)
     requests:   [{key, text, threat: {component: key, category}}]
 
 `evaluate()` resolves ids to names and works out the proposals; for a draft this runs on every
@@ -334,9 +335,23 @@ def evaluate(
         return srcs, delivered
 
     def propose(l2_id: int, key: str, cat: str, auto: bool) -> None:
-        p = proposals.setdefault(l2_id, {"sources": {}, "auto": False, "manual": False})
+        p = proposals.setdefault(
+            l2_id, {"sources": {}, "auto": False, "manual": False, "auto_refs": set()}
+        )
         p["sources"][(key, cat)] = threats[(key, cat)]["score"]
         p["auto" if auto else "manual"] = True
+        if auto:
+            p["auto_refs"].add((key, cat))
+
+    # issue #57: a removal either drops a whole L2 (no threats) or only takes it off some risks
+    removed_reason: dict[int, str] = {}
+    excluded: dict[int, dict] = {}  # l2 id -> {"reason", "pairs": {(component key, category)}}
+    for r in data.get("removed", []):
+        pairs = {(x["component"], x["category"]) for x in r.get("threats") or []}
+        if pairs:
+            excluded[r["l2_id"]] = {"reason": r.get("reason", "") or "", "pairs": pairs}
+        else:
+            removed_reason[r["l2_id"]] = r.get("reason", "") or ""
 
     below: list[dict] = []
     # L2s held back by the log source filter (#36): l2 id -> {(component key, category): score}
@@ -360,6 +375,8 @@ def evaluate(
                     if needed and have and not (needed & have):
                         filtered.setdefault(i, {})[(key, cat)] = t["score"]
                         continue
+                if (key, cat) in excluded.get(i, {}).get("pairs", ()):
+                    continue  # taken off this risk by hand (#57)
                 propose(i, key, cat, auto=True)
         else:
             below.append(
@@ -382,12 +399,12 @@ def evaluate(
             if (key, cat) in threats:
                 propose(a["l2_id"], key, cat, auto=False)
 
-    removed_reason = {r["l2_id"]: r.get("reason", "") or "" for r in data.get("removed", [])}
-
     accepted, removed = [], []
     for l2_id, p in proposals.items():
         l2 = l2s[l2_id]
         srcs, delivered = source_views(p["sources"])
+        for s in srcs:
+            s["auto"] = (s["component"], s["category"]) in p["auto_refs"]
         scores = [s["score"] for s in srcs if s["score"] is not None]
         view = _l2_brief(l2) | {
             "risk_score": max(scores) if scores else None,
@@ -414,6 +431,8 @@ def evaluate(
         if not pairs:
             continue
         srcs, delivered = source_views(pairs)
+        for s in srcs:
+            s["auto"] = False
         scores = [s["score"] for s in srcs if s["score"] is not None]
         accepted.append(
             _l3_brief(rule)
@@ -434,6 +453,29 @@ def evaluate(
                 | {"risk_score": None, "sources": [], "auto": False, "manual": False}
                 | {"rules": [], "reason": reason}
             )
+
+    # an L2 taken off single risks (#57): listed with the risks it no longer covers
+    for l2_id, ex in excluded.items():
+        if l2_id not in l2s:
+            continue
+        pairs = sorted(
+            (p for p in ex["pairs"] if p in threats),
+            key=lambda p: (threats[p]["component_name"], STRIDE.index(p[1])),
+        )
+        if not pairs:
+            continue
+        removed.append(
+            _l2_brief(l2s[l2_id])
+            | {"risk_score": None, "sources": [], "auto": False, "manual": False}
+            | {"rules": [], "reason": ex["reason"]}
+            | {
+                "threats": [
+                    {"component": k, "component_name": threats[(k, c)]["component_name"]}
+                    | {"category": c}
+                    for k, c in pairs
+                ]
+            }
+        )
 
     not_matching = []
     for l2_id, srcs_by in filtered.items():
@@ -501,7 +543,7 @@ def evaluate(
         "removed": removed,
         "below_threshold": below,
         "added": added,
-        "removed_ids": [r["l2_id"] for r in data.get("removed", []) if r["l2_id"] in l2s],
+        "removed_ids": [l2_id for l2_id in removed_reason if l2_id in l2s],
         "requests": requests,
         # issue #41: a rule is a gap when it gets none (blind) or only some (partial) of its
         # log sources; inactive rules and rules without recorded log sources are not
@@ -631,6 +673,10 @@ def risk_overview(view: dict) -> list[dict]:
             ucs = []
             for p in by_threat.get(ref, []):
                 det = p.get("detection")
+                src = next(
+                    (s for s in p.get("sources", []) if (s["component"], s["category"]) == ref),
+                    {},
+                )
                 ucs.append(
                     {
                         "level": p.get("level", "L2"),
@@ -643,6 +689,8 @@ def risk_overview(view: dict) -> list[dict]:
                         "state": "gap" if p.get("deleted") else UC_STATE.get(det or "", "partial"),
                         "weight": p.get("weight"),
                         "manual": p.get("manual", False),
+                        # #57: proposed for this risk by the mapping (not only added by hand)
+                        "auto": bool(src.get("auto", p.get("auto", False))),
                         "deleted": p.get("deleted", False),
                     }
                 )

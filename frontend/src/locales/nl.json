@@ -1235,5 +1235,9 @@
   "Showing L3 rules that match the filters.": "Getoond worden L3-regels die bij de filters passen.",
   "{r} risks without use case · {a} without rules · {b} blind · {c} requests": "{r} risico's zonder use case · {a} zonder regels · {b} blind · {c} verzoeken",
   "Risks that no use case addresses": "Risico's die geen use case afdekt",
-  "Custom threats propose the L2 use cases whose rules cover one of their ATT&CK techniques.": "Eigen dreigingen stellen de L2-use cases voor waarvan de regels een van hun ATT&CK-technieken dekken."
+  "Custom threats propose the L2 use cases whose rules cover one of their ATT&CK techniques.": "Eigen dreigingen stellen de L2-use cases voor waarvan de regels een van hun ATT&CK-technieken dekken.",
+  "Good": "Goed",
+  "Fair": "Redelijk",
+  "Poor": "Zwak",
+  "Add the first system": "Eerste systeem toevoegen"
 }

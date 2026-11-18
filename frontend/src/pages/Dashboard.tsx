@@ -9,7 +9,7 @@ import { t } from "../i18n";
 const UP = t("Higher is better");
 const DOWN = t("Lower is better");
 
-function kpiTiles(k: Kpis): { label: string; value: number | null; sub: string; invert?: boolean; good: string }[] {
+function kpiTiles(k: Kpis): { label: string; value: number | null; sub: string; good: string }[] {
   const tiles = [
     { label: t("SOC detection score"), value: k.soc_detection_score, sub: t("Average weight of applicable L1") },
     {
@@ -18,7 +18,7 @@ function kpiTiles(k: Kpis): { label: string; value: number | null; sub: string; 
       sub: t("Same average, L2 without scored rules count as 0"),
     },
     { label: t("Growth potential"), value: k.growth_potential, sub: t("Average effectiveness − weight") },
-    { label: t("Detection gap"), value: k.detection_gap, sub: t("1 − detection score"), invert: true },
+    { label: t("Detection gap"), value: k.detection_gap, sub: t("1 − detection score") },
     {
       label: t("Framework completeness"),
       value: k.framework_completeness,
@@ -39,6 +39,22 @@ function kpiTiles(k: Kpis): { label: string; value: number | null; sub: string; 
   const lower = new Set([t("Detection gap"), t("Growth potential")]);
   return tiles.map((x) => ({ ...x, good: lower.has(x.label) ? DOWN : UP }));
 }
+
+type Rating = "good" | "fair" | "poor";
+
+/**
+ * Rates a key figure so the tile shows at a glance whether it is good or needs work.
+ * Higher-is-better figures: good from 70 %, fair from 40 %. Lower-is-better figures are mirrored.
+ */
+export function rateKpi(value: number | null, lowerIsBetter: boolean): Rating | null {
+  if (value === null || value === undefined) return null;
+  const score = lowerIsBetter ? 1 - value : value;
+  if (score >= 0.7) return "good";
+  if (score >= 0.4) return "fair";
+  return "poor";
+}
+
+const RATING_LABEL: Record<Rating, string> = { good: t("Good"), fair: t("Fair"), poor: t("Poor") };
 
 export function DueBadge({ d }: { d: Pick<DueRule, "due" | "overdue" | "days_left"> }) {
   if (!d.due) return <span className="badge-gap">{t("Never verified")}</span>;
@@ -81,19 +97,28 @@ export default function Dashboard() {
       <ErrorNote error={scores.error} />
 
       <section className="kpi-grid" aria-label={t("Key figures")}>
-        {(s ? kpiTiles(s.kpis) : kpiTiles({} as Kpis)).map((k) => (
+        {(s ? kpiTiles(s.kpis) : kpiTiles({} as Kpis)).map((k) => {
+          const rating = s ? rateKpi(k.value, k.good === DOWN) : null;
+          return (
           <div className="card kpi" key={k.label}>
             <span className="kpi-label">{k.label}</span>
-            <span className="kpi-value">{s ? pct(k.value) : "–"}</span>
+            <div className="kpi-head">
+              <span className="kpi-value">{s ? pct(k.value) : "–"}</span>
+              {rating && <span className={`kpi-rating rating-${rating}`}>{RATING_LABEL[rating]}</span>}
+            </div>
             <div className="bar">
-              <div style={{ width: `${Math.round((k.value ?? 0) * 100)}%` }} className={k.invert ? "bar-muted" : ""} />
+              <div
+                style={{ width: `${Math.round((k.value ?? 0) * 100)}%` }}
+                className={rating ? `rating-${rating}` : ""}
+              />
             </div>
             <span className="kpi-sub">{s ? k.sub : "…"}</span>
             <span className="kpi-good">
               <span aria-hidden="true">{k.good === UP ? "↑" : "↓"}</span> {k.good}
             </span>
           </div>
-        ))}
+          );
+        })}
       </section>
 
       {interviewsDue.data && interviewsDue.data.due > 0 && (

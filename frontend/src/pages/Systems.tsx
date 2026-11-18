@@ -369,9 +369,18 @@ export default function Systems() {
           </table>
         </div>
         {list.data && !rows.length && (
-          <p className="muted empty-flat">
-            {list.data.length ? t("No system matches the filters.") : t("No systems yet. Add the first system to plan an interview.")}
-          </p>
+          <div className="empty-flat empty-action">
+            <p className="muted">
+              {list.data.length
+                ? t("No system matches the filters.")
+                : t("No systems yet. Add the first system to plan an interview.")}
+            </p>
+            {editor && !list.data.length && (
+              <button type="button" className="btn" onClick={() => setCreating(true)}>
+                {t("Add the first system")}
+              </button>
+            )}
+          </div>
         )}
       </section>
 

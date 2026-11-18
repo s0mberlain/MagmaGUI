@@ -100,7 +100,7 @@ export default function SystemDetail() {
   return (
     <>
       <nav className="crumbs" aria-label={t("Breadcrumb")}>
-        <Link to="/systems">{t("Systems")}</Link> / <span>{s.name}</span>
+        <Link to="/systems">{t("Threat modelling")}</Link> / <span>{s.name}</span>
       </nav>
       <header className="page-header">
         <div>

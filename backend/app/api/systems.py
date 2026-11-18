@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app import audit
+from app import attack, audit
 from app import interviews as iv
 from app.api import evidence
 from app.api.deps import DB, SettingsDep
@@ -135,6 +135,8 @@ class SystemDetail(SystemRow):
     gap_no_rules: list[dict]
     gap_log_sources: list[dict]
     gap_requests: list[dict]
+    # issue #59: risks above the threshold that no linked use case addresses
+    gap_risks: list[dict] = []
     interviews: list[InterviewRow]
 
 
@@ -146,17 +148,39 @@ class ThreatIn(BaseModel):
     impact: Rating | None = None
 
 
+Key = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{1,40}$")]
+Technique = Annotated[str, StringConstraints(strip_whitespace=True, pattern=r"^T\d{4}(\.\d{3})?$")]
+
+
+class CustomThreatIn(BaseModel):
+    """A threat beyond STRIDE, linked to MITRE ATT&CK techniques (#60). It always applies."""
+
+    key: Key
+    # a draft may hold a threat that is still being written; completion needs title, at least
+    # one technique, likelihood and impact (app/interviews.py)
+    title: Short = ""
+    description: Text = ""
+    techniques: list[Technique] = Field(default_factory=list, max_length=50)
+    likelihood: Rating | None = None
+    impact: Rating | None = None
+
+
 class ComponentIn(BaseModel):
-    key: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{1,40}$")]
+    key: Key
     name: Name
     description: Text = ""
     log_source_ids: list[int] = Field(default_factory=list, max_length=200)
     threats: list[ThreatIn] = Field(default_factory=list, max_length=6)
+    custom_threats: list[CustomThreatIn] = Field(default_factory=list, max_length=50)
+
+
+# a STRIDE category or a custom threat (custom:<key>, #60)
+ThreatCategory = Stride | Annotated[str, StringConstraints(pattern=r"^custom:[A-Za-z0-9_-]{1,40}$")]
 
 
 class ThreatRef(BaseModel):
     component: str
-    category: Stride
+    category: ThreatCategory
 
 
 class AddedIn(BaseModel):
@@ -174,8 +198,11 @@ class AddedIn(BaseModel):
 
 
 class RemovedIn(BaseModel):
+    """A proposed L2 removed by hand: as a whole, or only from the listed threats (#57)."""
+
     l2_id: int
     reason: Text = ""
+    threats: list[ThreatRef] = Field(default_factory=list, max_length=200)
 
 
 class RequestIn(BaseModel):
@@ -462,11 +489,33 @@ def _risks(system: System, link_views: list[dict]) -> tuple[list[dict], int | No
     return iv.risk_overview(view), threshold
 
 
+def _uncovered(risks: list[dict]) -> list[dict]:
+    """Risks with coverage "gap" that no use case addresses (issue #59). Gaps of risks that
+    have use cases are already listed by use case (no rules / blind)."""
+    return [
+        {
+            "component": r["component"],
+            "component_name": r["component_name"],
+            "category": r["category"],
+            "score": r["score"],
+            "level": r["level"],
+        }
+        for r in risks
+        if r["coverage"] == "gap" and not r["use_cases"]
+    ]
+
+
+def gap_count(no_rules: list, ls_gaps: list, requests: list, uncovered: list) -> int:
+    """The number of gaps of a system (list column, detail stat and Gaps section agree)."""
+    return len(no_rules) + sum(1 for g in ls_gaps if g["blind"]) + len(requests) + len(uncovered)
+
+
 def _row(system: System, ctx: _Ctx) -> dict:
     links = ctx.links.get(system.id, [])
     last = iv.latest_completed(system)
     last_date = last.interview_date if last else None
     no_rules, ls_gaps, requests = _gaps(system, links)
+    risks, _ = _risks(system, _link_views(system, links, ctx)) if last else ([], None)
     weights = [ctx.weights.get(_link_code(x)) or 0.0 for x in links]
     draft = iv.draft_of(system)
     return {
@@ -484,7 +533,7 @@ def _row(system: System, ctx: _Ctx) -> dict:
         "updated_at": system.updated_at,
         "linked": len(links),
         "coverage": round(sum(weights) / len(weights), 4) if weights else None,
-        "gaps": len(no_rules) + sum(1 for g in ls_gaps if g["blind"]) + len(requests),
+        "gaps": gap_count(no_rules, ls_gaps, requests, _uncovered(risks)),
         "last_interview": last_date,
         "next_due": iv.add_months(last_date, system.review_interval_months) if last_date else None,
         "state": iv.interview_state(system, last_date),
@@ -584,6 +633,18 @@ def _validate_draft(db: Session, body: InterviewSave) -> dict:
         if len(cats) != len(set(cats)):
             raise HTTPException(422, f"{c.name}: a STRIDE category is listed twice")
         applies |= {(c.key, t.category) for t in c.threats if t.state == "applies"}
+        custom_keys = [x.key for x in c.custom_threats]
+        if len(custom_keys) != len(set(custom_keys)):
+            raise HTTPException(422, f"{c.name}: a custom threat is listed twice")
+        for x in c.custom_threats:
+            unknown = [tid for tid in x.techniques if attack.status(tid)[0] == "unknown"]
+            if unknown:
+                raise HTTPException(
+                    422,
+                    f"{c.name} / {x.title or x.key}: unknown ATT&CK technique {', '.join(unknown)}",
+                )
+            x.techniques = list(dict.fromkeys(x.techniques))
+        applies |= {(c.key, iv.CUSTOM + k) for k in custom_keys}
     ls_ids = {i for c in body.components for i in c.log_source_ids}
     if ls_ids:
         found = set(
@@ -631,8 +692,18 @@ def _validate_draft(db: Session, body: InterviewSave) -> dict:
     data = body.model_dump(include={"components", "added", "removed", "requests"}, mode="json")
     # an added entry carries either l2_id or l3_id
     data["added"] = [{k: v for k, v in a.items() if v is not None} for a in data["added"]]
-    # one removal per use case
-    data["removed"] = list({r["l2_id"]: r for r in data["removed"]}.values())
+    # one removal per use case; a removal from single threats keeps only threats that apply
+    # (#57) and is dropped when none is left (it must not turn into a whole removal)
+    removed = []
+    for r in {r["l2_id"]: r for r in data["removed"]}.values():
+        if r["threats"]:
+            r["threats"] = [x for x in r["threats"] if (x["component"], x["category"]) in applies]
+            if not r["threats"]:
+                continue
+        else:
+            r.pop("threats")
+        removed.append(r)
+    data["removed"] = removed
     return data
 
 
@@ -692,10 +763,24 @@ def _detail(db: Session, s: System, settings) -> dict:
         "links": link_views,
         "risks": risks,
         "threshold": threshold,
-        "components": [{"key": c["key"], "name": c["name"]} for c in comps],
+        "components": [
+            {
+                "key": c["key"],
+                "name": c["name"],
+                # custom ATT&CK threats (#60): labels for the risk overview
+                "custom_threats": [
+                    {"category": t["category"], "title": t.get("title") or t["category"]}
+                    | {"techniques": t.get("techniques", [])}
+                    for t in c.get("threats", [])
+                    if t.get("custom")
+                ],
+            }
+            for c in comps
+        ],
         "gap_no_rules": no_rules,
         "gap_log_sources": ls_gaps,
         "gap_requests": requests,
+        "gap_risks": _uncovered(risks),
         "interviews": [
             InterviewRow.model_validate(i, from_attributes=True)
             for i in sorted(s.interviews, key=lambda i: (i.interview_date, i.id), reverse=True)
@@ -838,7 +923,9 @@ def complete_interview(interview_id: int, body: VersionIn, user: Editor, db: DB)
         raise HTTPException(422, "Add at least one component before completing the interview")
     result = iv.evaluate(db, data, iv.threshold(db))
     if result["incomplete"]:
-        names = ", ".join(f"{x['component']} / {x['category']}" for x in result["incomplete"])
+        names = ", ".join(
+            f"{x['component']} / {x.get('title') or x['category']}" for x in result["incomplete"]
+        )
         raise HTTPException(
             422, f"Complete description, likelihood and impact of these threats: {names}"
         )

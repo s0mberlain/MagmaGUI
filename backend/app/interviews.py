@@ -12,9 +12,17 @@ requests. Completing the interview freezes it and replaces the system's links.
 
 Stored draft (`Interview.data`):
     components: [{key, name, description, log_source_ids, threats: [{category, state,
-                  description, likelihood, impact}]}]
+                  description, likelihood, impact}],
+                  custom_threats: [{key, title, description, techniques, likelihood, impact}]}]
+
+Custom threats (issue #60) refine STRIDE with MITRE ATT&CK: they always apply, are referred to as
+category `custom:<key>` and propose the L2 use cases whose rules cover one of their techniques
+(T1110 also matches its sub-techniques and the other way round). In the evaluated view they are
+listed in a component's `threats` after the six STRIDE categories, with `custom`, `title` and
+`techniques`.
     added:      [{l2_id | l3_id, threats: [{component: key, category}]}]  (one of the two ids)
-    removed:    [{l2_id, reason}]
+    removed:    [{l2_id, reason, threats?: [{component: key, category}]}]  (without threats the
+                whole L2 is removed; with threats it is only taken off those risks, issue #57)
     requests:   [{key, text, threat: {component: key, category}}]
 
 `evaluate()` resolves ids to names and works out the proposals; for a draft this runs on every
@@ -29,6 +37,7 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
+from app import attack
 from app.models import (
     AppSetting,
     Interview,
@@ -52,6 +61,23 @@ STRIDE = (
     "elevation_of_privilege",
 )
 STATES = ("applies", "does_not_apply", "not_discussed")
+CUSTOM = "custom:"  # category prefix of a custom ATT&CK threat (#60)
+
+
+def is_custom(category: str) -> bool:
+    return category.startswith(CUSTOM)
+
+
+def category_order(category: str) -> int:
+    """Sort key: the STRIDE categories in their order, custom threats after them."""
+    return STRIDE.index(category) if category in STRIDE else len(STRIDE)
+
+
+def techniques_match(threat: str, rule: str) -> bool:
+    """T1110 matches T1110.001 and the other way round; T1110.001 does not match T1110.002."""
+    return threat == rule or rule.startswith(threat + ".") or threat.startswith(rule + ".")
+
+
 CLASSIFICATIONS = ("public", "internal", "confidential", "restricted")
 COMPLETED = (InterviewStatus.completed, InterviewStatus.confirmed)
 
@@ -176,6 +202,18 @@ def threat_complete(t: dict) -> bool:
 
 
 # ---------------------------------------------------------------- evaluation
+
+
+def attack_targets(l2s: dict[int, L2UseCase], techniques: list[str]) -> list[int]:
+    """L2 use cases with a rule that covers one of the techniques (#60). Retired or offloading
+    rules count too, so that a use case without active rule shows up as a gap."""
+    wanted = [attack.resolve(x) or x for x in techniques]
+    out = []
+    for l2_id, l2 in sorted(l2s.items(), key=lambda x: x[1].code):
+        rule_ids = {x for r in l2.children for x in attack.remap(r.attack_techniques or [])}
+        if any(techniques_match(w, r) for w in wanted for r in rule_ids):
+            out.append(l2_id)
+    return out
 
 
 def _l2_index(db: Session) -> dict[int, L2UseCase]:
@@ -303,6 +341,29 @@ def evaluate(
             threats[(c["key"], cat)] = view | {"component_name": c["name"]}
             if not view["complete"]:
                 incomplete.append({"component": c["name"], "category": cat})
+        for ct in c.get("custom_threats", []):
+            cat = CUSTOM + ct["key"]
+            t = {"state": "applies"} | ct
+            view = {
+                "category": cat,
+                "custom": True,
+                "title": ct.get("title") or "",
+                "techniques": list(ct.get("techniques", [])),
+                "state": "applies",
+                "description": ct.get("description", "") or "",
+                "likelihood": ct.get("likelihood"),
+                "impact": ct.get("impact"),
+                "score": threat_score(t),
+                "complete": threat_score(t) is not None
+                and bool((ct.get("title") or "").strip())
+                and bool(ct.get("techniques")),
+            }
+            tviews.append(view)
+            threats[(c["key"], cat)] = view | {"component_name": c["name"]}
+            if not view["complete"]:
+                incomplete.append(
+                    {"component": c["name"], "category": cat, "title": ct.get("title") or ""}
+                )
         components.append(
             {
                 "key": c["key"],
@@ -329,14 +390,28 @@ def evaluate(
                 }
             )
         srcs.sort(
-            key=lambda s: (-(s["score"] or 0), s["component_name"], STRIDE.index(s["category"]))
+            key=lambda s: (-(s["score"] or 0), s["component_name"], category_order(s["category"]))
         )
         return srcs, delivered
 
     def propose(l2_id: int, key: str, cat: str, auto: bool) -> None:
-        p = proposals.setdefault(l2_id, {"sources": {}, "auto": False, "manual": False})
+        p = proposals.setdefault(
+            l2_id, {"sources": {}, "auto": False, "manual": False, "auto_refs": set()}
+        )
         p["sources"][(key, cat)] = threats[(key, cat)]["score"]
         p["auto" if auto else "manual"] = True
+        if auto:
+            p["auto_refs"].add((key, cat))
+
+    # issue #57: a removal either drops a whole L2 (no threats) or only takes it off some risks
+    removed_reason: dict[int, str] = {}
+    excluded: dict[int, dict] = {}  # l2 id -> {"reason", "pairs": {(component key, category)}}
+    for r in data.get("removed", []):
+        pairs = {(x["component"], x["category"]) for x in r.get("threats") or []}
+        if pairs:
+            excluded[r["l2_id"]] = {"reason": r.get("reason", "") or "", "pairs": pairs}
+        else:
+            removed_reason[r["l2_id"]] = r.get("reason", "") or ""
 
     below: list[dict] = []
     # L2s held back by the log source filter (#36): l2 id -> {(component key, category): score}
@@ -345,7 +420,10 @@ def evaluate(
     for (key, cat), t in threats.items():
         if t["score"] is None:
             continue
-        targets = [i for i in mapped.get(cat, []) if i in l2s]
+        if is_custom(cat):
+            targets = attack_targets(l2s, t["techniques"])
+        else:
+            targets = [i for i in mapped.get(cat, []) if i in l2s]
         if t["score"] >= threshold_value:
             for i in targets:
                 if not l2s[i].parent.applicable:
@@ -360,6 +438,8 @@ def evaluate(
                     if needed and have and not (needed & have):
                         filtered.setdefault(i, {})[(key, cat)] = t["score"]
                         continue
+                if (key, cat) in excluded.get(i, {}).get("pairs", ()):
+                    continue  # taken off this risk by hand (#57)
                 propose(i, key, cat, auto=True)
         else:
             below.append(
@@ -382,12 +462,12 @@ def evaluate(
             if (key, cat) in threats:
                 propose(a["l2_id"], key, cat, auto=False)
 
-    removed_reason = {r["l2_id"]: r.get("reason", "") or "" for r in data.get("removed", [])}
-
     accepted, removed = [], []
     for l2_id, p in proposals.items():
         l2 = l2s[l2_id]
         srcs, delivered = source_views(p["sources"])
+        for s in srcs:
+            s["auto"] = (s["component"], s["category"]) in p["auto_refs"]
         scores = [s["score"] for s in srcs if s["score"] is not None]
         view = _l2_brief(l2) | {
             "risk_score": max(scores) if scores else None,
@@ -414,6 +494,8 @@ def evaluate(
         if not pairs:
             continue
         srcs, delivered = source_views(pairs)
+        for s in srcs:
+            s["auto"] = False
         scores = [s["score"] for s in srcs if s["score"] is not None]
         accepted.append(
             _l3_brief(rule)
@@ -435,6 +517,29 @@ def evaluate(
                 | {"rules": [], "reason": reason}
             )
 
+    # an L2 taken off single risks (#57): listed with the risks it no longer covers
+    for l2_id, ex in excluded.items():
+        if l2_id not in l2s:
+            continue
+        pairs = sorted(
+            (p for p in ex["pairs"] if p in threats),
+            key=lambda p: (threats[p]["component_name"], category_order(p[1])),
+        )
+        if not pairs:
+            continue
+        removed.append(
+            _l2_brief(l2s[l2_id])
+            | {"risk_score": None, "sources": [], "auto": False, "manual": False}
+            | {"rules": [], "reason": ex["reason"]}
+            | {
+                "threats": [
+                    {"component": k, "component_name": threats[(k, c)]["component_name"]}
+                    | {"category": c}
+                    for k, c in pairs
+                ]
+            }
+        )
+
     not_matching = []
     for l2_id, srcs_by in filtered.items():
         if l2_id in proposals or l2_id in removed_reason:
@@ -452,7 +557,7 @@ def evaluate(
                 }
                 for (key, cat), score in srcs_by.items()
             ),
-            key=lambda s: (-(s["score"] or 0), s["component_name"], STRIDE.index(s["category"])),
+            key=lambda s: (-(s["score"] or 0), s["component_name"], category_order(s["category"])),
         )
         not_matching.append(
             _l2_brief(l2s[l2_id])
@@ -467,7 +572,7 @@ def evaluate(
     accepted.sort(key=order)
     removed.sort(key=order)
     not_matching.sort(key=order)
-    below.sort(key=lambda b: (-b["score"], b["component_name"], STRIDE.index(b["category"])))
+    below.sort(key=lambda b: (-b["score"], b["component_name"], category_order(b["category"])))
 
     requests = []
     for r in data.get("requests", []):
@@ -501,7 +606,7 @@ def evaluate(
         "removed": removed,
         "below_threshold": below,
         "added": added,
-        "removed_ids": [r["l2_id"] for r in data.get("removed", []) if r["l2_id"] in l2s],
+        "removed_ids": [l2_id for l2_id in removed_reason if l2_id in l2s],
         "requests": requests,
         # issue #41: a rule is a gap when it gets none (blind) or only some (partial) of its
         # log sources; inactive rules and rules without recorded log sources are not
@@ -631,6 +736,10 @@ def risk_overview(view: dict) -> list[dict]:
             ucs = []
             for p in by_threat.get(ref, []):
                 det = p.get("detection")
+                src = next(
+                    (s for s in p.get("sources", []) if (s["component"], s["category"]) == ref),
+                    {},
+                )
                 ucs.append(
                     {
                         "level": p.get("level", "L2"),
@@ -643,6 +752,8 @@ def risk_overview(view: dict) -> list[dict]:
                         "state": "gap" if p.get("deleted") else UC_STATE.get(det or "", "partial"),
                         "weight": p.get("weight"),
                         "manual": p.get("manual", False),
+                        # #57: proposed for this risk by the mapping (not only added by hand)
+                        "auto": bool(src.get("auto", p.get("auto", False))),
                         "deleted": p.get("deleted", False),
                     }
                 )
@@ -654,6 +765,10 @@ def risk_overview(view: dict) -> list[dict]:
                     "component": c["key"],
                     "component_name": c["name"],
                     "category": t["category"],
+                    # custom ATT&CK threat (#60)
+                    "custom": bool(t.get("custom")),
+                    "title": t.get("title"),
+                    "techniques": t.get("techniques", []),
                     "description": t.get("description", ""),
                     "likelihood": t.get("likelihood"),
                     "impact": t.get("impact"),
@@ -665,7 +780,9 @@ def risk_overview(view: dict) -> list[dict]:
                     "requests": reqs.get(ref, []),
                 }
             )
-    rows.sort(key=lambda r: (-(r["score"] or 0), r["component_name"], STRIDE.index(r["category"])))
+    rows.sort(
+        key=lambda r: (-(r["score"] or 0), r["component_name"], category_order(r["category"]))
+    )
     return rows
 
 

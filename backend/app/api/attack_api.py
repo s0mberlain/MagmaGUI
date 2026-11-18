@@ -242,6 +242,19 @@ def _out(plan, applied: bool) -> RemapOut:
     )
 
 
+class TechniqueBrief(BaseModel):
+    id: str
+    name: str
+
+
+@router.get("/techniques", response_model=list[TechniqueBrief])
+def techniques(_: Reader) -> list[TechniqueBrief]:
+    """All current ATT&CK techniques (pickers, e.g. custom threats of an interview, #60)."""
+    return [
+        TechniqueBrief(id=k, name=v["name"]) for k, v in sorted(attack.data()["techniques"].items())
+    ]
+
+
 @router.get("/remap", response_model=RemapOut)
 def remap_preview(_: Admin, db: DB) -> RemapOut:
     return _out(_plan(db), False)

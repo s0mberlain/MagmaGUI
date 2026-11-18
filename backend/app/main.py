@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 from swagger_ui_bundle import swagger_ui_path
 
-from app import __version__, gitsync
+from app import __version__, gitsync, redteam
 from app import snapshots as snapshot_jobs
 from app.api import (
     admin,
@@ -21,6 +21,7 @@ from app.api import (
     audit_log,
     auth,
     business,
+    campaigns,
     configs,
     evidence,
     gitsync_api,
@@ -118,7 +119,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             gitsync.request(session_factory, settings)
         poller = gitsync.Poller(session_factory, settings)
         poller.start()
+        expiry = redteam.Sweeper(session_factory)
+        if settings.auto_migrate:
+            expiry.start()
         yield
+        expiry.stop()
         poller.stop()
         scheduler.stop()
         engine.dispose()
@@ -211,6 +216,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app_settings.router,
         systems.router,
         evidence.router,
+        campaigns.router,
     ):
         api.include_router(r)
     app.include_router(api)

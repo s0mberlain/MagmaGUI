@@ -893,3 +893,24 @@ label.btn:focus-within { outline: 2px solid var(--c-accent); outline-offset: 1px
 .uc-picker-list.is-invalid { border-color: var(--c-accent); box-shadow: 0 0 0 1px var(--c-accent); }
 .code-link-row { display: flex; align-items: center; gap: 8px; }
 .code-link-row .code-tag { white-space: nowrap; }
+
+/* purple team campaigns (PROJ-3) */
+.pill-bad { background: #fde8e8; color: #9b1c1c; }
+.pill-info { background: var(--c-info-soft); color: var(--c-info-ink); }
+.pre-text { white-space: pre-wrap; word-break: break-word; margin: 0; font-size: 13px; }
+.pre-code { white-space: pre-wrap; word-break: break-word; margin: 0; font-family: var(--font-mono); font-size: 12px; background: var(--c-subtle); border-radius: var(--radius-sm); padding: 8px 10px; max-height: 320px; overflow: auto; }
+.test-section { border-top: 1px solid var(--c-track); padding-top: 14px; }
+.test-section h3 { font-size: 14px; margin: 0; }
+.check-row { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; }
+.check-row input { margin-top: 3px; }
+.proposal { border: 1px solid var(--c-border); border-radius: var(--radius); padding: 12px 14px; }
+.proposal.is-off { background: var(--c-subtle); }
+.proposal .form-grid { margin-top: 10px; }
+.outcome-bar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--c-track); min-width: 120px; }
+.outcome-bar span { display: block; height: 100%; }
+.outcome-bar .o-blocked { background: #1e3a8a; }
+.outcome-bar .o-alerted { background: #60a5fa; }
+.outcome-bar .o-logged { background: #f59e0b; }
+.outcome-bar .o-not_detected { background: #b91c1c; }
+.legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.whitebox { border-left: 3px solid var(--c-data-1); padding-left: 12px; }

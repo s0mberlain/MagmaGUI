@@ -1,7 +1,7 @@
 import type { RuleNameVariable } from "./lib/ruleName";
 import type { Lang } from "./i18n";
 import { translateServer } from "./serverTexts";
-export type Role = "admin" | "analyst" | "auditor";
+export type Role = "admin" | "analyst" | "auditor" | "red_team";
 
 export interface User {
   id: number;
@@ -15,6 +15,9 @@ export interface User {
   locale: Lang | null;
   last_login_at: string | null;
   created_at: string;
+  /** red team accounts: last day the account can be used; manual or from the campaigns */
+  expires_on?: string | null;
+  expiry_manual?: boolean;
 }
 
 export interface VersionInfo {
@@ -1013,6 +1016,166 @@ export class ConflictError extends Error {
   }
 }
 
+// ---------------------------------------------------------------- purple team campaigns (PROJ-3)
+
+export type CampaignStatus = "planned" | "running" | "closed";
+export type ExecStatus = "not_run" | "executed" | "not_executed";
+export type TestOutcome = "blocked" | "alerted" | "logged" | "not_detected";
+
+export interface TestRule {
+  id: number;
+  code: string;
+  name: string;
+  l2_code: string;
+  lifecycle_status: Lifecycle;
+  attack_techniques: string[];
+}
+
+/** The read-only use case definition a white box red team sees. */
+export interface WhiteBoxRule {
+  code: string;
+  name: string;
+  description: string;
+  l2_code: string;
+  l2_name: string;
+  lifecycle_status: Lifecycle;
+  log_sources: string[];
+  detection_technologies: string[];
+  attack_techniques: string[];
+  config: string | null;
+}
+
+export interface CampaignTest {
+  id: number;
+  campaign_id: number;
+  title: string;
+  technique: string;
+  technique_name: string | null;
+  procedure: string;
+  tools: string;
+  template_id: number | null;
+  exec_status: ExecStatus;
+  executed_at: string | null;
+  red_notes: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  version: number;
+  // left out for red team accounts while the campaign is not closed
+  outcome?: TestOutcome | null;
+  detected_at?: string | null;
+  ttd_seconds?: number | null;
+  // left out for red team accounts
+  blue_notes?: string;
+  outcome_by?: string | null;
+  rules?: TestRule[];
+  // only for red team accounts in a white box campaign
+  white_box_rules?: WhiteBoxRule[];
+}
+
+export interface Campaign {
+  id: number;
+  name: string;
+  description: string;
+  planned_start: string;
+  planned_end: string;
+  status: CampaignStatus;
+  white_box: boolean;
+  created_by: string;
+  created_at: string;
+  closed_at: string | null;
+  red_team: { id: number; username: string; display_name: string }[];
+  test_count: number;
+  exec_counts: Record<ExecStatus, number>;
+  outcome_counts?: Record<TestOutcome, number>;
+  median_ttd_seconds?: number | null;
+  tests?: CampaignTest[];
+  warnings?: string[];
+}
+
+export interface CampaignIn {
+  name: string;
+  description: string;
+  planned_start: string;
+  planned_end: string;
+  white_box: boolean;
+  red_team_ids: number[];
+}
+
+export interface RedTeamAccount {
+  id: number;
+  username: string;
+  display_name: string;
+  active: boolean;
+  expires_on: string | null;
+}
+
+export interface TestTemplate {
+  id: number;
+  title: string;
+  technique: string;
+  technique_name: string | null;
+  procedure: string;
+  tools: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TestIn {
+  title: string;
+  technique: string;
+  procedure: string;
+  tools: string;
+  rule_ids?: number[];
+  template_id?: number | null;
+}
+
+export interface TestProposal {
+  technique: string;
+  technique_name: string | null;
+  replaces: string[];
+  rules: TestRule[];
+  templates: { id: number; title: string; procedure: string; tools: string }[];
+  existing_tests: { id: number; title: string; rule_ids: number[] }[];
+}
+
+export interface Proposals {
+  proposals: TestProposal[];
+  skipped_techniques: { technique: string; status: string; rules: string[] }[];
+  no_technique: TestRule[];
+}
+
+export interface TestPatch {
+  version: number;
+  title?: string;
+  technique?: string;
+  procedure?: string;
+  tools?: string;
+  rule_ids?: number[];
+  exec_status?: ExecStatus;
+  executed_at?: string | null;
+  red_notes?: string;
+  outcome?: TestOutcome | null;
+  detected_at?: string | null;
+  blue_notes?: string;
+}
+
+export interface RuleTest {
+  id: number;
+  campaign_id: number;
+  campaign_name: string;
+  campaign_status: CampaignStatus;
+  title: string;
+  technique: string;
+  technique_name: string | null;
+  exec_status: ExecStatus;
+  executed_at: string | null;
+  outcome: TestOutcome | null;
+  detected_at: string | null;
+  ttd_seconds: number | null;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -1098,7 +1261,10 @@ export const api = {
   users: () => request<User[]>("GET", "/api/users"),
   createUser: (u: { username: string; display_name: string; role: Role; password: string; email?: string | null }) =>
     request<User>("POST", "/api/users", u),
-  updateUser: (id: number, u: Partial<{ display_name: string; role: Role; active: boolean; password: string }>) =>
+  updateUser: (
+    id: number,
+    u: Partial<{ display_name: string; role: Role; active: boolean; password: string; expires_on: string | null }>,
+  ) =>
     request<User>("PATCH", `/api/users/${id}`, u),
   deleteUser: (id: number) => request<void>("DELETE", `/api/users/${id}`),
   audit: (limit = 100) => request<AuditEntry[]>("GET", `/api/audit?limit=${limit}`),
@@ -1300,6 +1466,32 @@ export const api = {
   attachmentUrl: (id: number, download = false) =>
     `/api/interview-attachments/${id}/content${download ? "?download=1" : ""}`,
   resetStrideMapping: () => request<StrideMapping>("POST", "/api/stride-mapping/reset"),
+
+  // purple team campaigns (PROJ-3)
+  campaigns: () => request<Campaign[]>("GET", "/api/campaigns"),
+  campaign: (id: number) => request<Campaign>("GET", `/api/campaigns/${id}`),
+  createCampaign: (body: CampaignIn) => request<Campaign>("POST", "/api/campaigns", body),
+  updateCampaign: (id: number, body: Partial<CampaignIn>) => request<Campaign>("PATCH", `/api/campaigns/${id}`, body),
+  campaignStatus: (id: number, action: "start" | "close" | "reopen") =>
+    request<Campaign>("POST", `/api/campaigns/${id}/status`, { action }),
+  deleteCampaign: (id: number) => request<void>("DELETE", `/api/campaigns/${id}`),
+  redTeamAccounts: () => request<RedTeamAccount[]>("GET", "/api/campaigns/red-team-accounts"),
+  campaignTechniques: () => request<{ id: string; name: string }[]>("GET", "/api/campaigns/techniques"),
+  proposeTests: (id: number, body: { l2_ids: number[]; l3_ids: number[] }) =>
+    request<Proposals>("POST", `/api/campaigns/${id}/proposals`, body),
+  createTest: (id: number, body: TestIn) => request<CampaignTest>("POST", `/api/campaigns/${id}/tests`, body),
+  createTests: (id: number, body: { tests: TestIn[]; add_rules: { test_id: number; rule_ids: number[] }[] }) =>
+    request<Campaign>("POST", `/api/campaigns/${id}/tests/bulk`, body),
+  updateTest: (id: number, body: TestPatch) => request<CampaignTest>("PATCH", `/api/campaign-tests/${id}`, body),
+  deleteTest: (id: number) => request<void>("DELETE", `/api/campaign-tests/${id}`),
+  testToLibrary: (id: number) => request<TestTemplate>("POST", `/api/campaign-tests/${id}/to-library`),
+  ruleTests: (code: string) => request<RuleTest[]>("GET", `/api/l3/${enc(code)}/campaign-tests`),
+  testLibrary: () => request<TestTemplate[]>("GET", "/api/test-library"),
+  createTemplate: (body: Omit<TestIn, "rule_ids" | "template_id">) =>
+    request<TestTemplate>("POST", "/api/test-library", body),
+  updateTemplate: (id: number, body: Partial<Omit<TestIn, "rule_ids" | "template_id">>) =>
+    request<TestTemplate>("PATCH", `/api/test-library/${id}`, body),
+  deleteTemplate: (id: number) => request<void>("DELETE", `/api/test-library/${id}`),
 
   demoDataAllowed: () => request<{ allowed: boolean }>("GET", "/api/admin/demo-data"),
   demoData: (seed: number) => request<Record<string, number>>("POST", "/api/admin/demo-data", { seed }),

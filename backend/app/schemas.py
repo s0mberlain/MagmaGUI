@@ -87,6 +87,9 @@ class UserOut(ORM):
     locale: str | None = None
     last_login_at: datetime | None
     created_at: datetime
+    # red team accounts (PROJ-3)
+    expires_on: date | None = None
+    expiry_manual: bool = False
 
 
 class UserCreate(BaseModel):
@@ -103,6 +106,8 @@ class UserUpdate(BaseModel):
     role: Role | None = None
     active: bool | None = None
     password: Password | None = None
+    # red team accounts: a manual expiry date, or null to go back to the automatic one
+    expires_on: date | None = None
 
 
 class PasswordChange(BaseModel):

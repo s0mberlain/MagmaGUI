@@ -122,8 +122,24 @@ def current_user(request: Request, db: Annotated[Session, Depends(get_db)]) -> U
     if token:
         sess = db.scalar(select(UserSession).where(UserSession.token_hash == _token_hash(token)))
         if sess and as_utc(sess.expires_at) > datetime.now(UTC) and sess.user.active:
-            return sess.user
+            user = sess.user
+            if user.role == Role.red_team:
+                _red_team_gate(db, user, request.url.path)
+            return user
     raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not signed in")
+
+
+def _red_team_gate(db: Session, user: User, path: str) -> None:
+    """Red team accounts (PROJ-3) expire and may only call the campaign API and their own
+    account: every other endpoint is refused here, so new endpoints are closed by default."""
+    from app import redteam
+
+    if redteam.is_expired(user):
+        redteam.expire(db, user)
+        db.commit()
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not signed in")
+    if not redteam.path_allowed(path):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Your role does not allow this action")
 
 
 CurrentUser = Annotated[User, Depends(current_user)]

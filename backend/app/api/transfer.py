@@ -12,6 +12,7 @@ from app import audit, excel, interviews
 from app.api.deps import DB
 from app.models import (
     BusinessDriver,
+    Campaign,
     ComplianceSource,
     ConfigCommit,
     L1UseCase,
@@ -24,6 +25,7 @@ from app.models import (
     StrideMapping,
     System,
     SystemLink,
+    TestTemplate,
     Verification,
 )
 from app.security import Editor, Reader
@@ -46,9 +48,10 @@ def export_excel(_: Reader, db: DB) -> Response:
 @router.get("/export/json")
 def export_json(_: Reader, db: DB) -> dict:
     """Export of the catalogue with its history (verifications, lifecycle changes, output
-    metrics, configurations, systems with their interviews and the STRIDE mapping) for other
-    tools. It is not a backup: users, API tokens, snapshots
-    and the audit log are not in it and it cannot be imported; back up the database for that."""
+    metrics, configurations, systems with their interviews, the STRIDE mapping, purple team
+    campaigns and the test library) for other tools. It is not a backup: users, API tokens,
+    snapshots and the audit log are not in it and it cannot be imported; back up the database
+    for that."""
 
     def rows(model, *fields):
         return [{f: getattr(x, f) for f in fields} for x in db.scalars(select(model))]
@@ -220,6 +223,41 @@ def export_json(_: Reader, db: DB) -> dict:
                 ],
             }
             for s in db.scalars(select(System).order_by(System.name))
+        ],
+        # purple team campaigns (PROJ-3)
+        "test_library": [
+            {
+                f: getattr(x, f)
+                for f in "title technique procedure tools created_by created_at".split()
+            }
+            for x in db.scalars(select(TestTemplate).order_by(TestTemplate.id))
+        ],
+        "campaigns": [
+            {
+                **{
+                    f: getattr(c, f)
+                    for f in (
+                        "name description planned_start planned_end status white_box "
+                        "created_by created_at closed_at"
+                    ).split()
+                },
+                "red_team": [u.username for u in c.red_team],
+                "tests": [
+                    {
+                        **{
+                            f: getattr(t, f)
+                            for f in (
+                                "title technique procedure tools exec_status executed_at "
+                                "red_notes outcome detected_at blue_notes outcome_by "
+                                "created_by created_at"
+                            ).split()
+                        },
+                        "rules": [r.code for r in t.rules],
+                    }
+                    for t in c.tests
+                ],
+            }
+            for c in db.scalars(select(Campaign).order_by(Campaign.id))
         ],
     }
 

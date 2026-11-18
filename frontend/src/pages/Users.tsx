@@ -3,8 +3,9 @@ import { api, type Role, type User } from "../api";
 import { ROLE_LABEL, useAuth } from "../auth";
 import { confirmDialog, ErrorNote, Modal } from "../components/ui";
 import { locale, t } from "../i18n";
+import { fmtDate, today } from "../lib/format";
 
-const ROLES: Role[] = ["admin", "analyst", "auditor"];
+const ROLES: Role[] = ["admin", "analyst", "auditor", "red_team"];
 
 function fmt(ts: string | null): string {
   return ts ? new Date(ts).toLocaleString(locale()) : t("never");
@@ -16,6 +17,7 @@ export default function Users() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pwUser, setPwUser] = useState<User | null>(null);
+  const [expiryUser, setExpiryUser] = useState<User | null>(null);
   const [form, setForm] = useState({ username: "", display_name: "", role: "analyst" as Role, password: "" });
 
   const reload = useCallback(() => {
@@ -114,6 +116,7 @@ export default function Users() {
               <th>{t("Role")}</th>
               <th>{t("Login")}</th>
               <th>{t("Last login")}</th>
+              <th>{t("Expires")}</th>
               <th>{t("Status")}</th>
               <th aria-label={t("Actions")} />
             </tr>
@@ -143,7 +146,7 @@ export default function Users() {
                     }
                     onChange={(e) => void changeRole(u, e.target.value as Role)}
                   >
-                    {ROLES.map((r) => (
+                    {ROLES.filter((r) => r !== "red_team" || u.auth_source === "local").map((r) => (
                       <option key={r} value={r}>
                         {ROLE_LABEL[r]}
                       </option>
@@ -155,6 +158,21 @@ export default function Users() {
                   {u.totp_enabled && <span className="chip chip-info chip-2fa">2FA</span>}
                 </td>
                 <td>{fmt(u.last_login_at)}</td>
+                <td>
+                  {u.role === "red_team" ? (
+                    <button
+                      type="button"
+                      className="link-btn"
+                      title={t("Change the expiry date")}
+                      onClick={() => setExpiryUser(u)}
+                    >
+                      {u.expires_on ? fmtDate(u.expires_on) : t("no campaign")}
+                      <span className="small muted"> · {u.expiry_manual ? t("manual") : t("automatic")}</span>
+                    </button>
+                  ) : (
+                    <span className="muted">–</span>
+                  )}
+                </td>
                 <td>
                   <span className={"pill " + (u.active ? "pill-ok" : "pill-warn")}>
                     {u.active ? t("Active") : t("Disabled")}
@@ -241,6 +259,13 @@ export default function Users() {
               ))}
             </select>
           </label>
+          {form.role === "red_team" && (
+            <p className="small muted" style={{ gridColumn: "1 / -1", margin: 0 }}>
+              {t(
+                "Red team accounts are external testers: local sign-in only, they see only the campaigns they are assigned to and expire 7 days after the planned end of their latest campaign.",
+              )}
+            </p>
+          )}
           <label className="field">
             {t("Initial password")}
             <input
@@ -260,6 +285,17 @@ export default function Users() {
           </div>
         </form>
       </section>
+
+      {expiryUser && (
+        <ExpiryDialog
+          user={expiryUser}
+          onClose={() => setExpiryUser(null)}
+          onSaved={(u) => {
+            setNotice(t("Expiry date of {user} changed", { user: u.username }));
+            reload();
+          }}
+        />
+      )}
 
       {pwUser && (
         <PasswordDialog
@@ -339,6 +375,64 @@ function PasswordDialog({ user, onClose, onSaved }: { user: User; onClose: () =>
           </button>
           <button type="submit" className="btn btn-primary" disabled={busy}>
             {busy ? t("Saving…") : t("Set password")}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** Expiry date of a red team account: a manual date, or back to the automatic one (latest planned
+ * end of its campaigns + 7 days). */
+function ExpiryDialog({ user, onClose, onSaved }: { user: User; onClose: () => void; onSaved: (u: User) => void }) {
+  const [date, setDate] = useState(user.expires_on ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function save(value: string | null) {
+    setBusy(true);
+    setError(null);
+    try {
+      const u = await api.updateUser(user.id, { expires_on: value });
+      onSaved(u);
+      onClose();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title={t("Expiry date of {user}", { user: user.username })} open onClose={onClose}>
+      <form
+        className="stack"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void save(date || null);
+        }}
+      >
+        <p className="muted" style={{ margin: 0 }}>
+          {t(
+            "The account is disabled at the end of this day (server time zone). Automatic: 7 days after the latest planned end of its campaigns. A manual date is kept until you switch back to automatic.",
+          )}
+        </p>
+        <ErrorNote error={error} />
+        <label className="field">
+          {t("Expires at the end of")}
+          <input className="input" type="date" required min={today()} value={date} onChange={(e) => setDate(e.target.value)} />
+        </label>
+        <div className="row-actions">
+          <button type="button" className="btn" onClick={onClose}>
+            {t("Cancel")}
+          </button>
+          {user.expiry_manual && (
+            <button type="button" className="btn" disabled={busy} onClick={() => void save(null)}>
+              {t("Use automatic date")}
+            </button>
+          )}
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            {t("Set date")}
           </button>
         </div>
       </form>

@@ -42,6 +42,8 @@ class Role(enum.StrEnum):
     admin = "admin"
     analyst = "analyst"
     auditor = "auditor"
+    # external red team tester (PROJ-3): sees only the campaigns it is assigned to
+    red_team = "red_team"
 
 
 class AuthSource(enum.StrEnum):
@@ -104,6 +106,10 @@ class User(Base):
     totp_last_step: Mapped[int | None] = mapped_column(Integer)
     # sha256 hashes of unused one-time recovery codes
     recovery_codes: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # red team accounts (PROJ-3): last day the account may be used (server time zone). Without a
+    # manual date it follows the latest planned end of the assigned campaigns + 7 days.
+    expires_on: Mapped[date | None] = mapped_column(Date)
+    expiry_manual: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class UserSession(Base):
@@ -726,3 +732,134 @@ class StrideMapping(Base):
 L2UseCase.linked_systems = relationship(
     System, secondary="system_links", viewonly=True, order_by=System.name
 )
+
+
+# ---------------------------------------------------------------- purple team campaigns (PROJ-3)
+
+
+class CampaignStatus(enum.StrEnum):
+    planned = "planned"
+    running = "running"
+    closed = "closed"
+
+
+class ExecStatus(enum.StrEnum):
+    not_run = "not_run"
+    executed = "executed"
+    not_executed = "not_executed"  # "Could not execute"
+
+
+class TestOutcome(enum.StrEnum):
+    blocked = "blocked"
+    alerted = "alerted"
+    logged = "logged"
+    not_detected = "not_detected"
+
+
+campaign_red_team = Table(
+    "campaign_red_team",
+    Base.metadata,
+    Column("campaign_id", ForeignKey("campaigns.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id", ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+)
+campaign_test_rules = Table(
+    "campaign_test_rules",
+    Base.metadata,
+    Column("test_id", ForeignKey("campaign_tests.id", ondelete="CASCADE"), primary_key=True),
+    Column(
+        "l3_id", ForeignKey("l3_use_cases.id", ondelete="CASCADE"), primary_key=True, index=True
+    ),
+)
+
+
+class Campaign(Base):
+    """A purple team campaign: test cases an (external) red team runs and the SOC records the
+    outcome of (app/campaigns.py)."""
+
+    __tablename__ = "campaigns"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    # lower-case name: campaign names are unique regardless of case
+    name_key: Mapped[str] = mapped_column(String(255), unique=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    planned_start: Mapped[date] = mapped_column(Date)
+    planned_end: Mapped[date] = mapped_column(Date)
+    status: Mapped[CampaignStatus] = mapped_column(
+        _enum(CampaignStatus, "campaign_status"), default=CampaignStatus.planned
+    )
+    white_box: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    red_team: Mapped[list[User]] = relationship(secondary=campaign_red_team, order_by=User.username)
+    tests: Mapped[list["CampaignTest"]] = relationship(
+        back_populates="campaign",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="CampaignTest.id",
+    )
+
+
+class CampaignTest(Base):
+    """One test case of a campaign: an ATT&CK technique, how the red team ran it and what the
+    blue team saw."""
+
+    __tablename__ = "campaign_tests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(
+        ForeignKey("campaigns.id", ondelete="CASCADE"), index=True
+    )
+    title: Mapped[str] = mapped_column(String(255))
+    technique: Mapped[str] = mapped_column(String(16), index=True)
+    procedure: Mapped[str] = mapped_column(Text, default="")
+    tools: Mapped[str] = mapped_column(Text, default="")
+    # the library template it was made from (informational; the test is a copy)
+    template_id: Mapped[int | None] = mapped_column(
+        ForeignKey("test_templates.id", ondelete="SET NULL")
+    )
+    # red team fields
+    exec_status: Mapped[ExecStatus] = mapped_column(
+        _enum(ExecStatus, "exec_status"), default=ExecStatus.not_run
+    )
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    red_notes: Mapped[str] = mapped_column(Text, default="")
+    # blue team fields
+    outcome: Mapped[TestOutcome | None] = mapped_column(_enum(TestOutcome, "test_outcome"))
+    detected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    blue_notes: Mapped[str] = mapped_column(Text, default="")
+    outcome_by: Mapped[str | None] = mapped_column(String(64))
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+    # optimistic locking: a save names the version it started from (two analysts, EC-6)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+
+    campaign: Mapped[Campaign] = relationship(back_populates="tests")
+    rules: Mapped[list[L3UseCase]] = relationship(
+        secondary=campaign_test_rules, order_by=L3UseCase.code
+    )
+
+
+class TestTemplate(Base):
+    """A reusable test procedure of the test library."""
+
+    __tablename__ = "test_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(255))
+    technique: Mapped[str] = mapped_column(String(16), index=True)
+    procedure: Mapped[str] = mapped_column(Text, default="")
+    tools: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )

@@ -23,6 +23,9 @@ import SystemDetail from "./pages/SystemDetail";
 import Interview from "./pages/Interview";
 import StrideMappingPage from "./pages/StrideMappingPage";
 import Verification from "./pages/Verification";
+import Campaigns from "./pages/Campaigns";
+import CampaignDetail from "./pages/CampaignDetail";
+import TestLibrary from "./pages/TestLibrary";
 import { NAV_ITEMS } from "./nav";
 import { t } from "./i18n";
 import { ConfirmHost } from "./components/ui";
@@ -49,6 +52,16 @@ export default function App() {
           <Route path="systems/:id" element={<SystemDetail />} />
           <Route path="interviews/:id" element={<Interview />} />
           <Route path="stride-mapping" element={<StrideMappingPage />} />
+          <Route path="campaigns" element={<Campaigns />} />
+          <Route path="campaigns/:id" element={<CampaignDetail />} />
+          <Route
+            path="test-library"
+            element={
+              <RequireAuth roles={["admin", "analyst", "auditor"]}>
+                <TestLibrary />
+              </RequireAuth>
+            }
+          />
           <Route path="references" element={<References />} />
           <Route path="import-export" element={<ImportExport />} />
           <Route path="history" element={<History />} />

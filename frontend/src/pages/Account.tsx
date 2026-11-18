@@ -9,6 +9,7 @@ const ROLE_TEXT = {
   admin: "Admin: manages users and everything else.",
   analyst: "Analyst: edits use cases, rules, configs and verifications.",
   auditor: "Auditor: reads everything, changes nothing.",
+  red_team: "Red team: records the tests of the campaigns it is assigned to.",
 };
 
 export default function Account() {
@@ -38,6 +39,12 @@ export default function Account() {
               <dd>{local ? t("Username and password") : t("Your organisation's identity provider")}</dd>
               <dt>{t("Last sign-in")}</dt>
               <dd>{fmtDate(user.last_login_at)}</dd>
+              {user.role === "red_team" && (
+                <>
+                  <dt>{t("Account expires")}</dt>
+                  <dd>{t("at the end of {date}", { date: fmtDate(user.expires_on) })}</dd>
+                </>
+              )}
             </dl>
           </section>
           {local && <PasswordCard />}

@@ -10,6 +10,8 @@ export interface NavItem {
   roles?: Role[];
   /** Heading the entry is listed under in the sidebar. */
   group: "work" | "analysis" | "admin";
+  /** Shown to red team accounts; they see nothing else (PROJ-3). */
+  redTeam?: boolean;
 }
 
 export const NAV_GROUPS: { key: NavItem["group"]; label: string }[] = [
@@ -24,6 +26,8 @@ export const NAV_ITEMS: NavItem[] = [
   { label: t("Verification"), path: "/verification", group: "work" },
   { label: t("Priorities"), path: "/priorities", group: "work" },
   { label: t("Threat modelling"), path: "/systems", group: "work" },
+  { label: t("Campaigns"), path: "/campaigns", group: "work", redTeam: true },
+  { label: t("Test library"), path: "/test-library", group: "work", roles: ["admin", "analyst", "auditor"] },
   { label: t("ATT&CK coverage"), path: "/attack", group: "analysis" },
   { label: t("Output metrics"), path: "/output", group: "analysis" },
   { label: t("History & trends"), path: "/history", group: "analysis" },

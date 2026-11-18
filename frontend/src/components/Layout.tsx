@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import { ROLE_LABEL, useAuth } from "../auth";
 import { NAV_GROUPS, NAV_ITEMS } from "../nav";
 import LanguageSelect from "./LanguageSelect";
@@ -43,7 +43,10 @@ export default function Layout() {
     });
   const location = useLocation();
   useEffect(() => setOpen(false), [location.pathname]);
-  const visible = NAV_ITEMS.filter((item) => !item.roles || can(...item.roles));
+  const redTeam = user?.role === "red_team";
+  const visible = NAV_ITEMS.filter((item) =>
+    redTeam ? item.redTeam : !item.roles || can(...item.roles),
+  );
 
   return (
     <div className="shell">
@@ -125,8 +128,22 @@ export default function Layout() {
         </div>
       </nav>
       <main className="content">
-        <Outlet />
+        {redTeam ? <RedTeamOutlet /> : <Outlet />}
       </main>
+    </div>
+  );
+}
+
+/** Red team accounts (PROJ-3) only use their campaigns and their account page; the server refuses
+ * everything else anyway. */
+function RedTeamOutlet() {
+  const { pathname } = useLocation();
+  if (pathname === "/") return <Navigate to="/campaigns" replace />;
+  if (/^\/(campaigns(\/.*)?|account)$/.test(pathname)) return <Outlet />;
+  return (
+    <div className="empty">
+      <h3>{t("No access")}</h3>
+      <p>{t("Red team accounts can only open their campaigns and their account.")}</p>
     </div>
   );
 }

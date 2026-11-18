@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy import or_, select, update
 
-from app import audit, totp
+from app import audit, redteam, totp
 from app.api.deps import DB, SettingsDep
 from app.models import AuthSource, User
 from app.schemas import AuthConfigOut, LoginIn, PasswordChange, UserOut
@@ -102,6 +102,14 @@ def login(
 
     if not password_ok or not user.active:
         raise fail(invalid)
+    refusal = redteam.login_refusal(user)
+    if refusal:
+        # only someone who knows the password learns why (expired / no campaign)
+        if refusal == redteam.EXPIRED:
+            redteam.expire(db, user)
+            db.commit()
+        limiter.failed(ip)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, refusal)
     if user.totp_enabled:
         if not body.otp:
             # password was right: ask for the second factor (does not count as a failure)

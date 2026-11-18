@@ -225,6 +225,34 @@ def _history(db: Session, level: str, obj) -> list[Verification]:
     return list(db.scalars(q.order_by(Verification.verified_at.desc(), Verification.id.desc())))
 
 
+def add_verification(
+    db: Session,
+    level: str,
+    obj,
+    when: date,
+    username: str,
+    result: VerificationResult,
+    note: str,
+) -> tuple[Verification, str | None]:
+    """Add a verification to the history of an L2 use case or L3 rule, as "Verify now" does.
+
+    Returns the verification and the config tag it set (or None)."""
+    v = Verification(verified_at=when, username=username, result=result, note=note)
+    setattr(v, f"{level}_id", obj.id)
+    db.add(v)
+    # Only a check without issues counts as verified: a failed check must not clear the
+    # overdue flag, raise verification health or tag the config as verified.
+    tag = None
+    if result == VerificationResult.ok:
+        if obj.last_verified_at is None or when >= obj.last_verified_at:
+            obj.last_verified_at = when
+            obj.last_verified_by = username
+        # Tag the configuration version that was verified (PLAN 4a); only rules have one
+        if level == "l3":
+            tag = configs.tag_verified(db, obj, when, username)
+    return v, tag
+
+
 for _level in ("l2", "l3"):
 
     def _make(level: str) -> None:
@@ -236,21 +264,7 @@ for _level in ("l2", "l3"):
                 not_in_future(when)
             except ValueError:
                 raise HTTPException(422, "Verification date cannot be in the future") from None
-            v = Verification(
-                verified_at=when, username=user.username, result=body.result, note=body.note
-            )
-            setattr(v, f"{level}_id", obj.id)
-            db.add(v)
-            # Only a check without issues counts as verified: a failed check must not clear the
-            # overdue flag, raise verification health or tag the config as verified.
-            tag = None
-            if body.result == VerificationResult.ok:
-                if obj.last_verified_at is None or when >= obj.last_verified_at:
-                    obj.last_verified_at = when
-                    obj.last_verified_by = user.username
-                # Tag the configuration version that was verified (PLAN 4a); only rules have one
-                if level == "l3":
-                    tag = configs.tag_verified(db, obj, when, user.username)
+            v, tag = add_verification(db, level, obj, when, user.username, body.result, body.note)
             audit.record(
                 db,
                 user,

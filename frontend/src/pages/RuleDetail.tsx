@@ -8,6 +8,7 @@ import LifecyclePanel from "../components/LifecyclePanel";
 import { DriverBlock } from "../components/Drivers";
 import { MarkdownField } from "../components/Markdown";
 import OutputPanel from "../components/OutputPanel";
+import RuleTests from "../components/RuleTests";
 import {
   Chips,
   confirmDialog,
@@ -425,6 +426,8 @@ export default function RuleDetail() {
                 ))}
               </ul>
             </section>
+
+            <RuleTests code={code} />
 
             <LifecyclePanel level="l3" code={code} onChanged={() => void rule.reload()} />
             {editor && (

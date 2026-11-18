@@ -86,4 +86,5 @@ export const ROLE_LABEL: Record<Role, string> = {
   admin: t("Admin"),
   analyst: t("Analyst"),
   auditor: t("Auditor (read-only)"),
+  red_team: t("Red team (external)"),
 };

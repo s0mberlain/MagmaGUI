@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import delete, func, select
 
-from app import audit
+from app import audit, redteam
 from app.api.deps import DB
-from app.models import AuthSource, Role, User, UserSession
+from app.models import AuthSource, Role, User, UserSession, campaign_red_team
 from app.schemas import UserCreate, UserOut, UserUpdate
 from app.security import Admin, check_password_policy, hash_password
 
@@ -40,6 +40,7 @@ def create_user(body: UserCreate, admin: Admin, db: DB) -> User:
         role=body.role,
         auth_source=AuthSource.local,
         password_hash=hash_password(body.password),
+        expiry_manual=False,
     )
     db.add(user)
     audit.record(db, admin, "create", "user", body.username, {"role": body.role})
@@ -64,6 +65,10 @@ def update_user(user_id: int, body: UserUpdate, admin: Admin, db: DB) -> User:
             "The role of an SSO account comes from the identity provider groups (OIDC_ROLE_MAP) "
             "and would be reset at the next sign-in. Change the group there.",
         )
+    if user.auth_source != AuthSource.local and data.get("role") == Role.red_team:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Red team accounts must be local accounts")
+    if "expires_on" in data and (data.get("role") or user.role) != Role.red_team:
+        raise HTTPException(422, "Only red team accounts have an expiry date")
     demoting = ("role" in data and data["role"] != Role.admin) or data.get("active") is False
     if user.role == Role.admin and user.active and demoting and _active_admins(db) <= 1:
         raise HTTPException(status.HTTP_409_CONFLICT, "Cannot remove the last active admin")
@@ -80,10 +85,44 @@ def update_user(user_id: int, body: UserUpdate, admin: Admin, db: DB) -> User:
             user.locked_until = None
             changes["password"] = ["***", "***"]
             db.execute(delete(UserSession).where(UserSession.user_id == user.id))
+    expiry_set = "expires_on" in data
+    manual_expiry = data.pop("expires_on", None)
+    leaving_red_team = user.role == Role.red_team and data.get("role", user.role) != Role.red_team
     before = {k: getattr(user, k) for k in data}
     for k, v in data.items():
         setattr(user, k, v)
     changes |= audit.diff(before, data)
+    if leaving_red_team:
+        # campaign assignments and the expiry date only exist for red team accounts
+        db.execute(delete(campaign_red_team).where(campaign_red_team.c.user_id == user.id))
+        user.expires_on, user.expiry_manual = None, False
+    if expiry_set and user.role == Role.red_team:
+        old_expiry = user.expires_on
+        if manual_expiry is None:  # back to automatic
+            user.expiry_manual = False
+            user.expires_on = redteam.auto_expiry(db, user)
+        else:
+            user.expiry_manual, user.expires_on = True, manual_expiry
+        changes["expires_on"] = [old_expiry, user.expires_on]
+        changes["expiry_manual"] = user.expiry_manual
+        audit.record(
+            db,
+            admin,
+            "expiry",
+            "user",
+            user.username,
+            {"expires_on": [old_expiry, user.expires_on], "manual": user.expiry_manual},
+        )
+    if "role" in data and data["role"] == Role.red_team and before.get("role") != Role.red_team:
+        user.expiry_manual = False
+        user.expires_on = redteam.auto_expiry(db, user)
+    if user.role == Role.red_team and data.get("active") is True:
+        # (re-)enabling needs an expiry date that is not over (AK-53)
+        if user.expires_on is None or redteam.is_expired(user):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "Set an expiry date in the future before enabling this red team account",
+            )
     if data.get("active") is False or "role" in data:
         db.execute(delete(UserSession).where(UserSession.user_id == user.id))
     audit.record(db, admin, "update", "user", user.username, changes)

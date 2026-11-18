@@ -35,6 +35,8 @@ router = APIRouter(prefix="/auth/oidc", tags=["auth"])
 STATE_COOKIE = "magma_oidc"
 STATE_TTL = 600
 ROLE_RANK = {Role.admin: 3, Role.analyst: 2, Role.auditor: 1}
+# roles SSO may give; red team accounts are local only (PROJ-3)
+SSO_ROLES = {r.value for r in ROLE_RANK}
 _discovery: dict[str, tuple[float, dict]] = {}
 
 
@@ -73,7 +75,7 @@ def parse_role_map(raw: str) -> dict[str, Role]:
         if "=" not in part:
             continue
         group, role = (x.strip() for x in part.rsplit("=", 1))
-        if group and role in Role.__members__:
+        if group and role in SSO_ROLES:
             out[group] = Role(role)
         elif group:
             log.warning("OIDC_ROLE_MAP: unknown role %r for group %r", role, group)
@@ -101,7 +103,7 @@ def map_role(claims: dict, settings: Settings) -> Role | None:
     if roles:
         return max(roles, key=ROLE_RANK.__getitem__)
     d = (settings.oidc_default_role or "").strip()
-    return Role(d) if d in Role.__members__ else None
+    return Role(d) if d in SSO_ROLES else None
 
 
 def discover(settings: Settings) -> dict:

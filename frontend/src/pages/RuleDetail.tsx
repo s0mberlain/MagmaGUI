@@ -73,6 +73,13 @@ function toForm(r: L3): Form {
   };
 }
 
+/** Grows a one-line textarea to fit its text (browsers without CSS field-sizing). */
+function fitHeight(el: HTMLTextAreaElement | null) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight + 2}px`;
+}
+
 export default function RuleDetail() {
   const { code = "" } = useParams();
   const { can } = useAuth();
@@ -245,12 +252,24 @@ export default function RuleDetail() {
                 <label className="sr-only" htmlFor="rule-name">
                   {t("Rule name")}
                 </label>
-                <input
+                {/* a textarea so long rule names wrap instead of being cut off; Enter still saves */}
+                <textarea
                   id="rule-name"
                   className="title-input"
+                  rows={1}
+                  ref={fitHeight}
                   value={form.name}
                   required
-                  onChange={(ev) => set({ name: ev.target.value })}
+                  onChange={(ev) => {
+                    set({ name: ev.target.value.replace(/\s*\n\s*/g, " ") });
+                    fitHeight(ev.currentTarget);
+                  }}
+                  onKeyDown={(ev) => {
+                    if (ev.key === "Enter") {
+                      ev.preventDefault();
+                      ev.currentTarget.form?.requestSubmit();
+                    }
+                  }}
                 />
               </>
             ) : (
@@ -281,7 +300,7 @@ export default function RuleDetail() {
           {editor && (
             <div className="row-actions">
               {can("admin") && (
-                <button type="button" className="btn" onClick={remove}>
+                <button type="button" className="btn btn-danger rule-delete" onClick={remove}>
                   {t("Delete")}
                 </button>
               )}

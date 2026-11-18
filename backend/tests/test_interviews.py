@@ -70,6 +70,16 @@ def save(client, iv: dict, expect: int = 200, **changes) -> dict:
                 "threats": [
                     {k: t[k] for k in ("category", "state", "description", "likelihood", "impact")}
                     for t in c["threats"]
+                    if not t.get("custom")
+                ],
+                "custom_threats": [
+                    {"key": t["category"].removeprefix("custom:")}
+                    | {
+                        k: t[k]
+                        for k in ("title", "description", "techniques", "likelihood", "impact")
+                    }
+                    for t in c["threats"]
+                    if t.get("custom")
                 ],
             }
             for c in stored["components"]
@@ -78,7 +88,12 @@ def save(client, iv: dict, expect: int = 200, **changes) -> dict:
         "removed": [
             {"l2_id": r["l2_id"], "reason": r["reason"]}
             | (
-                {"threats": [{"component": x["component"], "category": x["category"]} for x in r["threats"]]}
+                {
+                    "threats": [
+                        {"component": x["component"], "category": x["category"]}
+                        for x in r["threats"]
+                    ]
+                }
                 if r.get("threats")
                 else {}
             )

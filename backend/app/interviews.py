@@ -12,7 +12,14 @@ requests. Completing the interview freezes it and replaces the system's links.
 
 Stored draft (`Interview.data`):
     components: [{key, name, description, log_source_ids, threats: [{category, state,
-                  description, likelihood, impact}]}]
+                  description, likelihood, impact}],
+                  custom_threats: [{key, title, description, techniques, likelihood, impact}]}]
+
+Custom threats (issue #60) refine STRIDE with MITRE ATT&CK: they always apply, are referred to as
+category `custom:<key>` and propose the L2 use cases whose rules cover one of their techniques
+(T1110 also matches its sub-techniques and the other way round). In the evaluated view they are
+listed in a component's `threats` after the six STRIDE categories, with `custom`, `title` and
+`techniques`.
     added:      [{l2_id | l3_id, threats: [{component: key, category}]}]  (one of the two ids)
     removed:    [{l2_id, reason, threats?: [{component: key, category}]}]  (without threats the
                 whole L2 is removed; with threats it is only taken off those risks, issue #57)
@@ -30,6 +37,7 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
+from app import attack
 from app.models import (
     AppSetting,
     Interview,
@@ -53,6 +61,23 @@ STRIDE = (
     "elevation_of_privilege",
 )
 STATES = ("applies", "does_not_apply", "not_discussed")
+CUSTOM = "custom:"  # category prefix of a custom ATT&CK threat (#60)
+
+
+def is_custom(category: str) -> bool:
+    return category.startswith(CUSTOM)
+
+
+def category_order(category: str) -> int:
+    """Sort key: the STRIDE categories in their order, custom threats after them."""
+    return STRIDE.index(category) if category in STRIDE else len(STRIDE)
+
+
+def techniques_match(threat: str, rule: str) -> bool:
+    """T1110 matches T1110.001 and the other way round; T1110.001 does not match T1110.002."""
+    return threat == rule or rule.startswith(threat + ".") or threat.startswith(rule + ".")
+
+
 CLASSIFICATIONS = ("public", "internal", "confidential", "restricted")
 COMPLETED = (InterviewStatus.completed, InterviewStatus.confirmed)
 
@@ -177,6 +202,18 @@ def threat_complete(t: dict) -> bool:
 
 
 # ---------------------------------------------------------------- evaluation
+
+
+def attack_targets(l2s: dict[int, L2UseCase], techniques: list[str]) -> list[int]:
+    """L2 use cases with a rule that covers one of the techniques (#60). Retired or offloading
+    rules count too, so that a use case without active rule shows up as a gap."""
+    wanted = [attack.resolve(x) or x for x in techniques]
+    out = []
+    for l2_id, l2 in sorted(l2s.items(), key=lambda x: x[1].code):
+        rule_ids = {x for r in l2.children for x in attack.remap(r.attack_techniques or [])}
+        if any(techniques_match(w, r) for w in wanted for r in rule_ids):
+            out.append(l2_id)
+    return out
 
 
 def _l2_index(db: Session) -> dict[int, L2UseCase]:
@@ -304,6 +341,29 @@ def evaluate(
             threats[(c["key"], cat)] = view | {"component_name": c["name"]}
             if not view["complete"]:
                 incomplete.append({"component": c["name"], "category": cat})
+        for ct in c.get("custom_threats", []):
+            cat = CUSTOM + ct["key"]
+            t = {"state": "applies"} | ct
+            view = {
+                "category": cat,
+                "custom": True,
+                "title": ct.get("title") or "",
+                "techniques": list(ct.get("techniques", [])),
+                "state": "applies",
+                "description": ct.get("description", "") or "",
+                "likelihood": ct.get("likelihood"),
+                "impact": ct.get("impact"),
+                "score": threat_score(t),
+                "complete": threat_score(t) is not None
+                and bool((ct.get("title") or "").strip())
+                and bool(ct.get("techniques")),
+            }
+            tviews.append(view)
+            threats[(c["key"], cat)] = view | {"component_name": c["name"]}
+            if not view["complete"]:
+                incomplete.append(
+                    {"component": c["name"], "category": cat, "title": ct.get("title") or ""}
+                )
         components.append(
             {
                 "key": c["key"],
@@ -330,7 +390,7 @@ def evaluate(
                 }
             )
         srcs.sort(
-            key=lambda s: (-(s["score"] or 0), s["component_name"], STRIDE.index(s["category"]))
+            key=lambda s: (-(s["score"] or 0), s["component_name"], category_order(s["category"]))
         )
         return srcs, delivered
 
@@ -360,7 +420,10 @@ def evaluate(
     for (key, cat), t in threats.items():
         if t["score"] is None:
             continue
-        targets = [i for i in mapped.get(cat, []) if i in l2s]
+        if is_custom(cat):
+            targets = attack_targets(l2s, t["techniques"])
+        else:
+            targets = [i for i in mapped.get(cat, []) if i in l2s]
         if t["score"] >= threshold_value:
             for i in targets:
                 if not l2s[i].parent.applicable:
@@ -460,7 +523,7 @@ def evaluate(
             continue
         pairs = sorted(
             (p for p in ex["pairs"] if p in threats),
-            key=lambda p: (threats[p]["component_name"], STRIDE.index(p[1])),
+            key=lambda p: (threats[p]["component_name"], category_order(p[1])),
         )
         if not pairs:
             continue
@@ -494,7 +557,7 @@ def evaluate(
                 }
                 for (key, cat), score in srcs_by.items()
             ),
-            key=lambda s: (-(s["score"] or 0), s["component_name"], STRIDE.index(s["category"])),
+            key=lambda s: (-(s["score"] or 0), s["component_name"], category_order(s["category"])),
         )
         not_matching.append(
             _l2_brief(l2s[l2_id])
@@ -509,7 +572,7 @@ def evaluate(
     accepted.sort(key=order)
     removed.sort(key=order)
     not_matching.sort(key=order)
-    below.sort(key=lambda b: (-b["score"], b["component_name"], STRIDE.index(b["category"])))
+    below.sort(key=lambda b: (-b["score"], b["component_name"], category_order(b["category"])))
 
     requests = []
     for r in data.get("requests", []):
@@ -702,6 +765,10 @@ def risk_overview(view: dict) -> list[dict]:
                     "component": c["key"],
                     "component_name": c["name"],
                     "category": t["category"],
+                    # custom ATT&CK threat (#60)
+                    "custom": bool(t.get("custom")),
+                    "title": t.get("title"),
+                    "techniques": t.get("techniques", []),
                     "description": t.get("description", ""),
                     "likelihood": t.get("likelihood"),
                     "impact": t.get("impact"),
@@ -713,7 +780,9 @@ def risk_overview(view: dict) -> list[dict]:
                     "requests": reqs.get(ref, []),
                 }
             )
-    rows.sort(key=lambda r: (-(r["score"] or 0), r["component_name"], STRIDE.index(r["category"])))
+    rows.sort(
+        key=lambda r: (-(r["score"] or 0), r["component_name"], category_order(r["category"]))
+    )
     return rows
 
 

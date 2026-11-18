@@ -676,6 +676,17 @@ export type Stride =
   | "information_disclosure"
   | "denial_of_service"
   | "elevation_of_privilege";
+export interface CustomThreat {
+  key: string;
+  title: string;
+  description: string;
+  techniques: string[];
+  likelihood: number | null;
+  impact: number | null;
+}
+
+/** a STRIDE category or a custom ATT&CK threat of a component (#60) */
+export type ThreatCategory = Stride | `custom:${string}`;
 export type ThreatState = "applies" | "does_not_apply" | "not_discussed";
 export type Classification = "public" | "internal" | "confidential" | "restricted";
 export type InterviewStatus = "draft" | "completed" | "confirmed";
@@ -717,7 +728,11 @@ export type AddedUseCase = { l2_id: number; l3_id?: undefined; threats: ThreatRe
 export interface RiskRow {
   component: string;
   component_name: string;
-  category: Stride;
+  category: ThreatCategory;
+  /** #60: custom ATT&CK threat */
+  custom?: boolean;
+  title?: string | null;
+  techniques?: string[];
   description: string;
   likelihood: number | null;
   impact: number | null;
@@ -755,7 +770,7 @@ export interface SystemLinkInfo {
   weight: number | null;
   risk_score: number;
   risk_level: number | null;
-  sources: { component: string; category: Stride; score: number | null }[];
+  sources: { component: string; category: ThreatCategory; score: number | null }[];
 }
 
 export interface InterviewRow {
@@ -775,7 +790,7 @@ export interface SystemDetail extends SystemRow {
   risks: RiskRow[];
   threshold: number | null;
   /** components of that interview (threat matrix rows) */
-  components: { key: string; name: string }[];
+  components: { key: string; name: string; custom_threats?: { category: ThreatCategory; title: string; techniques: string[] }[] }[];
   gap_no_rules: { code: string; name: string }[];
   /** #41: grouped per L2; `blind` = no active rule gets any log source it needs (counts as gap) */
   gap_log_sources: {
@@ -785,14 +800,18 @@ export interface SystemDetail extends SystemRow {
     blind: boolean;
     rules: { rule_code: string; rule_name: string; missing: string[]; partial: boolean }[];
   }[];
-  gap_requests: { text: string; component: string; category: Stride }[];
+  gap_requests: { text: string; component: string; category: ThreatCategory }[];
   /** #59: risks above the threshold that no linked use case addresses */
-  gap_risks?: { component: string; component_name: string; category: Stride; score: number | null; level: number | null }[];
+  gap_risks?: { component: string; component_name: string; category: ThreatCategory; score: number | null; level: number | null }[];
   interviews: InterviewRow[];
 }
 
 export interface ThreatView {
-  category: Stride;
+  category: ThreatCategory;
+  /** #60: custom threat linked to MITRE ATT&CK */
+  custom?: boolean;
+  title?: string;
+  techniques?: string[];
   state: ThreatState;
   description: string;
   likelihood: number | null;
@@ -811,7 +830,7 @@ export interface ComponentView {
 
 export interface ThreatRef {
   component: string;
-  category: Stride;
+  category: ThreatCategory;
 }
 
 export interface ProposalRule {
@@ -839,7 +858,7 @@ export interface Proposal {
   l1_code: string;
   l1_applicable: boolean;
   risk_score: number | null;
-  sources: { component: string; component_name: string; category: Stride; score: number | null }[];
+  sources: { component: string; component_name: string; category: ThreatCategory; score: number | null }[];
   auto: boolean;
   manual: boolean;
   rules: ProposalRule[];
@@ -847,7 +866,7 @@ export interface Proposal {
   detection?: Detection;
   reason?: string;
   /** #57: removed only from these risks (the rest of the L2 stays accepted) */
-  threats?: { component: string; component_name: string; category: Stride }[];
+  threats?: { component: string; component_name: string; category: ThreatCategory }[];
   /** completed interviews: the use case was deleted since */
   deleted?: boolean;
 }
@@ -856,20 +875,20 @@ export interface InterviewView {
   threshold: number;
   mapping_empty: boolean;
   components: ComponentView[];
-  incomplete: { component: string; category: Stride }[];
+  incomplete: { component: string; category: ThreatCategory }[];
   proposals: Proposal[];
   removed: Proposal[];
   below_threshold: {
     component: string;
     component_name: string;
-    category: Stride;
+    category: ThreatCategory;
     score: number;
     l2s: { l2_id: number; code: string; name: string; l1_code: string; l1_applicable: boolean }[];
   }[];
   added: AddedUseCase[];
   removed_ids: number[];
   risks: RiskRow[];
-  requests: { key: string; text: string; component: string; component_name: string; category: Stride }[];
+  requests: { key: string; text: string; component: string; component_name: string; category: ThreatCategory }[];
   log_source_gaps: { l2_code: string; rule_code: string; rule_name: string; missing: string[]; partial?: boolean }[];
   /** #38: accepted use cases without any active rule */
   no_detection?: string[];
@@ -889,7 +908,7 @@ export interface InterviewView {
     sources: {
       component: string;
       component_name: string;
-      category: Stride;
+      category: ThreatCategory;
       score: number | null;
       component_log_sources: string[];
     }[];
@@ -954,6 +973,8 @@ export interface InterviewSave {
     description: string;
     log_source_ids: number[];
     threats: { category: Stride; state: ThreatState; description: string; likelihood: number | null; impact: number | null }[];
+    /** #60: threats beyond STRIDE, linked to MITRE ATT&CK techniques (they always apply) */
+    custom_threats: CustomThreat[];
   }[];
   added: AddedUseCase[];
   /** without threats the whole L2 is removed; with threats only from those risks (#57) */
@@ -966,9 +987,9 @@ export interface InterviewCompare {
   previous_date: string;
   components_added: string[];
   components_removed: string[];
-  threats_added: { component: string; category: Stride }[];
-  threats_removed: { component: string; category: Stride }[];
-  threats_rerated: { component: string; category: Stride; old_score: number | null; new_score: number | null }[];
+  threats_added: { component: string; category: ThreatCategory }[];
+  threats_removed: { component: string; category: ThreatCategory }[];
+  threats_rerated: { component: string; category: ThreatCategory; old_score: number | null; new_score: number | null }[];
   use_cases_added: { code: string; name: string }[];
   use_cases_removed: { code: string; name: string }[];
 }
@@ -1213,6 +1234,8 @@ export const api = {
   resetTotp: (userId: number) => request<User>("DELETE", `/api/users/${userId}/totp`),
 
   attackCoverage: () => request<AttackCoverage>("GET", "/api/attack/coverage"),
+  /** #60: all current ATT&CK techniques */
+  attackTechniques: () => request<{ id: string; name: string }[]>("GET", "/api/attack/techniques"),
   remapPreview: () => request<RemapResult>("GET", "/api/attack/remap"),
   remapApply: () => request<RemapResult>("POST", "/api/attack/remap"),
   outputMetrics: (code: string, months = 12) =>
@@ -1255,7 +1278,7 @@ export const api = {
   compareInterview: (id: number) => request<InterviewCompare>("GET", `/api/interviews/${id}/compare`),
   interviewPdfUrl: (id: number, lang: Lang) => `/api/interviews/${id}/pdf?lang=${lang}`,
   strideMapping: () => request<StrideMapping>("GET", "/api/stride-mapping"),
-  setStrideMapping: (category: Stride, l2_ids: number[]) =>
+  setStrideMapping: (category: ThreatCategory, l2_ids: number[]) =>
     request<StrideMapping>("PUT", `/api/stride-mapping/${category}`, { l2_ids }),
   setProposalThreshold: (value: number) =>
     request<StrideMapping>("PUT", "/api/stride-mapping/threshold", { proposal_threshold: value }),

@@ -5,7 +5,7 @@ import { useAuth } from "../auth";
 import { confirmDialog, ErrorNote, useLoad } from "../components/ui";
 import { RiskCoverage, useCaseHref } from "../components/RiskCoverage";
 import { fmtDate, fmtTime, num, pct } from "../lib/format";
-import { CLASSIFICATION_LABEL, INTERVIEW_STATUS_LABEL, STRIDE_LABEL } from "../lib/stride";
+import { CLASSIFICATION_LABEL, INTERVIEW_STATUS_LABEL, registerCustomThreats, threatLabel } from "../lib/stride";
 import { StatePill, SystemDialog, systemInput } from "./Systems";
 import { t } from "../i18n";
 
@@ -91,6 +91,7 @@ export default function SystemDetail() {
   ];
   const blind = s.gap_log_sources.filter((g) => g.blind);
   const partial = s.gap_log_sources.filter((g) => !g.blind);
+  registerCustomThreats(s.components.flatMap((c) => c.custom_threats ?? []));
   const uncovered = s.gap_risks ?? [];
   // #59: the same gaps as the "Gap" filter of the risk overview (risks without use case) plus
   // the gaps of linked use cases and open detection requests
@@ -220,7 +221,7 @@ export default function SystemDetail() {
                         </div>
                       </td>
                       <td className="small">
-                        {l.sources.map((x) => `${x.component}: ${STRIDE_LABEL[x.category]}`).join("; ")}
+                        {l.sources.map((x) => `${x.component}: ${threatLabel(x.category)}`).join("; ")}
                       </td>
                       <td className="num">
                         <span className={`risk risk-${l.risk_level ?? 0}`} title={t("Risk level {r}", { r: l.risk_level ?? "–" })}>
@@ -270,7 +271,7 @@ export default function SystemDetail() {
                   <span className={`risk risk-${g.level ?? 0}`} title={t("Risk level {r}", { r: g.level ?? "–" })}>
                     {g.score ?? "–"}
                   </span>{" "}
-                  {g.component_name} / {STRIDE_LABEL[g.category] ?? g.category}
+                  {g.component_name} / {threatLabel(g.category)}
                 </li>
               ))}
             </ul>
@@ -311,7 +312,7 @@ export default function SystemDetail() {
                 <li key={i}>
                   {g.text}{" "}
                   <span className="muted small">
-                    · {g.component} / {STRIDE_LABEL[g.category]}
+                    · {g.component} / {threatLabel(g.category)}
                   </span>
                 </li>
               ))}

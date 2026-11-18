@@ -38,7 +38,9 @@ def test_proposed_l2_can_be_taken_off_one_risk(analyst):
     u = next(u for u in web["use_cases"] if u["code"] == "AO-ACC")
     assert u["auto"] is True
 
-    iv = save(analyst, iv, removed=[{"l2_id": acc, "reason": "no web login", "threats": [WEB_SPOOF]}])
+    iv = save(
+        analyst, iv, removed=[{"l2_id": acc, "reason": "no web login", "threats": [WEB_SPOOF]}]
+    )
     v = iv["view"]
     assert "AO-ACC" not in [u["code"] for u in risk(v, "web", "spoofing")["use_cases"]]
     # still accepted for the other risk
@@ -130,3 +132,114 @@ def test_risk_without_use_case_is_a_system_gap(analyst):
     assert d["gaps"] == 1
     row = next(x for x in analyst.get("/api/systems").json() if x["id"] == s["id"])
     assert row["gaps"] == 1
+
+
+# ---------------------------------------------------------------- #60 custom ATT&CK threats
+
+
+def custom(
+    key="brute", title="Password spraying", techniques=("T1110.003",), likelihood=4, impact=4
+):
+    return {
+        "key": key,
+        "title": title,
+        "description": "",
+        "techniques": list(techniques),
+        "likelihood": likelihood,
+        "impact": impact,
+    }
+
+
+def comp_with(*customs, threats=()):
+    return component(threats=list(threats)) | {"custom_threats": list(customs)}
+
+
+def test_custom_threat_proposes_use_cases_by_attack_technique(analyst):
+    s = new_system(analyst)
+    iv = save(analyst, start(analyst, s["id"]), components=[comp_with(custom())])
+    v = iv["view"]
+    (t,) = [t for t in v["components"][0]["threats"] if t.get("custom")]
+    assert (t["category"], t["title"], t["techniques"], t["score"]) == (
+        "custom:brute",
+        "Password spraying",
+        ["T1110.003"],
+        16,
+    )
+    # AO-BRU-01 maps T1110, the parent of T1110.003
+    p = next(p for p in v["proposals"] if p["code"] == "AO-BRU")
+    assert p["sources"][0]["category"] == "custom:brute" and p["auto"] is True
+    r = risk(v, "web", "custom:brute")
+    assert (r["custom"], r["title"]) == (True, "Password spraying")
+    assert "AO-BRU" in [u["code"] for u in r["use_cases"]]
+    # STRIDE threats are unaffected
+    assert all(not x.get("custom") for x in v["components"][0]["threats"][:6])
+
+
+def test_custom_threat_below_threshold_and_manual_add(analyst):
+    s = new_system(analyst)
+    dbc = l2_id(analyst, "AO-DBC")
+    ref = {"component": "web", "category": "custom:low"}
+    iv = save(
+        analyst,
+        start(analyst, s["id"]),
+        components=[comp_with(custom("low", "Valid accounts", ["T1078"], 1, 2))],
+        added=[{"l2_id": dbc, "threats": [ref]}],
+        requests=[{"key": "q", "text": "Alert on new admin", "threat": ref}],
+    )
+    v = iv["view"]
+    (b,) = v["below_threshold"]
+    assert b["category"] == "custom:low" and "AO-ACC" in [x["code"] for x in b["l2s"]]
+    assert [p["code"] for p in v["proposals"]] == ["AO-DBC"]
+    assert v["requests"][0]["category"] == "custom:low"
+
+
+def test_custom_threat_validation(analyst):
+    s = new_system(analyst)
+    iv = start(analyst, s["id"])
+    r = save(analyst, iv, 422, components=[comp_with(custom(techniques=["T9999"]))])
+    assert "unknown ATT&CK technique T9999" in r["detail"]
+    # a draft may hold an unfinished custom threat; it is incomplete
+    draft = save(analyst, iv, components=[comp_with(custom(title="", techniques=[]))])
+    assert [x["category"] for x in draft["view"]["incomplete"]] == ["custom:brute"]
+    iv = draft
+    save(analyst, iv, 422, components=[comp_with(custom(techniques=["bogus"]))])
+    save(analyst, iv, 422, components=[comp_with(custom(), custom())])
+    # a reference to a custom threat that does not exist
+    off = [
+        {
+            "l2_id": l2_id(analyst, "AO-DBC"),
+            "threats": [{"component": "web", "category": "custom:x"}],
+        }
+    ]
+    save(analyst, iv, 422, components=[comp_with(custom())], added=off)
+
+
+def test_custom_threat_needs_rating_to_complete_and_is_linked(analyst):
+    s = new_system(analyst)
+    iv = save(
+        analyst,
+        start(analyst, s["id"]),
+        components=[comp_with(custom(likelihood=None))],
+    )
+    assert iv["view"]["incomplete"] == [
+        {"component": "Web front end", "category": "custom:brute", "title": "Password spraying"}
+    ]
+    complete(analyst, iv, 422)
+    iv = save(analyst, iv, components=[comp_with(custom())])
+    complete(analyst, iv)
+    d = analyst.get(f"/api/systems/{s['id']}").json()
+    assert "AO-BRU" in [x["code"] for x in d["links"]]
+    assert d["components"][0]["custom_threats"] == [
+        {"category": "custom:brute", "title": "Password spraying", "techniques": ["T1110.003"]}
+    ]
+    assert any(r["category"] == "custom:brute" for r in d["risks"])
+    # the PDF report renders custom threats
+    pdf = analyst.get(f"/api/interviews/{iv['id']}/pdf")
+    assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")
+
+
+def test_attack_technique_list(analyst):
+    r = analyst.get("/api/attack/techniques")
+    assert r.status_code == 200
+    ids = {x["id"]: x["name"] for x in r.json()}
+    assert ids["T1110.003"] == "Password Spraying"

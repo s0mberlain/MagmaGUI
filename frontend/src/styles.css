@@ -767,6 +767,11 @@ th.num .sort-btn { text-align: right; }
 .iv-threat-body { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
 .iv-threat-body .grow-2 { flex: 3 1 280px; }
 .iv-threat-body .field:not(.grow-2) { flex: 0 1 140px; }
+/* #60: custom ATT&CK threats */
+.ttp-add { display: flex; gap: 6px; align-items: center; }
+.ttp-add .input { flex: 1 1 auto; min-width: 0; }
+.iv-custom { border-top: 1px dashed var(--c-border); padding-top: 10px; }
+.chip-x { border: 0; background: none; padding: 0 0 0 4px; cursor: pointer; color: inherit; font-size: 1rem; line-height: 1; }
 .iv-score { min-height: 40px; display: flex; align-items: center; }
 .iv-inc { flex-basis: 100%; }
 .iv-proposal { border: 1px solid var(--c-border); border-radius: var(--radius); padding: 10px 12px; display: grid; gap: 6px; }
@@ -858,6 +863,8 @@ label.btn:focus-within { outline: 2px solid var(--c-accent); outline-offset: 1px
 .rcov-ucs { display: grid; gap: 4px; }
 .rcov-ucs li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .rcov-uc-remove { margin-left: auto; }
+.rcov-custom { white-space: nowrap; }
+.rcov-custom .rcov-cell { display: inline-grid; width: auto; min-width: 56px; margin-right: 4px; vertical-align: top; }
 .rcov-uc-link { color: var(--c-ink); text-decoration: none; }
 .rcov-uc-link:hover { color: var(--c-accent); text-decoration: underline; }
 .lvl { font-family: var(--font-mono); font-size: 10px; font-weight: 700; border-radius: 4px; padding: 1px 5px; }

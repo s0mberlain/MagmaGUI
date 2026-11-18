@@ -1,5 +1,5 @@
 import { t } from "../i18n";
-import type { Classification, InterviewStatus, Stride, SystemRow, ThreatState } from "../api";
+import type { Classification, InterviewStatus, Stride, SystemRow, ThreatCategory, ThreatState } from "../api";
 
 export const STRIDE: Stride[] = [
   "spoofing",
@@ -18,6 +18,21 @@ export const STRIDE_LABEL: Record<Stride, string> = {
   denial_of_service: t("Denial of service"),
   elevation_of_privilege: t("Elevation of privilege"),
 };
+
+export const isCustomThreat = (c: string): boolean => c.startsWith("custom:");
+
+// #60: titles of custom ATT&CK threats by category (custom:<key>); keys are random and unique, so
+// one map serves every interview and system shown
+const customTitles = new Map<string, string>();
+
+export function registerCustomThreats(list: { category: string; title?: string | null }[]): void {
+  for (const x of list) if (x.title && isCustomThreat(x.category)) customTitles.set(x.category, x.title);
+}
+
+/** Label of a STRIDE category or of a custom ATT&CK threat. */
+export function threatLabel(c: ThreatCategory | string): string {
+  return (STRIDE_LABEL as Record<string, string>)[c] ?? customTitles.get(c) ?? t("Custom threat");
+}
 
 /** Short explanation shown next to each category in the interview. */
 export const STRIDE_HINT: Record<Stride, string> = {

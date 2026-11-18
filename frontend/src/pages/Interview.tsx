@@ -33,7 +33,7 @@ import {
 import { Markdown, MarkdownField } from "../components/Markdown";
 import { RiskCoverage, useCaseHref, type RiskUseCase } from "../components/RiskCoverage";
 import { fmtDate, fmtSize, fmtTime, today } from "../lib/format";
-import { INTERVIEW_STATUS_LABEL, riskLevel, STATE_LABEL, STRIDE, STRIDE_HINT, STRIDE_LABEL } from "../lib/stride";
+import { INTERVIEW_STATUS_LABEL, registerCustomThreats, riskLevel, STATE_LABEL, STRIDE, STRIDE_HINT, STRIDE_LABEL, threatLabel } from "../lib/stride";
 import { getLang, t } from "../i18n";
 
 type Form = Omit<InterviewSave, "expected_version">;
@@ -57,13 +57,25 @@ function formOf(iv: IV): Form {
       name: c.name,
       description: c.description,
       log_source_ids: c.log_sources.map((s) => s.id),
-      threats: c.threats.map((x) => ({
-        category: x.category,
-        state: x.state,
-        description: x.description,
-        likelihood: x.likelihood,
-        impact: x.impact,
-      })),
+      threats: c.threats
+        .filter((x) => !x.custom)
+        .map((x) => ({
+          category: x.category as Stride,
+          state: x.state,
+          description: x.description,
+          likelihood: x.likelihood,
+          impact: x.impact,
+        })),
+      custom_threats: c.threats
+        .filter((x) => x.custom)
+        .map((x) => ({
+          key: x.category.slice("custom:".length),
+          title: x.title ?? "",
+          description: x.description,
+          techniques: x.techniques ?? [],
+          likelihood: x.likelihood,
+          impact: x.impact,
+        })),
     })),
     added: v.added.map((a): AddedUseCase => (a.l3_id ? { l3_id: a.l3_id, threats: a.threats } : { l2_id: a.l2_id!, threats: a.threats })),
     removed: v.removed.map((r) =>
@@ -93,7 +105,11 @@ function threatOf(c: FormComponent, cat: Stride): FormThreat {
 
 const applies = (f: Form) =>
   new Set(
-    f.components.flatMap((c) => c.threats.filter((x) => x.state === "applies").map((x) => `${c.key}:${x.category}`)),
+    f.components.flatMap((c) => [
+      ...c.threats.filter((x) => x.state === "applies").map((x) => `${c.key}:${x.category}`),
+      // custom ATT&CK threats always apply (#60)
+      ...(c.custom_threats ?? []).map((x) => `${c.key}:custom:${x.key}`),
+    ]),
   );
 
 /** Drop manual additions and detection requests whose threat no longer applies. */
@@ -161,6 +177,9 @@ export default function Interview() {
     }
   }, [loaded.data]);
   useUnsavedGuard(dirty);
+  // #60: labels of custom ATT&CK threats in lists and dialogs
+  if (iv) registerCustomThreats(iv.view.components.flatMap((c) => c.threats));
+  if (form) registerCustomThreats(form.components.flatMap((c) => (c.custom_threats ?? []).map((x) => ({ category: `custom:${x.key}`, title: x.title }))));
   const backup = useDraftBackup(
     `magma-draft:interview:${ivId}`,
     form,
@@ -272,7 +291,7 @@ export default function Interview() {
     if (missing.length) {
       setError(
         t("Complete description, likelihood and impact of these threats: {list}", {
-          list: missing.map((m) => `${m.component} / ${STRIDE_LABEL[m.category]}`).join(", "),
+          list: missing.map((m) => `${m.component} / ${threatLabel(m.category)}`).join(", "),
         }),
       );
       setStep(2);
@@ -719,6 +738,7 @@ function StepComponents({
   dupNames: Set<string>;
 }) {
   const refs = useLoad<RefItem[]>(() => api.refs("log_source"));
+  const techniques = useLoad(() => api.attackTechniques());
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [extraRefs, setExtraRefs] = useState<RefItem[]>([]);
   const options = [...(refs.data ?? []), ...extraRefs]
@@ -744,6 +764,18 @@ function StepComponents({
     setComp(c.key, { threats: [...c.threats.filter((x) => x.category !== cat), next] });
   }
 
+  async function removeCustom(c: FormComponent, x: CustomThreatForm) {
+    const cat = `custom:${x.key}`;
+    const n = dependents(form, (r) => r.component === c.key && r.category === cat);
+    const ok = await confirmDialog(
+      n
+        ? t("Remove the threat {name}? {n} detection requests or added use cases tied to it are removed too.", { name: x.title || "–", n })
+        : t("Remove the threat {name}?", { name: x.title || "–" }),
+      { danger: true, confirmLabel: t("Remove") },
+    );
+    if (ok) setComp(c.key, { custom_threats: (c.custom_threats ?? []).filter((y) => y.key !== x.key) });
+  }
+
   async function removeComp(c: FormComponent) {
     const n = dependents(form, (r) => r.component === c.key);
     const ok = await confirmDialog(
@@ -758,7 +790,7 @@ function StepComponents({
   const addComp = () =>
     update((f) => ({
       ...f,
-      components: [...f.components, { key: newKey(), name: "", description: "", log_source_ids: [], threats: [] }],
+      components: [...f.components, { key: newKey(), name: "", description: "", log_source_ids: [], threats: [], custom_threats: [] }],
     }));
 
   return (
@@ -772,7 +804,7 @@ function StepComponents({
       {form.components.map((c, idx) => {
         const open = !collapsed.has(c.key);
         const dup = dupNames.has(c.name.trim().toLowerCase());
-        const bad = c.threats.filter(incomplete).length;
+        const bad = c.threats.filter(incomplete).length + (c.custom_threats ?? []).filter(customIncomplete).length;
         return (
           <section key={c.key} className="card stack-sm iv-comp" aria-label={c.name || t("Component {n}", { n: idx + 1 })}>
             <div className="section-head">
@@ -792,7 +824,7 @@ function StepComponents({
                 {open ? "▾" : "▸"} {c.name || t("Component {n}", { n: idx + 1 })}
               </button>
               <span className="small muted">
-                {t("{n} threats apply", { n: c.threats.filter((x) => x.state === "applies").length })}
+                {t("{n} threats apply", { n: c.threats.filter((x) => x.state === "applies").length + (c.custom_threats ?? []).length })}
                 {bad > 0 && (
                   <>
                     {" · "}
@@ -940,6 +972,13 @@ function StepComponents({
                     );
                   })}
                 </div>
+                <CustomThreats
+                  c={c}
+                  readOnly={readOnly}
+                  techniques={techniques.data ?? []}
+                  onChange={(list) => setComp(c.key, { custom_threats: list })}
+                  onRemove={(x) => void removeCustom(c, x)}
+                />
               </>
             )}
           </section>
@@ -952,6 +991,227 @@ function StepComponents({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ custom ATT&CK threats (#60) */
+
+type CustomThreatForm = FormComponent["custom_threats"][number];
+
+const customScore = (x: CustomThreatForm) => (x.likelihood && x.impact ? x.likelihood * x.impact : null);
+const customIncomplete = (x: CustomThreatForm) => !x.title.trim() || !x.techniques.length || !x.likelihood || !x.impact;
+
+function CustomThreats({
+  c,
+  readOnly,
+  techniques,
+  onChange,
+  onRemove,
+}: {
+  c: FormComponent;
+  readOnly: boolean;
+  techniques: { id: string; name: string }[];
+  onChange: (list: CustomThreatForm[]) => void;
+  onRemove: (x: CustomThreatForm) => void;
+}) {
+  const list = c.custom_threats ?? [];
+  const names = useMemo(() => new Map(techniques.map((x) => [x.id, x.name])), [techniques]);
+  const set = (key: string, patch: Partial<CustomThreatForm>) => onChange(list.map((x) => (x.key === key ? { ...x, ...patch } : x)));
+  const add = () =>
+    onChange([...list, { key: newKey(), title: "", description: "", techniques: [], likelihood: null, impact: null }]);
+  if (readOnly && !list.length) return null;
+  return (
+    <div className="iv-custom stack-sm">
+      <div className="section-head">
+        <div>
+          <strong>{t("Further threats (MITRE ATT&CK)")}</strong>
+          <div className="small muted">
+            {t("Optional: a detailed threat beyond STRIDE, linked to ATT&CK techniques. Use cases whose rules cover a technique are proposed.")}
+          </div>
+        </div>
+        {!readOnly && (
+          <button type="button" className="btn btn-sm" onClick={add}>
+            {t("+ Custom threat")}
+          </button>
+        )}
+      </div>
+      {list.map((x) => {
+        const inc = customIncomplete(x);
+        return (
+          <div key={x.key} className={"iv-threat" + (inc ? " is-incomplete" : "")}>
+            <div className="iv-threat-body">
+              <label className="field grow-2">
+                {t("Threat")} *
+                <input
+                  className={"input" + (inc && !x.title.trim() ? " is-invalid" : "")}
+                  value={x.title}
+                  maxLength={255}
+                  disabled={readOnly}
+                  placeholder={t("e.g. Password spraying against the login")}
+                  onChange={(e) => set(x.key, { title: e.target.value })}
+                />
+              </label>
+              <label className="field">
+                {t("Likelihood (1–5)")} *
+                <select
+                  className={"input" + (inc && !x.likelihood ? " is-invalid" : "")}
+                  value={x.likelihood ?? ""}
+                  disabled={readOnly}
+                  onChange={(e) => set(x.key, { likelihood: e.target.value ? Number(e.target.value) : null })}
+                >
+                  <option value="">–</option>
+                  {RATINGS.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                {t("Impact (1–5)")} *
+                <select
+                  className={"input" + (inc && !x.impact ? " is-invalid" : "")}
+                  value={x.impact ?? ""}
+                  disabled={readOnly}
+                  onChange={(e) => set(x.key, { impact: e.target.value ? Number(e.target.value) : null })}
+                >
+                  <option value="">–</option>
+                  {RATINGS.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="field">
+                {t("Risk score")}
+                <div className="iv-score" aria-live="polite">
+                  <RiskScore value={customScore(x)} />
+                </div>
+              </div>
+              <TechniquePicker
+                value={x.techniques}
+                names={names}
+                techniques={techniques}
+                disabled={readOnly}
+                invalid={inc && !x.techniques.length}
+                onChange={(v) => set(x.key, { techniques: v })}
+              />
+              <label className="field grow-2">
+                {t("Threat description")}
+                <textarea
+                  className="input textarea"
+                  rows={2}
+                  maxLength={10000}
+                  value={x.description}
+                  disabled={readOnly}
+                  onChange={(e) => set(x.key, { description: e.target.value })}
+                />
+              </label>
+              {!readOnly && (
+                <div className="field">
+                  <span aria-hidden="true">&nbsp;</span>
+                  <button type="button" className="btn btn-sm" onClick={() => onRemove(x)}>
+                    {t("Remove")}
+                  </button>
+                </div>
+              )}
+              {inc && (
+                <span className="field-error iv-inc">{t("Incomplete: threat, at least one ATT&CK technique, likelihood and impact are needed.")}</span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TechniquePicker({
+  value,
+  names,
+  techniques,
+  disabled,
+  invalid,
+  onChange,
+}: {
+  value: string[];
+  names: Map<string, string>;
+  techniques: { id: string; name: string }[];
+  disabled?: boolean;
+  invalid?: boolean;
+  onChange: (v: string[]) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const listId = "attack-techniques";
+  function addDraft(raw = draft) {
+    // accepts "T1110.003" or the datalist text "T1110.003 Password Spraying"
+    const id = raw.trim().split(/\s+/)[0]?.toUpperCase() ?? "";
+    if (!id) return;
+    if (names.size && !names.has(id)) {
+      setError(t("Unknown ATT&CK technique {id}", { id }));
+      return;
+    }
+    setError(null);
+    if (!value.includes(id)) onChange([...value, id]);
+    setDraft("");
+  }
+  return (
+    <div className="field grow-2">
+      <span>{t("MITRE ATT&CK techniques")} *</span>
+      {value.length > 0 && (
+        <span className="chips">
+          {value.map((id) => (
+            <span key={id} className="chip chip-info" title={names.get(id) ?? id}>
+              <span className="mono">{id}</span> {names.get(id) ?? ""}
+              {!disabled && (
+                <button
+                  type="button"
+                  className="chip-x"
+                  aria-label={t("Remove {code}", { code: id })}
+                  onClick={() => onChange(value.filter((x) => x !== id))}
+                >
+                  ×
+                </button>
+              )}
+            </span>
+          ))}
+        </span>
+      )}
+      {!disabled && (
+        <div className="ttp-add">
+          <input
+            className={"input" + (invalid || error ? " is-invalid" : "")}
+            list={listId}
+            value={draft}
+            placeholder={t("Search, e.g. T1110 or Brute Force")}
+            onChange={(e) => {
+              const v = e.target.value;
+              // picking an entry of the list adds it right away
+              const id = v.trim().split(/\s+/)[0]?.toUpperCase() ?? "";
+              if (v.includes(" ") && names.has(id) && v.trim() === `${id} ${names.get(id)}`) addDraft(v);
+              else setDraft(v);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addDraft();
+              }
+            }}
+          />
+          <button type="button" className="btn btn-sm" disabled={!draft.trim()} onClick={() => addDraft()}>
+            {t("Add")}
+          </button>
+          <datalist id={listId}>
+            {techniques.map((x) => (
+              <option key={x.id} value={`${x.id} ${x.name}`} />
+            ))}
+          </datalist>
+        </div>
+      )}
+      {error && <span className="field-error">{error}</span>}
     </div>
   );
 }
@@ -985,12 +1245,12 @@ function ProposalCard({ p, children }: { p: Proposal; children?: ReactNode }) {
       </div>
       {p.sources.length > 0 && (
         <div className="small muted">
-          {t("From")}: {p.sources.map((s) => `${s.component_name} / ${STRIDE_LABEL[s.category]} (${s.score ?? "–"})`).join("; ")}
+          {t("From")}: {p.sources.map((s) => `${s.component_name} / ${threatLabel(s.category)} (${s.score ?? "–"})`).join("; ")}
         </div>
       )}
       {p.threats && p.threats.length > 0 && (
         <div className="small">
-          {t("Removed from")}: {p.threats.map((x) => `${x.component_name} / ${STRIDE_LABEL[x.category] ?? x.category}`).join("; ")}
+          {t("Removed from")}: {p.threats.map((x) => `${x.component_name} / ${threatLabel(x.category)}`).join("; ")}
         </div>
       )}
       {p.reason && <div className="small">{t("Reason: {reason}", { reason: p.reason })}</div>}
@@ -1043,7 +1303,7 @@ function StepProposals({
   const threatOptions = v.components.flatMap((c) =>
     c.threats
       .filter((x) => x.state === "applies")
-      .map((x) => ({ value: `${c.key}:${x.category}`, label: `${c.name} / ${STRIDE_LABEL[x.category]}` })),
+      .map((x) => ({ value: `${c.key}:${x.category}`, label: `${c.name} / ${threatLabel(x.category)}` })),
   );
   const ref = (value: string): ThreatRef => {
     const i = value.lastIndexOf(":");
@@ -1119,6 +1379,8 @@ function StepProposals({
         {t("Proposed: every L2 use case mapped to the STRIDE category of a threat with a risk score of at least {n} (likelihood × impact).", {
           n: v.threshold,
         })}{" "}
+        {v.components.some((c) => c.threats.some((x) => x.custom)) &&
+          t("Custom threats propose the L2 use cases whose rules cover one of their ATT&CK techniques.")}{" "}
         {v.log_source_filter && t("Use cases whose active rules need other log sources than the component delivers are held back.")}{" "}
         <Link to="/stride-mapping">{t("STRIDE mapping")}</Link>
       </p>
@@ -1209,7 +1471,7 @@ function StepProposals({
               <div key={`${b.component}:${b.category}`} className="iv-below">
                 <div>
                   <strong>
-                    {b.component_name} / {STRIDE_LABEL[b.category]}
+                    {b.component_name} / {threatLabel(b.category)}
                   </strong>{" "}
                   <RiskScore value={b.score} />
                 </div>
@@ -1285,7 +1547,7 @@ function StepProposals({
                   <ul className="plain-list small">
                     {m.sources.map((s) => (
                       <li key={`${s.component}:${s.category}`}>
-                        {s.component_name} / {STRIDE_LABEL[s.category]} ({s.score ?? "–"}) ·{" "}
+                        {s.component_name} / {threatLabel(s.category)} ({s.score ?? "–"}) ·{" "}
                         <span className="muted">
                           {t("component delivers")}: {s.component_log_sources.length ? s.component_log_sources.join(", ") : t("no log sources")}
                         </span>
@@ -1334,7 +1596,7 @@ function StepProposals({
               <li key={r.key || r.text}>
                 {r.text}{" "}
                 <span className="small muted">
-                  · {r.component_name} / {STRIDE_LABEL[r.category]}
+                  · {r.component_name} / {threatLabel(r.category)}
                 </span>{" "}
                 {!readOnly && (
                   <button
@@ -1409,9 +1671,9 @@ function StepProposals({
           p={{ code: unassigning.u.code }}
           title={t("Remove {code} from {risk}?", {
             code: unassigning.u.code,
-            risk: `${unassigning.r.component_name} / ${STRIDE_LABEL[unassigning.r.category] ?? unassigning.r.category}`,
+            risk: `${unassigning.r.component_name} / ${threatLabel(unassigning.r.category)}`,
           })}
-          hint={t("The use case was proposed by the STRIDE mapping. It stays accepted for its other risks; you can restore it under Removed.")}
+          hint={t("The use case was proposed automatically. It stays accepted for its other risks; you can restore it under Removed.")}
           onClose={() => setUnassigning(null)}
           onRemove={(reason) => void unassign(unassigning.r, unassigning.u, reason).then(() => setUnassigning(null))}
         />
@@ -1716,7 +1978,7 @@ function ThreatTable({ components }: { components: ComponentView[] }) {
                 <tbody>
                   {on.map((x) => (
                     <tr key={x.category}>
-                      <td>{STRIDE_LABEL[x.category]}</td>
+                      <td>{threatLabel(x.category)}</td>
                       <td className="small">{x.description}</td>
                       <td className="num">{x.likelihood}</td>
                       <td className="num">{x.impact}</td>
@@ -1867,7 +2129,7 @@ function CompletedView({
               <li key={r.key || r.text}>
                 {r.text}{" "}
                 <span className="small muted">
-                  · {r.component_name} / {STRIDE_LABEL[r.category]}
+                  · {r.component_name} / {threatLabel(r.category)}
                 </span>
               </li>
             ))}
@@ -1908,11 +2170,11 @@ function Comparison({ c }: { c: InterviewCompare }) {
   const rows: [string, string[]][] = [
     [t("Components added"), c.components_added],
     [t("Components removed"), c.components_removed],
-    [t("Threats added"), c.threats_added.map((x) => `${x.component} / ${STRIDE_LABEL[x.category]}`)],
-    [t("Threats removed"), c.threats_removed.map((x) => `${x.component} / ${STRIDE_LABEL[x.category]}`)],
+    [t("Threats added"), c.threats_added.map((x) => `${x.component} / ${threatLabel(x.category)}`)],
+    [t("Threats removed"), c.threats_removed.map((x) => `${x.component} / ${threatLabel(x.category)}`)],
     [
       t("Threats re-rated"),
-      c.threats_rerated.map((x) => `${x.component} / ${STRIDE_LABEL[x.category]}: ${x.old_score ?? "–"} → ${x.new_score ?? "–"}`),
+      c.threats_rerated.map((x) => `${x.component} / ${threatLabel(x.category)}: ${x.old_score ?? "–"} → ${x.new_score ?? "–"}`),
     ],
     [t("Use cases added"), c.use_cases_added.map((x) => `${x.code} ${x.name}`)],
     [t("Use cases removed"), c.use_cases_removed.map((x) => `${x.code} ${x.name}`)],

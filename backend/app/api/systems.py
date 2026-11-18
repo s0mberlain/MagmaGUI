@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app import audit
+from app import attack, audit
 from app import interviews as iv
 from app.api import evidence
 from app.api.deps import DB, SettingsDep
@@ -148,17 +148,39 @@ class ThreatIn(BaseModel):
     impact: Rating | None = None
 
 
+Key = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{1,40}$")]
+Technique = Annotated[str, StringConstraints(strip_whitespace=True, pattern=r"^T\d{4}(\.\d{3})?$")]
+
+
+class CustomThreatIn(BaseModel):
+    """A threat beyond STRIDE, linked to MITRE ATT&CK techniques (#60). It always applies."""
+
+    key: Key
+    # a draft may hold a threat that is still being written; completion needs title, at least
+    # one technique, likelihood and impact (app/interviews.py)
+    title: Short = ""
+    description: Text = ""
+    techniques: list[Technique] = Field(default_factory=list, max_length=50)
+    likelihood: Rating | None = None
+    impact: Rating | None = None
+
+
 class ComponentIn(BaseModel):
-    key: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{1,40}$")]
+    key: Key
     name: Name
     description: Text = ""
     log_source_ids: list[int] = Field(default_factory=list, max_length=200)
     threats: list[ThreatIn] = Field(default_factory=list, max_length=6)
+    custom_threats: list[CustomThreatIn] = Field(default_factory=list, max_length=50)
+
+
+# a STRIDE category or a custom threat (custom:<key>, #60)
+ThreatCategory = Stride | Annotated[str, StringConstraints(pattern=r"^custom:[A-Za-z0-9_-]{1,40}$")]
 
 
 class ThreatRef(BaseModel):
     component: str
-    category: Stride
+    category: ThreatCategory
 
 
 class AddedIn(BaseModel):
@@ -611,6 +633,18 @@ def _validate_draft(db: Session, body: InterviewSave) -> dict:
         if len(cats) != len(set(cats)):
             raise HTTPException(422, f"{c.name}: a STRIDE category is listed twice")
         applies |= {(c.key, t.category) for t in c.threats if t.state == "applies"}
+        custom_keys = [x.key for x in c.custom_threats]
+        if len(custom_keys) != len(set(custom_keys)):
+            raise HTTPException(422, f"{c.name}: a custom threat is listed twice")
+        for x in c.custom_threats:
+            unknown = [tid for tid in x.techniques if attack.status(tid)[0] == "unknown"]
+            if unknown:
+                raise HTTPException(
+                    422,
+                    f"{c.name} / {x.title or x.key}: unknown ATT&CK technique {', '.join(unknown)}",
+                )
+            x.techniques = list(dict.fromkeys(x.techniques))
+        applies |= {(c.key, iv.CUSTOM + k) for k in custom_keys}
     ls_ids = {i for c in body.components for i in c.log_source_ids}
     if ls_ids:
         found = set(
@@ -729,7 +763,20 @@ def _detail(db: Session, s: System, settings) -> dict:
         "links": link_views,
         "risks": risks,
         "threshold": threshold,
-        "components": [{"key": c["key"], "name": c["name"]} for c in comps],
+        "components": [
+            {
+                "key": c["key"],
+                "name": c["name"],
+                # custom ATT&CK threats (#60): labels for the risk overview
+                "custom_threats": [
+                    {"category": t["category"], "title": t.get("title") or t["category"]}
+                    | {"techniques": t.get("techniques", [])}
+                    for t in c.get("threats", [])
+                    if t.get("custom")
+                ],
+            }
+            for c in comps
+        ],
         "gap_no_rules": no_rules,
         "gap_log_sources": ls_gaps,
         "gap_requests": requests,
@@ -876,7 +923,9 @@ def complete_interview(interview_id: int, body: VersionIn, user: Editor, db: DB)
         raise HTTPException(422, "Add at least one component before completing the interview")
     result = iv.evaluate(db, data, iv.threshold(db))
     if result["incomplete"]:
-        names = ", ".join(f"{x['component']} / {x['category']}" for x in result["incomplete"])
+        names = ", ".join(
+            f"{x['component']} / {x.get('title') or x['category']}" for x in result["incomplete"]
+        )
         raise HTTPException(
             422, f"Complete description, likelihood and impact of these threats: {names}"
         )

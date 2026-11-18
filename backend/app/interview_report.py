@@ -168,11 +168,21 @@ class _Pdf(Report):
 def build(out, system, lang: str, app_name: str) -> bytes:
     """`out` is the InterviewOut of app/api/systems.py, `system` the System row."""
 
+    view = out.view or {}
+    # custom ATT&CK threats (#60) are labelled with their title and techniques
+    custom = {
+        t["category"]: f"{t.get('title') or t['category']} ({', '.join(t.get('techniques', []))})"
+        for c in view.get("components", [])
+        for t in c.get("threats", [])
+        if t.get("custom")
+    }
+
     def tr(key: str) -> str:
+        if key in custom:
+            return custom[key]
         entry = TEXTS.get(key)
         return entry.get(lang, entry["en"]) if entry else key
 
-    view = out.view or {}
     status = str(out.status)
     title = f"{tr('title')} - {out.system_name}"
     pdf = _Pdf(f"{app_name} - {title}", tr("draft") if status == "draft" else None, tr("page"))

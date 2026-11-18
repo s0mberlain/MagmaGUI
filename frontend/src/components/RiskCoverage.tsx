@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import type { Detection, RiskCoverageState, RiskRow, Stride } from "../api";
+import type { Detection, RiskCoverageState, RiskRow } from "../api";
 import { num } from "../lib/format";
-import { STRIDE, STRIDE_LABEL } from "../lib/stride";
+import { STRIDE, STRIDE_LABEL, threatLabel } from "../lib/stride";
 import { t } from "../i18n";
 
 /**
@@ -49,7 +49,7 @@ export function useCaseHref(u: { level?: string; code: string }): string {
   return u.level === "L3" ? `/usecases/l3/${encodeURIComponent(u.code)}` : `/usecases?l2=${encodeURIComponent(u.code)}`;
 }
 
-const riskId = (r: { component: string; category: Stride }) => `risk-${r.component}-${r.category}`;
+const riskId = (r: { component: string; category: string }) => `risk-${r.component}-${r.category}`;
 
 type Filter = "all" | "open" | RiskCoverageState;
 
@@ -84,6 +84,7 @@ export function RiskCoverage({
     for (const r of risks) c[r.coverage]++;
     return c;
   }, [risks]);
+  const hasCustom = risks.some((r) => r.custom);
   const byRef = useMemo(() => new Map(risks.map((r) => [`${r.component}:${r.category}`, r])), [risks]);
   const shown = risks.filter((r) =>
     filter === "all" ? true : filter === "open" ? r.coverage === "gap" || r.coverage === "partial" : r.coverage === filter,
@@ -143,6 +144,12 @@ export function RiskCoverage({
                       <span className="rcov-cat">{STRIDE_LABEL[c]}</span>
                     </th>
                   ))}
+                  {hasCustom && (
+                    <th scope="col" title={t("Custom threats linked to MITRE ATT&CK")}>
+                      <span className="rcov-letter">+</span>
+                      <span className="rcov-cat">{t("ATT&CK")}</span>
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -172,6 +179,25 @@ export function RiskCoverage({
                         </td>
                       );
                     })}
+                    {hasCustom && (
+                      <td className="rcov-custom">
+                        {risks
+                          .filter((r) => r.custom && r.component === c.key)
+                          .map((r) => (
+                            <button
+                              key={r.category}
+                              type="button"
+                              className={`rcov-cell cov-${r.coverage}`}
+                              onClick={() => jump(r)}
+                              title={`${c.name} / ${threatLabel(r.category)} (${(r.techniques ?? []).join(", ")}): ${COVERAGE_LABEL[r.coverage]} · ${t("{n} use cases", { n: r.use_cases.length })}`}
+                            >
+                              <strong>{r.score ?? "–"}</strong>
+                              <span className="rcov-n">{r.use_cases.length ? t("{n} UC", { n: r.use_cases.length }) : "–"}</span>
+                            </button>
+                          ))}
+                        {!risks.some((r) => r.custom && r.component === c.key) && <span aria-label={t("None")}>·</span>}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -204,8 +230,13 @@ export function RiskCoverage({
                     {r.score ?? "–"}
                   </span>
                   <strong>
-                    {r.component_name} · {STRIDE_LABEL[r.category]}
+                    {r.component_name} · {threatLabel(r.category)}
                   </strong>
+                  {r.custom && (r.techniques ?? []).map((x) => (
+                    <span key={x} className="chip chip-neutral mono" title={t("MITRE ATT&CK technique")}>
+                      {x}
+                    </span>
+                  ))}
                   <span className={`cov-badge cov-${r.coverage}`} title={COVERAGE_HINT[r.coverage]}>
                     {COVERAGE_LABEL[r.coverage]}
                   </span>

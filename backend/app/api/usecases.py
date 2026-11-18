@@ -252,6 +252,7 @@ def l3_out(
         target_source=eff.target_source,
         implementation_gap=eff.gap,
         priority=eff.priority,
+        driver_boost=eff.boost,
         log_sources=sorted(by_kind[RefKind.log_source]),
         detection_technologies=sorted(by_kind[RefKind.detection_technology]),
         scopes=sorted(by_kind[RefKind.scope]),

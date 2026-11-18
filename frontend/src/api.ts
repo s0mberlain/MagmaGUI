@@ -200,6 +200,8 @@ export interface L3 {
   target_source: "rule" | "l2" | "risk" | null;
   implementation_gap: number | null;
   priority: number | null;
+  /** priority factor from the drivers linked to the L2 (1.0 … 1.5) */
+  driver_boost: number;
   log_sources: string[];
   detection_technologies: string[];
   scopes: string[];
@@ -552,6 +554,9 @@ export interface GapRow {
   business_drivers: string[];
   compliance_drivers: string[];
   driver_boost: number;
+  last_test_outcome: PtOutcome | null;
+  last_test_at: string | null;
+  last_test_id: number | null;
 }
 export interface Gaps {
   summary: {
@@ -1308,3 +1313,385 @@ export const api = {
 const enc = encodeURIComponent;
 export type Level = "l2" | "l3";
 const cfgUrl = (level: Level, code: string) => `/api/${level}/${enc(code)}/config`;
+
+/* ------------------------------------------------------------------ purple teaming */
+
+export type PtOutcome = "blocked" | "alerted" | "logged_central" | "logged_local" | "none" | "not_applicable" | "tbd";
+export type PtRedStatus = "planned" | "in_progress" | "executed" | "not_executed";
+export type PtBlueStatus = "waiting" | "in_review" | "done";
+export type PtAssessmentStatus = "planned" | "in_progress" | "completed";
+export type PtTrend = "improved" | "regressed" | "unchanged" | "new" | "untested";
+
+export interface PtMetrics {
+  total: number;
+  executed: number;
+  not_executed: number;
+  blue_done: number;
+  counts: Record<PtOutcome, number>;
+  defense_success: number | null;
+  visibility: number | null;
+  mean_time_to_detect: number | null;
+}
+
+export interface PtAssessmentRow {
+  id: number;
+  name: string;
+  environment: string;
+  status: PtAssessmentStatus;
+  start_date: string | null;
+  end_date: string | null;
+  previous_id: number | null;
+  campaigns: number;
+  metrics: PtMetrics;
+  updated_at: string;
+}
+
+export interface PtCaseRow {
+  id: number;
+  name: string;
+  techniques: string[];
+  tactic: string;
+  tags: string[];
+  red_status: PtRedStatus;
+  blue_status: PtBlueStatus;
+  red_assignee: string;
+  blue_assignee: string;
+  attack_start: string | null;
+  outcome: PtOutcome;
+  overridden: boolean;
+  detections: number;
+  has_findings: boolean;
+}
+
+export interface PtCampaign {
+  id: number;
+  name: string;
+  description: string;
+  position: number;
+  metrics: PtMetrics;
+  test_cases: PtCaseRow[];
+}
+
+export interface PtHeatTactic {
+  id: string;
+  short: string;
+  name: string;
+  techniques: { id: string; name: string; outcome: PtOutcome }[];
+}
+
+export interface PtAssessment extends PtAssessmentRow {
+  description: string;
+  scope: string;
+  summary: string;
+  version: number;
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  previous_name: string | null;
+  campaign_list: PtCampaign[];
+  heatmap: Record<string, PtOutcome>;
+  heatmap_tactics: PtHeatTactic[];
+}
+
+export interface PtAssessmentInput {
+  name: string;
+  environment: string;
+  description: string;
+  scope: string;
+  summary: string;
+  start_date: string | null;
+  end_date: string | null;
+  status: PtAssessmentStatus;
+  expected_version?: number;
+  campaign_template_ids?: number[];
+}
+
+export interface PtDetection {
+  id?: number | null;
+  kind: "rule" | "tool";
+  rule_code: string;
+  rule_name?: string | null;
+  rule_missing?: boolean;
+  tool: string;
+  outcome: PtOutcome;
+  expected: boolean;
+  alert_name: string;
+  severity: "" | "info" | "low" | "medium" | "high" | "critical";
+  detected_at: string | null;
+  note: string;
+}
+
+export interface PtAttachment {
+  id: number;
+  test_case_id: number;
+  side: "red" | "blue";
+  filename: string;
+  content_type: string;
+  size: number;
+  sha256: string;
+  uploaded_by: string;
+  uploaded_at: string;
+  viewable: boolean;
+}
+
+export interface PtRun {
+  test_case_id: number;
+  assessment_id: number;
+  assessment: string;
+  date: string | null;
+  red_status: PtRedStatus;
+  outcome: PtOutcome | null;
+  current: boolean;
+}
+
+export interface PtPlan {
+  name: string;
+  description: string;
+  techniques: string[];
+  tactic: string;
+  platforms: string[];
+  executor: string;
+  command: string;
+  cleanup: string;
+  operator_guidance: string;
+  references: string[];
+  tags: string[];
+}
+
+export interface PtTestCase extends PtCaseRow, PtPlan {
+  assessment_id: number;
+  assessment_name: string;
+  assessment_status: PtAssessmentStatus;
+  campaign_id: number;
+  campaign_name: string;
+  campaigns: { id: number; name: string }[];
+  template_id: number | null;
+  lineage_key: string;
+  position: number;
+  plan_version: number;
+  attack_stop: string | null;
+  targets: string[];
+  sources: string[];
+  red_tools: string[];
+  red_notes: string;
+  red_version: number;
+  red_updated_by: string;
+  blue_notes: string;
+  detection_steps: string;
+  prevention_steps: string;
+  outcome_override: PtOutcome | null;
+  derived_outcome: PtOutcome;
+  blue_version: number;
+  blue_updated_by: string;
+  detection_list: PtDetection[];
+  attachments: PtAttachment[];
+  history: PtRun[];
+  trend: PtTrend;
+  updated_at: string;
+  verified?: { rule: string; result: "ok" | "issues"; config_tag: string | null }[];
+}
+
+export interface PtRedInput {
+  expected_version: number;
+  red_status: PtRedStatus;
+  red_assignee: string;
+  attack_start: string | null;
+  attack_stop: string | null;
+  targets: string[];
+  sources: string[];
+  red_tools: string[];
+  red_notes: string;
+}
+
+export interface PtBlueInput {
+  expected_version: number;
+  blue_status: PtBlueStatus;
+  blue_assignee: string;
+  blue_notes: string;
+  detection_steps: string;
+  prevention_steps: string;
+  outcome_override: PtOutcome | null;
+  detections: PtDetection[];
+  record_verification: boolean;
+}
+
+export interface PtQueueRow extends PtCaseRow {
+  side: "red" | "blue" | "blue_unassigned";
+  assessment_id: number;
+  assessment_name: string;
+  campaign_name: string;
+}
+
+export interface PtSuggestedRule {
+  id: number;
+  code: string;
+  name: string;
+  status: string;
+  matched: string[];
+}
+
+export interface PtRuleTest {
+  test_case_id: number;
+  test_case: string;
+  assessment_id: number;
+  assessment: string;
+  attack_start: string | null;
+  red_status: PtRedStatus;
+  blue_status: PtBlueStatus;
+  outcome: PtOutcome;
+  test_outcome: PtOutcome;
+  alert_name: string;
+  expected: boolean;
+}
+
+export interface PtTrends {
+  assessments: { assessment_id: number; name: string; date: string; status: PtAssessmentStatus; metrics: PtMetrics }[];
+  procedures: {
+    lineage_key: string;
+    name: string;
+    techniques: string[];
+    runs: { assessment_id: number; assessment: string; test_case_id: number; date: string | null; outcome: PtOutcome }[];
+    trend: PtTrend;
+    latest: PtOutcome;
+  }[];
+  counts: Record<PtTrend, number>;
+}
+
+export interface PtTemplateInput {
+  name: string;
+  description: string;
+  techniques: string[];
+  tactic: string;
+  platforms: string[];
+  executor: string;
+  command: string;
+  cleanup: string;
+  operator_guidance: string;
+  expected_defenses: string[];
+  detection_steps: string;
+  prevention_steps: string;
+  references: string[];
+  tags: string[];
+  archived: boolean;
+}
+
+export interface PtTemplate extends PtTemplateInput {
+  id: number;
+  source: "custom" | "atomic" | "vectr" | "csv" | "demo";
+  source_ref: string;
+  used: number;
+  updated_at: string;
+}
+
+export interface PtCampaignTemplate {
+  id: number;
+  name: string;
+  description: string;
+  template_ids: number[];
+  templates: { id: number; name: string; techniques: string[] }[];
+  updated_at: string;
+}
+
+export interface PtAtomic {
+  guid: string;
+  technique: string;
+  technique_name: string;
+  name: string;
+  description: string;
+  platforms: string[];
+  executor: string;
+  elevation: boolean;
+  command: string;
+  adopted: boolean;
+}
+
+export interface PtAtomics {
+  source: string;
+  commit: string;
+  total: number;
+  matches: number;
+  platforms: string[];
+  tests: PtAtomic[];
+}
+
+export type PtImportFormat = "atomic" | "vectr_tsi" | "csv";
+
+export interface PtImportResult {
+  bundle: string;
+  dry_run: boolean;
+  templates: { name: string; techniques: string[]; action: "create" | "update" | "skip"; ref: string }[];
+  campaigns: { name: string; templates: number; action: "create" | "update" }[];
+  errors: string[];
+  counts: { create: number; update: number; skip: number };
+}
+
+async function upload<T>(url: string, file: File): Promise<T> {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch(url, { method: "POST", body: fd, credentials: "same-origin" });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new ApiError(res.status, detailMessage(data) ?? `${res.status} ${res.statusText}`, data);
+  return data as T;
+}
+
+const qs = (params: Record<string, string | number | boolean | undefined>) => {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== "") p.set(k, String(v));
+  const s = p.toString();
+  return s ? `?${s}` : "";
+};
+
+export const purple = {
+  assessments: () => request<PtAssessmentRow[]>("GET", "/api/purple/assessments"),
+  assessment: (id: number) => request<PtAssessment>("GET", `/api/purple/assessments/${id}`),
+  createAssessment: (body: PtAssessmentInput) => request<PtAssessment>("POST", "/api/purple/assessments", body),
+  updateAssessment: (id: number, body: PtAssessmentInput) =>
+    request<PtAssessment>("PUT", `/api/purple/assessments/${id}`, body),
+  deleteAssessment: (id: number) => request<void>("DELETE", `/api/purple/assessments/${id}`),
+  rerun: (id: number, body: { name?: string; start_date?: string | null }) =>
+    request<PtAssessment>("POST", `/api/purple/assessments/${id}/rerun`, body),
+  createCampaign: (assessmentId: number, body: { name: string; description?: string; campaign_template_id?: number | null }) =>
+    request<PtAssessment>("POST", `/api/purple/assessments/${assessmentId}/campaigns`, body),
+  updateCampaign: (id: number, body: { name: string; description: string; position?: number }) =>
+    request<PtAssessment>("PUT", `/api/purple/campaigns/${id}`, body),
+  deleteCampaign: (id: number) => request<void>("DELETE", `/api/purple/campaigns/${id}`),
+  createTestCases: (campaignId: number, body: { template_ids?: number[]; plan?: Partial<PtPlan> & { name: string } }) =>
+    request<{ created: number[]; assessment: PtAssessment }>("POST", `/api/purple/campaigns/${campaignId}/test-cases`, body),
+  testCase: (id: number) => request<PtTestCase>("GET", `/api/purple/test-cases/${id}`),
+  savePlan: (id: number, body: PtPlan & { expected_version: number; campaign_id?: number }) =>
+    request<PtTestCase>("PUT", `/api/purple/test-cases/${id}`, body),
+  deleteTestCase: (id: number) => request<void>("DELETE", `/api/purple/test-cases/${id}`),
+  saveRed: (id: number, body: PtRedInput) => request<PtTestCase>("PUT", `/api/purple/test-cases/${id}/red`, body),
+  saveBlue: (id: number, body: PtBlueInput) => request<PtTestCase>("PUT", `/api/purple/test-cases/${id}/blue`, body),
+  start: (id: number, expected_version: number) =>
+    request<PtTestCase>("POST", `/api/purple/test-cases/${id}/start`, { expected_version }),
+  stop: (id: number, expected_version: number) =>
+    request<PtTestCase>("POST", `/api/purple/test-cases/${id}/stop`, { expected_version }),
+  suggestedRules: (id: number) => request<PtSuggestedRule[]>("GET", `/api/purple/test-cases/${id}/suggested-rules`),
+  uploadAttachment: (id: number, side: "red" | "blue", file: File) =>
+    upload<PtAttachment>(`/api/purple/test-cases/${id}/attachments?side=${side}`, file),
+  deleteAttachment: (id: number) => request<void>("DELETE", `/api/purple/attachments/${id}`),
+  attachmentUrl: (id: number, download = false) => `/api/purple/attachments/${id}/content${download ? "?download=1" : ""}`,
+  queue: () => request<PtQueueRow[]>("GET", "/api/purple/queue"),
+  ruleTests: (code: string) => request<PtRuleTest[]>("GET", `/api/purple/rules/${encodeURIComponent(code)}/tests`),
+  trends: () => request<PtTrends>("GET", "/api/purple/trends"),
+  reportUrl: (id: number, lang: Lang) => `/api/purple/assessments/${id}/report.pdf?lang=${lang}`,
+  navigatorUrl: (id: number) => `/api/purple/assessments/${id}/navigator.json`,
+  csvUrl: (id: number) => `/api/purple/assessments/${id}/export.csv`,
+  templates: (params: { q?: string; technique?: string; archived?: boolean } = {}) =>
+    request<PtTemplate[]>("GET", `/api/purple/templates${qs(params)}`),
+  createTemplate: (body: PtTemplateInput) => request<PtTemplate>("POST", "/api/purple/templates", body),
+  updateTemplate: (id: number, body: PtTemplateInput) => request<PtTemplate>("PUT", `/api/purple/templates/${id}`, body),
+  deleteTemplate: (id: number) => request<void>("DELETE", `/api/purple/templates/${id}`),
+  campaignTemplates: () => request<PtCampaignTemplate[]>("GET", "/api/purple/campaign-templates"),
+  createCampaignTemplate: (body: { name: string; description: string; template_ids: number[] }) =>
+    request<PtCampaignTemplate>("POST", "/api/purple/campaign-templates", body),
+  updateCampaignTemplate: (id: number, body: { name: string; description: string; template_ids: number[] }) =>
+    request<PtCampaignTemplate>("PUT", `/api/purple/campaign-templates/${id}`, body),
+  deleteCampaignTemplate: (id: number) => request<void>("DELETE", `/api/purple/campaign-templates/${id}`),
+  atomics: (params: { technique?: string; platform?: string; q?: string; limit?: number }) =>
+    request<PtAtomics>("GET", `/api/purple/atomics${qs(params)}`),
+  adoptAtomic: (guid: string) => request<PtTemplate>("POST", `/api/purple/atomics/${encodeURIComponent(guid)}/adopt`),
+  importLibrary: (format: PtImportFormat, file: File, dryRun: boolean, update: boolean) =>
+    upload<PtImportResult>(`/api/purple/import${qs({ format, dry_run: dryRun, update })}`, file),
+};

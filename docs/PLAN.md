@@ -342,6 +342,14 @@ Decided (13.11.2026):
 - YAML is **free-form** (only checked for valid YAML syntax, no schema).
 - Connecting to a real git repository is **optional**, switched on per installation. → 4a
 
+Decided (18.11.2026): **purple teaming** in the style of VECTR (assessments → campaigns → test
+cases, red and blue side, per-defense outcomes, template library, Atomic Red Team and Threat
+Simulation Index import, resilience trending). Results are *evidence only*: they link to L3
+rules, can record a verification and show on the rule and in Priorities, but never change the
+embedded metrics or the score. Findings are notes on the test case and an assessment summary,
+not a separate tracker. Code: `app/purple.py`, `app/api/purple.py`, `purple_library.py`,
+`purple_import.py`, `purple_report.py`, migration 0020.
+
 Still open (I'll go with the **default** unless you say otherwise):
 1. **SSO protocol and IdP**: OIDC covers Entra ID, Keycloak, Okta, ADFS. Do you also need SAML? Which IdP do you use? *Default: OIDC only.*
 2. **Database**: SQLite in a volume, or PostgreSQL as default? *Default: SQLite, Postgres optional.*

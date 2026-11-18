@@ -13,16 +13,27 @@ export function num(v: number | null | undefined, digits = 2): string {
 
 const DATE_FMT = new Intl.DateTimeFormat(locale(), { year: "numeric", month: "short", day: "numeric" });
 
+/**
+ * Parse a server timestamp. The server stores UTC; a date-time without an offset
+ * (older data, values kept in JSON) is read as UTC, not as the browser's local time.
+ * A plain date ("2026-11-18") is a calendar day and stays local midnight.
+ */
+export function parseTime(iso: string): Date {
+  if (iso.length === 10) return new Date(iso + "T00:00:00");
+  const hasZone = /(Z|[+-]\d{2}:?\d{2})$/i.test(iso);
+  return new Date(hasZone ? iso : iso + "Z");
+}
+
 export function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "–";
-  const d = new Date(iso.length === 10 ? iso + "T00:00:00" : iso);
+  const d = parseTime(iso);
   return Number.isNaN(d.getTime()) ? iso : DATE_FMT.format(d);
 }
 
 /** Date and time, e.g. "14 Nov 2026 09:05"; null → "never". */
 export function fmtTime(iso: string | null | undefined): string {
   if (!iso) return t("never");
-  const d = new Date(iso);
+  const d = parseTime(iso);
   return `${fmtDate(iso)} ${d.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" })}`;
 }
 

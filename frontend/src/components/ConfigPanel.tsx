@@ -8,14 +8,14 @@ import {
   type Level,
   type ConfigCheck,
 } from "../api";
-import { fmtDate } from "../lib/format";
+import { fmtDate, parseTime } from "../lib/format";
 import { confirmDialog, ErrorNote, useLoad } from "./ui";
 import { t } from "../i18n";
 
 type Tab = "editor" | "history" | "diff";
 
 function when(iso: string) {
-  const d = new Date(iso);
+  const d = parseTime(iso);
   return `${fmtDate(iso)} ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
 }
 

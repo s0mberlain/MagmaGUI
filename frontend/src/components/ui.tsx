@@ -176,6 +176,30 @@ export function MultiSelect({
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const details = useRef<HTMLDetailsElement>(null);
+  const [open, setOpen] = useState(false);
+
+  // A <details> only closes from its summary; close it on a press outside or on Escape,
+  // so the open list does not cover the fields below and catch their clicks.
+  useEffect(() => {
+    if (!open) return;
+    const el = details.current;
+    const onPointer = (e: PointerEvent) => {
+      if (el && !el.contains(e.target as Node)) el.open = false;
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && el) {
+        el.open = false;
+        el.querySelector("summary")?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", onPointer);
+    el?.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      el?.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   async function create() {
     const name = draft.trim();
@@ -203,7 +227,7 @@ export function MultiSelect({
   return (
     <div className="field">
       <span id={id}>{label}</span>
-      <details className="multi">
+      <details className="multi" ref={details} onToggle={(e) => setOpen(e.currentTarget.open)}>
         <summary className={"input multi-summary" + (disabled ? " is-disabled" : "")} aria-labelledby={id}>
           {chosen.length ? (
             <span className="chips">

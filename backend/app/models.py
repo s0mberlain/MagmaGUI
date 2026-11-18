@@ -30,12 +30,35 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
 
 from app.db import Base
 
 
 def utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+class UTCDateTime(TypeDecorator):
+    """Timestamp stored in UTC that always comes back timezone-aware.
+
+    SQLite drops the offset of ``DateTime(timezone=True)`` and returns naive values,
+    which the API then sent without "Z"; browsers read those as local time, so times
+    were shifted by the viewer's UTC offset. PostgreSQL already returns aware values.
+    """
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(self, value: datetime | None, dialect) -> datetime | None:
+        if value is not None and value.tzinfo is not None:
+            value = value.astimezone(UTC)
+        return value
+
+    def process_result_value(self, value: datetime | None, dialect) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return value
 
 
 class Role(enum.StrEnum):
@@ -93,9 +116,9 @@ class User(Base):
     sso_subject: Mapped[str | None] = mapped_column(String(255), unique=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     failed_logins: Mapped[int] = mapped_column(Integer, default=0)
-    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    locked_until: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
     # TOTP second factor for local accounts (app/totp.py). The secret is encrypted with SECRET_KEY.
     totp_secret: Mapped[str | None] = mapped_column(String(255))
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -112,8 +135,8 @@ class UserSession(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime())
 
     user: Mapped[User] = relationship()
 
@@ -122,7 +145,7 @@ class AuditLog(Base):
     __tablename__ = "audit_log"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, index=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     username: Mapped[str] = mapped_column(String(64))
     action: Mapped[str] = mapped_column(String(32))  # create | update | delete | login ...
@@ -247,10 +270,8 @@ class L2UseCase(Base):
     last_verified_by: Mapped[str | None] = mapped_column(String(64))
     # "Operational" definition of done: {item_key: {"by": user, "at": iso date}} (app/lifecycle.py)
     dod: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow
-    )
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
 
     parent: Mapped[L1UseCase] = relationship(back_populates="children")
     children: Mapped[list["L3UseCase"]] = relationship(
@@ -292,10 +313,8 @@ class L3UseCase(Base):
     risk_level: Mapped[int | None] = mapped_column(Integer)
     target_implementation: Mapped[float | None] = mapped_column(Float)
     dod: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow
-    )
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
 
     parent: Mapped[L2UseCase] = relationship(back_populates="children")
     references: Mapped[list[ReferenceItem]] = relationship(secondary=l3_references)
@@ -319,7 +338,7 @@ class Verification(Base):
         _enum(VerificationResult, "verification_result")
     )
     note: Mapped[str] = mapped_column(Text, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
 
 
 class ConfigCommit(Base):
@@ -350,7 +369,7 @@ class ConfigCommit(Base):
     content: Mapped[str] = mapped_column(Text)
     message: Mapped[str] = mapped_column(String(500))
     author: Mapped[str] = mapped_column(String(64))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
     restored_from: Mapped[str | None] = mapped_column(String(64))
     # optional git repository sync (app/gitsync.py): commit id in the connected repo
     git_sha: Mapped[str | None] = mapped_column(String(64))
@@ -374,7 +393,7 @@ class ConfigTag(Base):
     )
     name: Mapped[str] = mapped_column(String(100))
     created_by: Mapped[str] = mapped_column(String(64))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
 
     commit: Mapped[ConfigCommit] = relationship(back_populates="tags")
 
@@ -398,7 +417,7 @@ class LifecycleEvent(Base):
     note: Mapped[str] = mapped_column(Text, default="")
     dod_override: Mapped[bool] = mapped_column(Boolean, default=False)
     username: Mapped[str] = mapped_column(String(64))
-    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, index=True)
 
 
 class Snapshot(Base):
@@ -409,7 +428,7 @@ class Snapshot(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     label: Mapped[str] = mapped_column(String(200), default="")
     kind: Mapped[str] = mapped_column(String(16), default="manual")  # manual|scheduled|demo
-    taken_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    taken_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, index=True)
     taken_by: Mapped[str] = mapped_column(String(64), default="system")
     data: Mapped[dict] = mapped_column(JSON)
 
@@ -420,13 +439,13 @@ class GitSyncState(Base):
     __tablename__ = "git_sync_state"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_attempt_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    last_success_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     last_error: Mapped[str | None] = mapped_column(Text)
     head_sha: Mapped[str | None] = mapped_column(String(64))
     # two-way sync: remote commits up to this one have been read back into the app
     last_imported_sha: Mapped[str | None] = mapped_column(String(64))
-    last_import_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_import_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     # what the last import did not take over (conflicts, invalid YAML, unknown paths)
     import_notes: Mapped[list | None] = mapped_column(JSON, default=list)
 
@@ -449,9 +468,7 @@ class OutputMetric(Base):
     note: Mapped[str] = mapped_column(Text, default="")
     source: Mapped[str] = mapped_column(String(16), default="manual")  # manual | csv | demo
     updated_by: Mapped[str] = mapped_column(String(64))
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow
-    )
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
 
 
 # ---------------------------------------------------------------- integrations (M7)
@@ -468,9 +485,9 @@ class ApiToken(Base):
     prefix: Mapped[str] = mapped_column(String(16))  # shown in the list to recognise a token
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     created_by: Mapped[str] = mapped_column(String(64))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     # what the token may call (app/security.py TOKEN_SCOPES): "siem" = the SIEM push API,
     # "read" = read-only access to the rest of the API
     scopes: Mapped[list[str]] = mapped_column(JSON, default=lambda: ["siem"])
@@ -485,9 +502,9 @@ class SiemSource(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(32), unique=True)
-    inventory_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    inventory_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     inventory_by: Mapped[str | None] = mapped_column(String(64))
-    alerts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    alerts_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     alerts_by: Mapped[str | None] = mapped_column(String(64))
     # outcome of the last alert push: counts and SIEM rule ids that matched no use case
     alerts_report: Mapped[dict | None] = mapped_column(JSON, default=dict)
@@ -527,7 +544,7 @@ class SiemAlertBatch(Base):
         ForeignKey("siem_sources.id", ondelete="CASCADE"), index=True
     )
     batch_id: Mapped[str] = mapped_column(String(128))
-    applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    applied_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
     applied_by: Mapped[str] = mapped_column(String(64))
 
 
@@ -541,9 +558,7 @@ class AppSetting(Base):
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[dict] = mapped_column(JSON)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow
-    )
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
     updated_by: Mapped[str] = mapped_column(String(64), default="system")
 
 
@@ -578,10 +593,8 @@ class System(Base):
     data_classification: Mapped[str] = mapped_column(String(16), default="internal")
     review_interval_months: Mapped[int] = mapped_column(Integer, default=12)
     archived: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow
-    )
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
 
     interviews: Mapped[list["Interview"]] = relationship(
         back_populates="system",
@@ -630,11 +643,9 @@ class Interview(Base):
     # optimistic locking: a save must name the version it started from
     version: Mapped[int] = mapped_column(Integer, default=1)
     updated_by: Mapped[str] = mapped_column(String(64))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow
-    )
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     completed_by: Mapped[str | None] = mapped_column(String(64))
     confirmed_by: Mapped[str | None] = mapped_column(String(255))
     confirmed_at: Mapped[date | None] = mapped_column(Date)
@@ -668,7 +679,7 @@ class InterviewAttachment(Base):
     sha256: Mapped[str] = mapped_column(String(64))
     data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
     uploaded_by: Mapped[str] = mapped_column(String(64))
-    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    uploaded_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
     # the business owner's sign-off (#42): may be added after completion, until confirmed
     signoff: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
@@ -726,3 +737,261 @@ class StrideMapping(Base):
 L2UseCase.linked_systems = relationship(
     System, secondary="system_links", viewonly=True, order_by=System.name
 )
+
+
+# ---------------------------------------------------------------- purple teaming (VECTR-style)
+
+
+class PtAssessmentStatus(enum.StrEnum):
+    planned = "planned"
+    in_progress = "in_progress"
+    completed = "completed"
+
+
+class PtRedStatus(enum.StrEnum):
+    planned = "planned"
+    in_progress = "in_progress"
+    executed = "executed"
+    not_executed = "not_executed"
+
+
+class PtBlueStatus(enum.StrEnum):
+    waiting = "waiting"
+    in_review = "in_review"
+    done = "done"
+
+
+class PtOutcome(enum.StrEnum):
+    """Per-tool outcome of a test (VECTR order of priority, best first, see app/purple.py)."""
+
+    blocked = "blocked"
+    alerted = "alerted"
+    logged_central = "logged_central"
+    logged_local = "logged_local"
+    none = "none"
+    not_applicable = "not_applicable"
+    tbd = "tbd"
+
+
+class PtTemplate(Base):
+    """A reusable test procedure (VECTR "test case template") in the purple team library."""
+
+    __tablename__ = "pt_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    name_key: Mapped[str] = mapped_column(String(255), unique=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    techniques: Mapped[list[str]] = mapped_column(JSON, default=list)
+    tactic: Mapped[str] = mapped_column(String(64), default="")
+    platforms: Mapped[list[str]] = mapped_column(JSON, default=list)
+    executor: Mapped[str] = mapped_column(String(64), default="")
+    command: Mapped[str] = mapped_column(Text, default="")
+    cleanup: Mapped[str] = mapped_column(Text, default="")
+    operator_guidance: Mapped[str] = mapped_column(Text, default="")
+    # detection technologies expected to see the test (become expected detection rows)
+    expected_defenses: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # how the test is expected to be detected / prevented (copied to the test case)
+    detection_steps: Mapped[str] = mapped_column(Text, default="")
+    prevention_steps: Mapped[str] = mapped_column(Text, default="")
+    references: Mapped[list[str]] = mapped_column(JSON, default=list)
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # custom | atomic | vectr | csv
+    source: Mapped[str] = mapped_column(String(16), default="custom")
+    source_ref: Mapped[str] = mapped_column(String(128), default="", index=True)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
+
+
+class PtCampaignTemplate(Base):
+    """A named, ordered set of test procedures, e.g. an adversary emulation plan."""
+
+    __tablename__ = "pt_campaign_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    name_key: Mapped[str] = mapped_column(String(255), unique=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    template_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
+
+
+class PtAssessment(Base):
+    """The scope of one purple team exercise: campaigns of test cases."""
+
+    __tablename__ = "pt_assessments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    environment: Mapped[str] = mapped_column(String(255), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    scope: Mapped[str] = mapped_column(Text, default="")
+    # overall findings and conclusions (markdown)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    start_date: Mapped[date | None] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date)
+    status: Mapped[PtAssessmentStatus] = mapped_column(
+        _enum(PtAssessmentStatus, "pt_assessment_status"), default=PtAssessmentStatus.planned
+    )
+    # the assessment this one re-runs (resilience trending)
+    previous_id: Mapped[int | None] = mapped_column(
+        ForeignKey("pt_assessments.id", ondelete="SET NULL")
+    )
+    created_by: Mapped[str] = mapped_column(String(64))
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    updated_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
+
+    campaigns: Mapped[list["PtCampaign"]] = relationship(
+        back_populates="assessment",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="(PtCampaign.position, PtCampaign.id)",
+    )
+
+
+class PtCampaign(Base):
+    __tablename__ = "pt_campaigns"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    assessment_id: Mapped[int] = mapped_column(
+        ForeignKey("pt_assessments.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(Text, default="")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+    assessment: Mapped[PtAssessment] = relationship(back_populates="campaigns")
+    test_cases: Mapped[list["PtTestCase"]] = relationship(
+        back_populates="campaign",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="(PtTestCase.position, PtTestCase.id)",
+    )
+
+
+class PtTestCase(Base):
+    """One executed procedure. The red and blue sides are saved separately, each with its own
+    version (optimistic locking), so both teams can work on a test at the same time. The overall
+    outcome is derived from the detections on read (app/purple.py), never stored."""
+
+    __tablename__ = "pt_test_cases"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(
+        ForeignKey("pt_campaigns.id", ondelete="CASCADE"), index=True
+    )
+    template_id: Mapped[int | None] = mapped_column(
+        ForeignKey("pt_templates.id", ondelete="SET NULL"), index=True
+    )
+    # the same procedure across assessments ("tpl:<id>" or "tc:<uuid>"), for trending
+    lineage_key: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(Text, default="")
+    techniques: Mapped[list[str]] = mapped_column(JSON, default=list)
+    tactic: Mapped[str] = mapped_column(String(64), default="")
+    platforms: Mapped[list[str]] = mapped_column(JSON, default=list)
+    executor: Mapped[str] = mapped_column(String(64), default="")
+    command: Mapped[str] = mapped_column(Text, default="")
+    cleanup: Mapped[str] = mapped_column(Text, default="")
+    operator_guidance: Mapped[str] = mapped_column(Text, default="")
+    references: Mapped[list[str]] = mapped_column(JSON, default=list)
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    # red side
+    red_status: Mapped[PtRedStatus] = mapped_column(
+        _enum(PtRedStatus, "pt_red_status"), default=PtRedStatus.planned
+    )
+    red_assignee: Mapped[str] = mapped_column(String(64), default="")
+    attack_start: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    attack_stop: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    targets: Mapped[list[str]] = mapped_column(JSON, default=list)
+    sources: Mapped[list[str]] = mapped_column(JSON, default=list)
+    red_tools: Mapped[list[str]] = mapped_column(JSON, default=list)
+    red_notes: Mapped[str] = mapped_column(Text, default="")
+    red_version: Mapped[int] = mapped_column(Integer, default=1)
+    red_updated_by: Mapped[str] = mapped_column(String(64), default="")
+    # blue side
+    blue_status: Mapped[PtBlueStatus] = mapped_column(
+        _enum(PtBlueStatus, "pt_blue_status"), default=PtBlueStatus.waiting
+    )
+    blue_assignee: Mapped[str] = mapped_column(String(64), default="")
+    # findings: what was seen, what is missing, what to fix (markdown)
+    blue_notes: Mapped[str] = mapped_column(Text, default="")
+    detection_steps: Mapped[str] = mapped_column(Text, default="")
+    prevention_steps: Mapped[str] = mapped_column(Text, default="")
+    outcome_override: Mapped[PtOutcome | None] = mapped_column(_enum(PtOutcome, "pt_outcome"))
+    blue_version: Mapped[int] = mapped_column(Integer, default=1)
+    blue_updated_by: Mapped[str] = mapped_column(String(64), default="")
+    plan_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
+
+    campaign: Mapped[PtCampaign] = relationship(back_populates="test_cases")
+    detections: Mapped[list["PtDetection"]] = relationship(
+        back_populates="test_case",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="(PtDetection.position, PtDetection.id)",
+    )
+    attachments: Mapped[list["PtAttachment"]] = relationship(
+        back_populates="test_case",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="PtAttachment.id",
+    )
+
+
+class PtDetection(Base):
+    """What one defense did about a test: an L3 rule of the catalogue (kind "rule") or any other
+    tool or observation (kind "tool", e.g. "Microsoft Defender alert", "only in the logs")."""
+
+    __tablename__ = "pt_detections"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    test_case_id: Mapped[int] = mapped_column(
+        ForeignKey("pt_test_cases.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(8), default="tool")  # rule | tool
+    l3_id: Mapped[int | None] = mapped_column(
+        ForeignKey("l3_use_cases.id", ondelete="SET NULL"), index=True
+    )
+    # code of the rule when it was recorded; kept when the rule is deleted
+    rule_code: Mapped[str] = mapped_column(String(64), default="")
+    tool: Mapped[str] = mapped_column(String(255), default="")
+    outcome: Mapped[PtOutcome] = mapped_column(
+        _enum(PtOutcome, "pt_outcome"), default=PtOutcome.tbd
+    )
+    expected: Mapped[bool] = mapped_column(Boolean, default=False)
+    alert_name: Mapped[str] = mapped_column(String(255), default="")
+    severity: Mapped[str] = mapped_column(String(16), default="")
+    detected_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    note: Mapped[str] = mapped_column(Text, default="")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+    test_case: Mapped[PtTestCase] = relationship(back_populates="detections")
+    l3: Mapped[L3UseCase | None] = relationship()
+
+
+class PtAttachment(Base):
+    """Evidence on a test case (screenshot, log extract, PCAP ...), kept in the database."""
+
+    __tablename__ = "pt_attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    test_case_id: Mapped[int] = mapped_column(
+        ForeignKey("pt_test_cases.id", ondelete="CASCADE"), index=True
+    )
+    side: Mapped[str] = mapped_column(String(8))  # red | blue
+    filename: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(128))
+    size: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
+    uploaded_by: Mapped[str] = mapped_column(String(64))
+    uploaded_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+
+    test_case: Mapped[PtTestCase] = relationship(back_populates="attachments")

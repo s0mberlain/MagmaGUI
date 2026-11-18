@@ -1,6 +1,6 @@
 """Gap to target (risk-based prioritisation)."""
 
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app import drivers, growth
 from app.api.deps import DB, SettingsDep
+from app.api.purple import last_rule_tests
 from app.interviews import system_risks
 from app.models import L3UseCase, Lifecycle
 from app.schemas import DriverCoverage
@@ -40,6 +41,10 @@ class GapRow(BaseModel):
     business_drivers: list[str] = []
     compliance_drivers: list[str] = []
     driver_boost: float = 1.0
+    # latest result of the rule in a purple team test (evidence only, not part of the score)
+    last_test_outcome: str | None = None
+    last_test_at: datetime | None = None
+    last_test_id: int | None = None
 
 
 class GapSummary(BaseModel):
@@ -81,6 +86,7 @@ def gaps(
         q = q.where(L3UseCase.code.startswith(l1.upper() + "-"))
     rows, all_rows = [], []
     sys_risk = system_risks(db)
+    tests = last_rule_tests(db)
     for r in db.scalars(q):
         s = score_rule(
             RuleInput(
@@ -122,6 +128,9 @@ def gaps(
                 drivers.compliance_label(c) for c in r.parent.compliance_drivers
             ),
             driver_boost=e.boost,
+            last_test_outcome=tests.get(r.id, {}).get("outcome"),
+            last_test_at=tests.get(r.id, {}).get("at"),
+            last_test_id=tests.get(r.id, {}).get("test_case_id"),
         )
         all_rows.append(row)
         if (row.risk or 0) < min_risk and min_risk > 1:

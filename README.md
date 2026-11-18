@@ -247,6 +247,45 @@ There is no live SIEM connector; instead the SIEM side pushes data to the app (s
 A SIEM rule is linked through the field *SIEM rule IDs* on the rule page, or by using the L3 code
 as the SIEM rule id.
 
+## Purple teaming
+
+*Purple teaming* in the sidebar brings the workflow of tools like VECTR into the app, so test
+results sit next to the use cases they prove or disprove.
+
+- **Assessment → campaigns → test cases.** An assessment is one exercise (scope, environment,
+  dates, a summary of the findings). Campaigns group test cases, e.g. by adversary or kill chain
+  phase. A test case is one procedure: ATT&CK techniques, command, cleanup, operator guidance.
+- **Red team side.** *Start attack* / *Stop attack* record the attack times; the operator notes
+  targets, sources, tools, what was run, and adds evidence. When the attack ran, the test goes
+  to the blue team (*In review*).
+- **Blue team side.** One row per defense: an **L3 use case rule** of the catalogue (the rules
+  whose ATT&CK techniques cover the test are suggested) or **any other detection**, e.g. a
+  Defender/EDR alert, a firewall block or "only in the logs". Each row has an outcome:
+  *Blocked*, *Alerted*, *Logged (central)*, *Logged (local only)*, *Not detected*, *N/A*,
+  *TBD*. The test outcome is the best one in that order (as in VECTR) unless set by hand. The
+  **findings** (what was seen, what is missing, what to fix), detection and prevention steps and
+  blue evidence (PDF, images, text/log, `.evtx`, `.pcap`) complete the review.
+- The red and blue sides are saved separately, each with its own version, so both teams can work
+  on the same test at once; a stale save gets 409. *My queue* lists the tests to run or review.
+- **Link to the use cases (evidence only).** Marking the blue side *done* records a verification
+  of each linked L3 rule (blocked/alerted = OK, logged/not detected = issues; can be switched
+  off), which also tags the rule's config `verified-<date>`. The rule page lists its purple team
+  tests and *Priorities* shows the last result. The embedded metrics and scores are not changed.
+- **Metrics.** Defense success = blocked or alerted ÷ executed tests with a result; visibility =
+  at least logged; mean time to detect = attack start to the first block or alert.
+- **Library.** Reusable test procedures (with expected defenses, which become blue team rows) and
+  campaign templates; assessments and campaigns can start from them. *Atomic Red Team* tests are
+  bundled offline (`backend/app/attack_data/atomics.json`, MIT license, rebuilt with
+  `python backend/scripts/build_atomics.py index.yaml <commit>`) and can be added to the library.
+  **Import**: SRA/VECTR *Threat Simulation Index* YAML (each campaign becomes a campaign
+  template, controls become expected defenses), Atomic Red Team YAML (a technique file or
+  `index.yaml`) and the app's own CSV export, with a preview first.
+- **Re-run** copies an assessment with empty results. Runs of the same procedure are linked, so
+  *Purple team trends* shows defense success over assessments and which procedures improved or
+  regressed (VECTR's resilience trending).
+- **Exports**: PDF report (EN/DE/NL, "Draft" until completed), ATT&CK Navigator layer coloured
+  by the weakest outcome per technique, CSV.
+
 ## Excel import / export
 
 *Import / Export* writes the classic MaGMa UCF Tool layout (L1 UC, L2 UC, L3 UC, Drivers,
@@ -307,8 +346,8 @@ second factor of the identity provider.
   limits.
 - Changes made with the session cookie (POST, PUT, PATCH, DELETE) are refused with 403 when the
   browser sends an `Origin` or `Referer` of another site; API tokens are not affected.
-- Viewing and downloading interview evidence and exporting an interview PDF are written to the
-  audit log (once per user, file and hour). All evidence together is limited by
+- Viewing and downloading interview and purple team evidence and exporting an interview or
+  assessment PDF are written to the audit log (once per user, file and hour). All evidence together is limited by
   `EVIDENCE_MAX_TOTAL_MB` (2048); it is stored in the database, so only a database backup (or
   `magma db-copy`) keeps it, not the JSON export.
 - The API docs load their assets from the app itself, not from a CDN.
@@ -331,7 +370,7 @@ trend metrics) are listed in `frontend/src/serverTexts.ts` so they are translate
 | Role | Can |
 |---|---|
 | admin | everything, incl. users and deletes |
-| analyst | read and edit use cases, drivers, reference lists |
+| analyst | read and edit use cases, drivers, reference lists, interviews and purple team assessments |
 | auditor | read everything incl. the audit log, no changes |
 
 ## Layout

@@ -225,6 +225,36 @@ def _history(db: Session, level: str, obj) -> list[Verification]:
     return list(db.scalars(q.order_by(Verification.verified_at.desc(), Verification.id.desc())))
 
 
+def record_verification(
+    db: Session, user, level: str, obj, result: VerificationResult, note: str, when: date
+) -> tuple[Verification, str | None]:
+    """Add a verification of an L2 or L3 use case (not committed). Used by "Verify now" and by
+    purple team tests (app/api/purple.py)."""
+    v = Verification(verified_at=when, username=user.username, result=result, note=note)
+    setattr(v, f"{level}_id", obj.id)
+    db.add(v)
+    # Only a check without issues counts as verified: a failed check must not clear the
+    # overdue flag, raise verification health or tag the config as verified.
+    tag = None
+    if result == VerificationResult.ok:
+        if obj.last_verified_at is None or when >= obj.last_verified_at:
+            obj.last_verified_at = when
+            obj.last_verified_by = user.username
+        # Tag the configuration version that was verified (PLAN 4a); only rules have one
+        if level == "l3":
+            tag = configs.tag_verified(db, obj, when, user.username)
+    audit.record(
+        db,
+        user,
+        "verify",
+        level,
+        obj.code,
+        {"result": result.value, "verified_at": when, "note": note}
+        | ({"config_tag": tag} if tag else {}),
+    )
+    return v, tag
+
+
 for _level in ("l2", "l3"):
 
     def _make(level: str) -> None:
@@ -236,30 +266,7 @@ for _level in ("l2", "l3"):
                 not_in_future(when)
             except ValueError:
                 raise HTTPException(422, "Verification date cannot be in the future") from None
-            v = Verification(
-                verified_at=when, username=user.username, result=body.result, note=body.note
-            )
-            setattr(v, f"{level}_id", obj.id)
-            db.add(v)
-            # Only a check without issues counts as verified: a failed check must not clear the
-            # overdue flag, raise verification health or tag the config as verified.
-            tag = None
-            if body.result == VerificationResult.ok:
-                if obj.last_verified_at is None or when >= obj.last_verified_at:
-                    obj.last_verified_at = when
-                    obj.last_verified_by = user.username
-                # Tag the configuration version that was verified (PLAN 4a); only rules have one
-                if level == "l3":
-                    tag = configs.tag_verified(db, obj, when, user.username)
-            audit.record(
-                db,
-                user,
-                "verify",
-                level,
-                code,
-                {"result": body.result.value, "verified_at": when, "note": body.note}
-                | ({"config_tag": tag} if tag else {}),
-            )
+            v, tag = record_verification(db, user, level, obj, body.result, body.note, when)
             db.commit()
             v.config_tag = tag
             return v

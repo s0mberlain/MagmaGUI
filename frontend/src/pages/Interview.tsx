@@ -32,8 +32,10 @@ import {
 } from "../components/ui";
 import { Markdown, MarkdownField } from "../components/Markdown";
 import { RiskCoverage, useCaseHref, type RiskUseCase } from "../components/RiskCoverage";
-import { fmtDate, fmtSize, fmtTime, today } from "../lib/format";
+import { fmtDate, fmtTime, today } from "../lib/format";
 import { INTERVIEW_STATUS_LABEL, registerCustomThreats, riskLevel, STATE_LABEL, STRIDE, STRIDE_HINT, STRIDE_LABEL, threatLabel } from "../lib/stride";
+import EvidenceFiles from "../components/EvidenceFiles";
+import TechniquePicker from "../components/TechniquePicker";
 import { getLang, t } from "../i18n";
 
 type Form = Omit<InterviewSave, "expected_version">;
@@ -542,7 +544,6 @@ function StepContext({
 /* ------------------------------------------------------------------ evidence (#34) */
 
 const EVIDENCE_ACCEPT = ".pdf,.png,.jpg,.jpeg,.vsd,.vsdx,.dia,.excalidraw,.tm7";
-const EVIDENCE_MAX = 20 * 1024 * 1024;
 
 
 const KIND_LABEL: Record<InterviewAttachment["kind"], string> = {
@@ -561,166 +562,21 @@ function Evidence({
   editable: boolean;
   onChange: (list: InterviewAttachment[]) => void;
 }) {
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [viewing, setViewing] = useState<InterviewAttachment | null>(null);
-  const [dragging, setDragging] = useState(false);
-  const list = iv.attachments ?? [];
-
-  // #55: files can also be dropped on the evidence card
-  const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes("Files");
-  const dropProps = editable
-    ? {
-        onDragEnter: (e: React.DragEvent) => {
-          if (!hasFiles(e)) return;
-          e.preventDefault();
-          setDragging(true);
-        },
-        onDragOver: (e: React.DragEvent) => {
-          if (!hasFiles(e)) return;
-          e.preventDefault();
-          e.dataTransfer.dropEffect = busy ? "none" : "copy";
-          setDragging(true);
-        },
-        onDragLeave: (e: React.DragEvent) => {
-          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
-        },
-        onDrop: (e: React.DragEvent) => {
-          if (!hasFiles(e)) return;
-          e.preventDefault();
-          setDragging(false);
-          if (!busy) void upload(e.dataTransfer.files);
-        },
-      }
-    : {};
-
-  async function upload(files: FileList | null) {
-    if (!files?.length) return;
-    setError(null);
-    setBusy(true);
-    let current = list;
-    const failed: string[] = [];
-    for (const f of Array.from(files)) {
-      if (f.size > EVIDENCE_MAX) {
-        failed.push(t("{file}: the file is larger than 20 MB", { file: f.name }));
-        continue;
-      }
-      try {
-        current = [...current, await api.uploadAttachment(iv.id, f)];
-        onChange(current);
-      } catch (e) {
-        failed.push(`${f.name}: ${(e as Error).message}`);
-      }
-    }
-    setBusy(false);
-    if (failed.length) setError(failed.join(" · "));
-  }
-
-  async function remove(a: InterviewAttachment) {
-    const ok = await confirmDialog(t("Remove {file} from the interview?", { file: a.filename }), {
-      danger: true,
-      confirmLabel: t("Remove"),
-    });
-    if (!ok) return;
-    try {
-      await api.deleteAttachment(a.id);
-      onChange(list.filter((x) => x.id !== a.id));
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-
   return (
-    <section className={"card stack-sm" + (dragging ? " evidence-dragging" : "")} aria-labelledby="evh" {...dropProps}>
-      <div className="section-head">
-        <h2 id="evh" className="h-sm">
-          {t("Evidence")} <span className="count">{list.length}</span>
-        </h2>
-        {editable && (
-          <label className={"btn btn-sm" + (busy ? " disabled" : "")}>
-            {busy ? t("Uploading…") : t("+ Add files")}
-            <input
-              type="file"
-              multiple
-              accept={EVIDENCE_ACCEPT}
-              disabled={busy}
-              className="sr-only"
-              onChange={(e) => {
-                void upload(e.target.files);
-                e.target.value = "";
-              }}
-            />
-          </label>
-        )}
-      </div>
-      <p className="muted small" style={{ margin: 0 }}>
-        {t("PDF, images (JPG, PNG), diagrams (Visio, Dia, Excalidraw) and Threat Modeling Tool files (.tm7), up to 20 MB each. PDFs and images can be viewed here.")}
-      </p>
-      {editable && (
-        <div className={"evidence-drop" + (dragging ? " is-over" : "")} aria-hidden="true">
-          {busy ? t("Uploading…") : dragging ? t("Drop to upload") : t("Drag and drop files here, or use + Add files")}
-        </div>
-      )}
-      <ErrorNote error={error} />
-      {list.length > 0 ? (
-        <ul className="plain-list evidence-list">
-          {list.map((a) => (
-            <li key={a.id}>
-              {a.viewable ? (
-                <button type="button" className="link-btn evidence-name" onClick={() => setViewing(a)}>
-                  {a.filename}
-                </button>
-              ) : (
-                <a className="evidence-name" href={api.attachmentUrl(a.id, true)} download>
-                  {a.filename}
-                </a>
-              )}
-              <span className="chip chip-neutral">{KIND_LABEL[a.kind]}</span>
-              <span className="small muted">
-                {fmtSize(a.size)} · {t("added {time} by {user}", { time: fmtTime(a.uploaded_at), user: a.uploaded_by })}
-              </span>
-              <span className="grow" />
-              {a.viewable && (
-                <button type="button" className="btn btn-sm" onClick={() => setViewing(a)}>
-                  {t("View")}
-                </button>
-              )}
-              <a className="btn btn-sm" href={api.attachmentUrl(a.id, true)} download>
-                {t("Download")}
-              </a>
-              {editable && (
-                <button type="button" className="btn btn-sm" onClick={() => void remove(a)}>
-                  {t("Remove")}
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="muted" style={{ margin: 0 }}>
-          {t("No evidence files.")}
-        </p>
-      )}
-      {viewing && (
-        <Modal title={viewing.filename} open onClose={() => setViewing(null)} wide>
-          <div className="stack-sm">
-            {viewing.kind === "image" ? (
-              <img className="evidence-image" src={api.attachmentUrl(viewing.id)} alt={viewing.filename} />
-            ) : (
-              <iframe className="evidence-frame" src={api.attachmentUrl(viewing.id)} title={viewing.filename} />
-            )}
-            <div className="row-actions">
-              <a className="btn" href={api.attachmentUrl(viewing.id)} target="_blank" rel="noreferrer">
-                {t("Open in new tab")}
-              </a>
-              <a className="btn" href={api.attachmentUrl(viewing.id, true)} download>
-                {t("Download")}
-              </a>
-            </div>
-          </div>
-        </Modal>
-      )}
-    </section>
+    <EvidenceFiles
+      title={t("Evidence")}
+      headingId="evh"
+      files={iv.attachments ?? []}
+      editable={editable}
+      accept={EVIDENCE_ACCEPT}
+      hint={t("PDF, images (JPG, PNG), diagrams (Visio, Dia, Excalidraw) and Threat Modeling Tool files (.tm7), up to 20 MB each. PDFs and images can be viewed here.")}
+      upload={(f) => api.uploadAttachment(iv.id, f)}
+      remove={(a) => api.deleteAttachment(a.id)}
+      url={(a, download) => api.attachmentUrl(a.id, download)}
+      onChange={onChange}
+      label={(a) => <span className="chip chip-neutral">{KIND_LABEL[a.kind]}</span>}
+      removeQuestion={(a) => t("Remove {file} from the interview?", { file: a.filename })}
+    />
   );
 }
 
@@ -1124,94 +980,6 @@ function CustomThreats({
           </div>
         );
       })}
-    </div>
-  );
-}
-
-function TechniquePicker({
-  value,
-  names,
-  techniques,
-  disabled,
-  invalid,
-  onChange,
-}: {
-  value: string[];
-  names: Map<string, string>;
-  techniques: { id: string; name: string }[];
-  disabled?: boolean;
-  invalid?: boolean;
-  onChange: (v: string[]) => void;
-}) {
-  const [draft, setDraft] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const listId = "attack-techniques";
-  function addDraft(raw = draft) {
-    // accepts "T1110.003" or the datalist text "T1110.003 Password Spraying"
-    const id = raw.trim().split(/\s+/)[0]?.toUpperCase() ?? "";
-    if (!id) return;
-    if (names.size && !names.has(id)) {
-      setError(t("Unknown ATT&CK technique {id}", { id }));
-      return;
-    }
-    setError(null);
-    if (!value.includes(id)) onChange([...value, id]);
-    setDraft("");
-  }
-  return (
-    <div className="field grow-2">
-      <span>{t("MITRE ATT&CK techniques")} *</span>
-      {value.length > 0 && (
-        <span className="chips">
-          {value.map((id) => (
-            <span key={id} className="chip chip-info" title={names.get(id) ?? id}>
-              <span className="mono">{id}</span> {names.get(id) ?? ""}
-              {!disabled && (
-                <button
-                  type="button"
-                  className="chip-x"
-                  aria-label={t("Remove {code}", { code: id })}
-                  onClick={() => onChange(value.filter((x) => x !== id))}
-                >
-                  ×
-                </button>
-              )}
-            </span>
-          ))}
-        </span>
-      )}
-      {!disabled && (
-        <div className="ttp-add">
-          <input
-            className={"input" + (invalid || error ? " is-invalid" : "")}
-            list={listId}
-            value={draft}
-            placeholder={t("Search, e.g. T1110 or Brute Force")}
-            onChange={(e) => {
-              const v = e.target.value;
-              // picking an entry of the list adds it right away
-              const id = v.trim().split(/\s+/)[0]?.toUpperCase() ?? "";
-              if (v.includes(" ") && names.has(id) && v.trim() === `${id} ${names.get(id)}`) addDraft(v);
-              else setDraft(v);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                addDraft();
-              }
-            }}
-          />
-          <button type="button" className="btn btn-sm" disabled={!draft.trim()} onClick={() => addDraft()}>
-            {t("Add")}
-          </button>
-          <datalist id={listId}>
-            {techniques.map((x) => (
-              <option key={x.id} value={`${x.id} ${x.name}`} />
-            ))}
-          </datalist>
-        </div>
-      )}
-      {error && <span className="field-error">{error}</span>}
     </div>
   );
 }

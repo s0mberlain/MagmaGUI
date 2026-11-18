@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 import { api, type DriverCoverageReport, type GapRow, type Gaps, type L1 } from "../api";
 import { CoverageCell } from "../components/Drivers";
 import { ErrorNote, StatusPill, useLoad } from "../components/ui";
-import { num, pct } from "../lib/format";
+import { fmtDate, num, pct } from "../lib/format";
+import { OutcomePill } from "../lib/purple";
 import { t } from "../i18n";
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -229,6 +230,7 @@ export default function Priorities() {
                 <th className="num">{t("Gap")}</th>
                 <th className="num">{t("Potential")}</th>
                 <th>{t("Drivers")}</th>
+                <th>{t("Last test")}</th>
                 <th className="num">{t("Priority")}</th>
               </tr>
             </thead>
@@ -275,6 +277,18 @@ export default function Priorities() {
                       </span>
                     ) : (
                       <span className="muted small">{t("none")}</span>
+                    )}
+                  </td>
+                  <td>
+                    {r.last_test_outcome && r.last_test_id ? (
+                      <Link
+                        to={`/purple/test-cases/${r.last_test_id}`}
+                        title={t("Purple team test on {date}", { date: fmtDate(r.last_test_at) })}
+                      >
+                        <OutcomePill outcome={r.last_test_outcome} />
+                      </Link>
+                    ) : (
+                      <span className="muted small">–</span>
                     )}
                   </td>
                   <td className="num strong">{num(r.priority)}</td>

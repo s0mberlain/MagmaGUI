@@ -14,18 +14,14 @@ downloading a file is written to the audit log (issue #46).
 
 import hashlib
 import json
-import re
-import unicodedata
 from datetime import datetime
 from typing import Literal
-from urllib.parse import quote
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel
-from sqlalchemy import func, select
 
-from app import audit
+from app import audit, uploads
 from app.api.deps import DB, SettingsDep
 from app.models import Interview, InterviewAttachment, InterviewStatus
 from app.security import Admin, Editor, Reader
@@ -68,8 +64,7 @@ class AttachmentOut(BaseModel):
     signoff: bool = False
 
 
-def _ext(name: str) -> str:
-    return name.rsplit(".", 1)[-1].lower() if "." in name else ""
+_ext = uploads.ext
 
 
 def _kind(ext: str) -> str:
@@ -99,14 +94,7 @@ def out(a: InterviewAttachment) -> AttachmentOut:
     )
 
 
-def _text_start(data: bytes) -> str:
-    """The start of a text file without byte order mark and leading white space."""
-    head = data[:4096]
-    if head.startswith((b"\xff\xfe", b"\xfe\xff")):  # UTF-16 (Threat Modeling Tool)
-        text = head.decode("utf-16", "ignore")
-    else:
-        text = head.decode("utf-8-sig", "ignore")
-    return text.lstrip()
+_text_start = uploads.text_start
 
 
 def _content_ok(ext: str, data: bytes) -> bool:
@@ -126,14 +114,7 @@ def _content_ok(ext: str, data: bytes) -> bool:
     return False  # pragma: no cover
 
 
-def _safe_name(name: str) -> str:
-    """The file name as shown and offered for download: no path, no control characters."""
-    name = unicodedata.normalize("NFC", name).replace("\\", "/").rsplit("/", 1)[-1]
-    name = "".join(ch for ch in name if unicodedata.category(ch)[0] != "C").strip(" .")
-    if len(name) > 200:
-        stem, _, ext = name.rpartition(".")
-        name = stem[: 200 - len(ext) - 1] + "." + ext
-    return name
+_safe_name = uploads.safe_name
 
 
 def _interview(db, interview_id: int) -> Interview:
@@ -228,9 +209,6 @@ async def upload_attachment(
     return out(a)
 
 
-_UNSAFE = re.compile(r"[^A-Za-z0-9._ -]")
-
-
 @router.get("/interview-attachments/{attachment_id}/content")
 def attachment_content(
     attachment_id: int, user: Reader, db: DB, download: bool = False
@@ -246,22 +224,11 @@ def attachment_content(
         _key(a.interview),
         {"file": a.filename},
     )
-    ascii_name = _UNSAFE.sub("_", a.filename) or "evidence"
-    disposition = (
-        f'{"inline" if inline else "attachment"}; filename="{ascii_name}"; '
-        f"filename*=UTF-8''{quote(a.filename)}"
-    )
     return Response(
         a.data,
         media_type=a.content_type if viewable else "application/octet-stream",
-        headers={
-            "Content-Disposition": disposition,
-            # shown inside the interview page (same origin) but never able to run anything
-            "Content-Security-Policy": "default-src 'none'; img-src 'self'; "
-            "style-src 'unsafe-inline'; object-src 'self'; frame-ancestors 'self'",
-            "X-Frame-Options": "SAMEORIGIN",
-            "Cache-Control": "private, no-store",
-        },
+        headers={"Content-Disposition": uploads.content_disposition(a.filename, inline)}
+        | uploads.SAFE_HEADERS,
     )
 
 
@@ -281,8 +248,7 @@ def delete_attachment(attachment_id: int, user: Editor, db: DB) -> None:
     db.commit()
 
 
-def used_bytes(db) -> int:
-    return int(db.scalar(select(func.coalesce(func.sum(InterviewAttachment.size), 0))) or 0)
+used_bytes = uploads.used_bytes
 
 
 class StorageOut(BaseModel):
@@ -293,9 +259,9 @@ class StorageOut(BaseModel):
 
 @router.get("/evidence/storage", response_model=StorageOut)
 def evidence_storage(_: Admin, db: DB, settings: SettingsDep) -> StorageOut:
-    """Space used by interview evidence files (#47), shown on the Settings page."""
+    """Space used by all evidence files (#47), shown on the Settings page."""
     return StorageOut(
-        files=int(db.scalar(select(func.count(InterviewAttachment.id))) or 0),
+        files=uploads.file_count(db),
         used_bytes=used_bytes(db),
         limit_bytes=settings.evidence_max_total_mb * 1024 * 1024,
     )

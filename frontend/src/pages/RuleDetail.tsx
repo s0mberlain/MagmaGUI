@@ -8,6 +8,7 @@ import LifecyclePanel from "../components/LifecyclePanel";
 import { DriverBlock } from "../components/Drivers";
 import { MarkdownField } from "../components/Markdown";
 import OutputPanel from "../components/OutputPanel";
+import PurpleTestsPanel from "../components/PurpleTestsPanel";
 import {
   Chips,
   confirmDialog,
@@ -129,6 +130,17 @@ export default function RuleDetail() {
   const assessed = e !== null && i !== null && c !== null;
   const weight = assessed ? e * i * c : null;
   const potential = assessed ? e - weight! : null;
+  // Gap and priority follow the edited implementation, like weight and potential (same
+  // formula as app/growth.py). An edited risk level or target can depend on the L2 and on
+  // linked systems, so then the saved values are shown until the rule is saved.
+  const stored = toForm(r);
+  const targetEdited = form.risk !== stored.risk || form.target !== stored.target;
+  const target = r.effective_target;
+  const gap = targetEdited || target === null ? r.implementation_gap : i === null ? target : Math.max(0, target - i);
+  const priority =
+    targetEdited || r.effective_risk === null || gap === null
+      ? r.priority
+      : Math.round(gap * (r.effective_risk / 5) * r.driver_boost * 10000) / 10000;
   const dirty = isDirty;
   const discard = () => {
     setForm(toForm(r));
@@ -356,19 +368,22 @@ export default function RuleDetail() {
               {r.effective_target !== null && (
                 <p className="small target-line">
                   {t("Target implementation")} {pct(r.effective_target)}
-                  {r.implementation_gap ? (
+                  {gap ? (
                     <span className="text-err">
                       {" "}
-                      · {pct(r.implementation_gap)} {t("to go")}
+                      · {pct(gap)} {t("to go")}
                     </span>
                   ) : (
                     <span className="text-ok"> {t("· reached")}</span>
                   )}
-                  {r.priority !== null && (
+                  {priority !== null && (
                     <span className="muted">
                       {" "}
-                      {t("· priority")} {num(r.priority)}
+                      {t("· priority")} {num(priority)}
                     </span>
+                  )}
+                  {targetEdited && (
+                    <span className="muted"> {t("· updated when saved")}</span>
                   )}
                 </p>
               )}
@@ -425,6 +440,8 @@ export default function RuleDetail() {
                 ))}
               </ul>
             </section>
+
+            <PurpleTestsPanel code={code} />
 
             <LifecyclePanel level="l3" code={code} onChanged={() => void rule.reload()} />
             {editor && (

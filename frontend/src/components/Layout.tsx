@@ -96,7 +96,13 @@ export default function Layout() {
                     key={item.path}
                     to={item.path}
                     end={item.path === "/"}
-                    className={({ isActive }) => "nav-link" + (isActive ? " active" : "")}
+                    className={({ isActive }) =>
+                      "nav-link" +
+                      // /purple/trends and /purple/library have their own entries
+                      (isActive && !(item.path === "/purple" && /^\/purple\/(trends|library)/.test(location.pathname))
+                        ? " active"
+                        : "")
+                    }
                   >
                     {item.label}
                   </NavLink>

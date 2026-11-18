@@ -1,5 +1,6 @@
 import { t } from "../i18n";
 import { useId, useState } from "react";
+import { parseTime } from "../lib/format";
 
 export interface TrendDatum {
   label: string;
@@ -14,7 +15,7 @@ const PAD = { l: 34, r: 10, t: 10, b: 20 };
 
 const SHORT = new Intl.DateTimeFormat(undefined, { month: "short", year: "2-digit" });
 function shortDate(iso: string) {
-  const d = new Date(iso);
+  const d = parseTime(iso);
   return Number.isNaN(d.getTime()) ? iso : SHORT.format(d);
 }
 

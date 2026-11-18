@@ -21,6 +21,11 @@ import Settings from "./pages/Settings";
 import Systems from "./pages/Systems";
 import SystemDetail from "./pages/SystemDetail";
 import Interview from "./pages/Interview";
+import Purple from "./pages/Purple";
+import PurpleAssessment from "./pages/PurpleAssessment";
+import PurpleLibrary from "./pages/PurpleLibrary";
+import PurpleTestCase from "./pages/PurpleTestCase";
+import PurpleTrends from "./pages/PurpleTrends";
 import StrideMappingPage from "./pages/StrideMappingPage";
 import Verification from "./pages/Verification";
 import { NAV_ITEMS } from "./nav";
@@ -48,6 +53,11 @@ export default function App() {
           <Route path="systems" element={<Systems />} />
           <Route path="systems/:id" element={<SystemDetail />} />
           <Route path="interviews/:id" element={<Interview />} />
+          <Route path="purple" element={<Purple />} />
+          <Route path="purple/assessments/:id" element={<PurpleAssessment />} />
+          <Route path="purple/test-cases/:id" element={<PurpleTestCase />} />
+          <Route path="purple/library" element={<PurpleLibrary />} />
+          <Route path="purple/trends" element={<PurpleTrends />} />
           <Route path="stride-mapping" element={<StrideMappingPage />} />
           <Route path="references" element={<References />} />
           <Route path="import-export" element={<ImportExport />} />

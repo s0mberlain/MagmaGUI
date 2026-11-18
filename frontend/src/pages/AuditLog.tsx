@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type AuditEntry } from "../api";
 import { t } from "../i18n";
+import { parseTime } from "../lib/format";
 
 function summarize(changes: Record<string, unknown>): string {
   return Object.entries(changes)
@@ -45,7 +46,7 @@ export default function AuditLog() {
           <tbody>
             {entries.map((e) => (
               <tr key={e.id}>
-                <td style={{ whiteSpace: "nowrap" }}>{new Date(e.at).toLocaleString()}</td>
+                <td style={{ whiteSpace: "nowrap" }}>{parseTime(e.at).toLocaleString()}</td>
                 <td>
                   {e.username}
                   {e.ip && <div className="small muted mono">{e.ip}</div>}

@@ -94,6 +94,22 @@ const SERVER_MESSAGES = [
   st("Password must be at least {n} characters"),
   st("The file content does not match a .{ext} file"),
   st("The evidence storage is full ({mb} MB); ask an admin to remove old files or raise EVIDENCE_MAX_TOTAL_MB"),
+  // purple teaming (app/api/purple.py, purple_library.py)
+  st("Assessment not found"),
+  st("Campaign not found"),
+  st("Test case not found"),
+  st("Test procedure not found"),
+  st("Campaign template not found"),
+  st("This was changed by {user}; reload to see the changes"),
+  st("Unknown L3 rule {code}"),
+  st("Enter the time the attack started"),
+  st("A test case can only move within its assessment"),
+  st("A test case can have at most {n} files"),
+  st("The file is larger than 20 MB"),
+  st("The file is larger than 10 MB"),
+  st("The file is empty"),
+  st("{name} exists already"),
+  st("Atomic test not found"),
 ];
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

@@ -426,6 +426,9 @@ class L3Out(BaseModel):
     target_source: str | None = None
     implementation_gap: float | None = None
     priority: float | None = None
+    # factor from the drivers linked to the L2 (app/drivers.py); lets the UI preview the
+    # priority while metrics are being edited
+    driver_boost: float = 1.0
     # calculated (app/scoring.py)
     weight: float | None = None
     potential: float | None = None

@@ -1317,7 +1317,7 @@ const cfgUrl = (level: Level, code: string) => `/api/${level}/${enc(code)}/confi
 /* ------------------------------------------------------------------ purple teaming */
 
 export type PtOutcome = "blocked" | "alerted" | "logged_central" | "logged_local" | "none" | "not_applicable" | "tbd";
-export type PtRedStatus = "planned" | "in_progress" | "executed" | "not_executed";
+export type PtRedStatus = "planned" | "in_progress" | "paused" | "executed" | "not_executed";
 export type PtBlueStatus = "waiting" | "in_review" | "done";
 export type PtAssessmentStatus = "planned" | "in_progress" | "completed";
 export type PtTrend = "improved" | "regressed" | "unchanged" | "new" | "untested";
@@ -1336,6 +1336,7 @@ export interface PtMetrics {
 export interface PtAssessmentRow {
   id: number;
   name: string;
+  kind: "assessment" | "quick";
   environment: string;
   status: PtAssessmentStatus;
   start_date: string | null;
@@ -1357,6 +1358,7 @@ export interface PtCaseRow {
   red_assignee: string;
   blue_assignee: string;
   attack_start: string | null;
+  attack_stop?: string | null;
   outcome: PtOutcome;
   overridden: boolean;
   detections: number;
@@ -1462,6 +1464,7 @@ export interface PtTestCase extends PtCaseRow, PtPlan {
   assessment_id: number;
   assessment_name: string;
   assessment_status: PtAssessmentStatus;
+  assessment_kind: "assessment" | "quick";
   campaign_id: number;
   campaign_name: string;
   campaigns: { id: number; name: string }[];
@@ -1555,6 +1558,39 @@ export interface PtTrends {
     latest: PtOutcome;
   }[];
   counts: Record<PtTrend, number>;
+}
+
+/** A quick test: one detection or script tested, result and finding in one step. */
+export interface PtQuickTestInput {
+  name: string;
+  template_id: number | null;
+  techniques: string[];
+  executor: string;
+  command: string;
+  targets: string[];
+  executed_at: string | null;
+  red_notes: string;
+  detections: PtDetection[];
+  blue_notes: string;
+  outcome_override: PtOutcome | null;
+  done: boolean;
+  record_verification: boolean;
+}
+
+export interface PtQuickTestRow extends PtCaseRow {
+  created_at: string;
+  executor: string;
+  command: string;
+  targets: string[];
+  blue_notes: string;
+  template_id: number | null;
+  defenses: { kind: "rule" | "tool"; name: string; outcome: PtOutcome }[];
+}
+
+export interface PtQuickTests {
+  assessment_id: number | null;
+  metrics: PtMetrics;
+  tests: PtQuickTestRow[];
 }
 
 export interface PtTemplateInput {
@@ -1667,12 +1703,29 @@ export const purple = {
     request<PtTestCase>("POST", `/api/purple/test-cases/${id}/start`, { expected_version }),
   stop: (id: number, expected_version: number) =>
     request<PtTestCase>("POST", `/api/purple/test-cases/${id}/stop`, { expected_version }),
+  pause: (id: number, expected_version: number) =>
+    request<PtTestCase>("POST", `/api/purple/test-cases/${id}/pause`, { expected_version }),
+  resume: (id: number, expected_version: number) =>
+    request<PtTestCase>("POST", `/api/purple/test-cases/${id}/resume`, { expected_version }),
+  abandon: (id: number, expected_version: number) =>
+    request<PtTestCase>("POST", `/api/purple/test-cases/${id}/abandon`, { expected_version }),
+  setAssignee: (id: number, side: "red" | "blue", assignee: string) =>
+    request<PtTestCase>("PUT", `/api/purple/test-cases/${id}/assignee`, { side, assignee }),
+  people: () => request<{ username: string; display_name: string; role: string }[]>("GET", "/api/purple/people"),
   suggestedRules: (id: number) => request<PtSuggestedRule[]>("GET", `/api/purple/test-cases/${id}/suggested-rules`),
   uploadAttachment: (id: number, side: "red" | "blue", file: File) =>
     upload<PtAttachment>(`/api/purple/test-cases/${id}/attachments?side=${side}`, file),
   deleteAttachment: (id: number) => request<void>("DELETE", `/api/purple/attachments/${id}`),
   attachmentUrl: (id: number, download = false) => `/api/purple/attachments/${id}/content${download ? "?download=1" : ""}`,
   queue: () => request<PtQueueRow[]>("GET", "/api/purple/queue"),
+  quickTests: () => request<PtQuickTests>("GET", "/api/purple/quick-tests"),
+  createQuickTest: (body: PtQuickTestInput) =>
+    request<PtTestCase & { verified: { rule: string; result: string }[] }>("POST", "/api/purple/quick-tests", body),
+  suggestedRulesFor: (techniques: string[]) =>
+    request<PtSuggestedRule[]>(
+      "GET",
+      `/api/purple/suggested-rules${techniques.length ? "?" + techniques.map((x) => "technique=" + encodeURIComponent(x)).join("&") : ""}`,
+    ),
   ruleTests: (code: string) => request<PtRuleTest[]>("GET", `/api/purple/rules/${encodeURIComponent(code)}/tests`),
   trends: () => request<PtTrends>("GET", "/api/purple/trends"),
   reportUrl: (id: number, lang: Lang) => `/api/purple/assessments/${id}/report.pdf?lang=${lang}`,

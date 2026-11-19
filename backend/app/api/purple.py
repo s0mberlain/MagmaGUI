@@ -38,6 +38,7 @@ from app.models import (
     PtRedStatus,
     PtTemplate,
     PtTestCase,
+    Role,
     User,
     VerificationResult,
 )
@@ -294,11 +295,15 @@ def case_row(t: PtTestCase) -> dict:
         "red_assignee": t.red_assignee,
         "blue_assignee": t.blue_assignee,
         "attack_start": t.attack_start,
+        "attack_stop": t.attack_stop,
         "outcome": outcome_of(t),
         "overridden": t.outcome_override is not None,
         "detections": len(t.detections),
         "has_findings": bool((t.blue_notes or "").strip()),
     }
+
+
+QUICK = "quick"  # PtAssessment.kind of the quick tests container (app/api/purple_quick.py)
 
 
 def _assessment_query():
@@ -314,6 +319,7 @@ def _row(a: PtAssessment) -> dict:
     return {
         "id": a.id,
         "name": a.name,
+        "kind": a.kind,
         "environment": a.environment,
         "status": a.status.value,
         "start_date": a.start_date,
@@ -535,6 +541,7 @@ def case_out(db: Session, t: PtTestCase) -> dict:
         "assessment_id": a.id,
         "assessment_name": a.name,
         "assessment_status": a.status.value,
+        "assessment_kind": a.kind,
         "campaign_id": t.campaign_id,
         "campaign_name": t.campaign.name,
         "campaigns": [{"id": c.id, "name": c.name} for c in a.campaigns],
@@ -576,7 +583,8 @@ def case_out(db: Session, t: PtTestCase) -> dict:
 
 @router.get("/purple/assessments")
 def list_assessments(_: Reader, db: DB) -> list[dict]:
-    rows = [_row(a) for a in db.scalars(_assessment_query())]
+    q = _assessment_query().where(PtAssessment.kind != QUICK)
+    rows = [_row(a) for a in db.scalars(q)]
     rows.sort(key=lambda r: (r["start_date"] or date.max, r["id"]), reverse=True)
     return rows
 
@@ -645,6 +653,8 @@ def update_assessment(assessment_id: int, body: AssessmentIn, user: Editor, db: 
 @router.delete("/purple/assessments/{assessment_id}", status_code=204)
 def delete_assessment(assessment_id: int, user: Editor, db: DB) -> None:
     a = _assessment(db, assessment_id)
+    if a.kind == QUICK:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Delete single quick tests instead")
     audit.record(db, user, "delete", "pt_assessment", a.name, {"test_cases": len(_all_cases(a))})
     db.delete(a)
     db.commit()
@@ -655,6 +665,8 @@ def rerun_assessment(assessment_id: int, body: RerunIn, user: Editor, db: DB) ->
     """A new assessment with the same campaigns and test procedures and empty results; the
     copies keep the lineage, so the trends compare the runs."""
     old = _assessment(db, assessment_id)
+    if old.kind == QUICK:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Quick tests cannot be re-run as a whole")
     a = PtAssessment(
         name=body.name or f"{old.name} (re-run)",
         environment=old.environment,
@@ -869,6 +881,7 @@ def _red_saved(db: Session, t: PtTestCase, user: User) -> None:
     a = t.campaign.assessment
     if a.status == PtAssessmentStatus.planned and t.red_status in (
         PtRedStatus.in_progress,
+        PtRedStatus.paused,
         PtRedStatus.executed,
     ):
         a.status = PtAssessmentStatus.in_progress
@@ -931,6 +944,105 @@ def stop_attack(test_case_id: int, body: VersionIn, user: Editor, db: DB) -> dic
     audit.record(db, user, "stop", "pt_test_case", _case_key(t), {"attack_stop": now})
     db.commit()
     return case_out(db, t)
+
+
+@router.post("/purple/test-cases/{test_case_id}/pause")
+def pause_attack(test_case_id: int, body: VersionIn, user: Editor, db: DB) -> dict:
+    """Pause a running attack (VECTR "Paused"); the start time stays."""
+    t = _case(db, test_case_id)
+    if body.expected_version != t.red_version:
+        raise _stale(t.red_updated_by)
+    if t.red_status != PtRedStatus.in_progress:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Only a running attack can be paused")
+    t.red_status = PtRedStatus.paused
+    _red_saved(db, t, user)
+    audit.record(
+        db, user, "pause", "pt_test_case", _case_key(t), {"red_status": ["in_progress", "paused"]}
+    )
+    db.commit()
+    return case_out(db, t)
+
+
+@router.post("/purple/test-cases/{test_case_id}/resume")
+def resume_attack(test_case_id: int, body: VersionIn, user: Editor, db: DB) -> dict:
+    """Continue a paused attack; the original start time stays."""
+    t = _case(db, test_case_id)
+    if body.expected_version != t.red_version:
+        raise _stale(t.red_updated_by)
+    if t.red_status != PtRedStatus.paused:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Only a paused attack can be resumed")
+    t.red_status = PtRedStatus.in_progress
+    if t.attack_start is None:
+        t.attack_start = _now()
+    if not t.red_assignee:
+        t.red_assignee = user.username
+    _red_saved(db, t, user)
+    audit.record(
+        db, user, "resume", "pt_test_case", _case_key(t), {"red_status": ["paused", "in_progress"]}
+    )
+    db.commit()
+    return case_out(db, t)
+
+
+@router.post("/purple/test-cases/{test_case_id}/abandon")
+def abandon_attack(test_case_id: int, body: VersionIn, user: Editor, db: DB) -> dict:
+    """The test could not be run (VECTR "Abandon"); it counts as not executed."""
+    t = _case(db, test_case_id)
+    if body.expected_version != t.red_version:
+        raise _stale(t.red_updated_by)
+    if t.red_status == PtRedStatus.executed:
+        raise HTTPException(status.HTTP_409_CONFLICT, "A completed test cannot be abandoned")
+    old = t.red_status.value
+    t.red_status = PtRedStatus.not_executed
+    if t.attack_start is not None and t.attack_stop is None:
+        t.attack_stop = _now()
+    _red_saved(db, t, user)
+    audit.record(
+        db, user, "abandon", "pt_test_case", _case_key(t), {"red_status": [old, "not_executed"]}
+    )
+    db.commit()
+    return case_out(db, t)
+
+
+class AssigneeIn(BaseModel):
+    side: Literal["red", "blue"]
+    assignee: Username = ""
+
+
+@router.put("/purple/test-cases/{test_case_id}/assignee")
+def set_assignee(test_case_id: int, body: AssigneeIn, user: Editor, db: DB) -> dict:
+    """Who works on the red or blue side of a test (from the campaign table). Only this field
+    changes, so no version is needed; the side's version goes up so open forms reload it."""
+    t = _case(db, test_case_id)
+    field = f"{body.side}_assignee"
+    old = getattr(t, field)
+    if old != body.assignee:
+        setattr(t, field, body.assignee)
+        if body.side == "red":
+            t.red_version += 1
+            t.red_updated_by = user.username
+        else:
+            t.blue_version += 1
+            t.blue_updated_by = user.username
+        audit.record(
+            db, user, "assign", "pt_test_case", _case_key(t), {field: [old, body.assignee]}
+        )
+        db.commit()
+    return case_out(db, t)
+
+
+@router.get("/purple/people")
+def people(_: Reader, db: DB) -> list[dict]:
+    """Active accounts that can work on tests (admins and analysts), for the assignee pickers."""
+    q = (
+        select(User)
+        .where(User.active, User.role.in_([Role.admin, Role.analyst]))
+        .order_by(User.username)
+    )
+    return [
+        {"username": u.username, "display_name": u.display_name, "role": u.role.value}
+        for u in db.scalars(q)
+    ]
 
 
 def _rule(db: Session, code: str) -> L3UseCase | None:
@@ -1079,7 +1191,11 @@ def queue(user: Reader, db: DB) -> list[dict]:
     out = []
     for t in db.scalars(q):
         side = None
-        red_open = t.red_status in (PtRedStatus.planned, PtRedStatus.in_progress)
+        red_open = t.red_status in (
+            PtRedStatus.planned,
+            PtRedStatus.in_progress,
+            PtRedStatus.paused,
+        )
         if t.red_assignee == me and red_open:
             side = "red"
         elif t.blue_status != PtBlueStatus.done and t.red_status == PtRedStatus.executed:
@@ -1160,7 +1276,8 @@ def rule_tests(code: str, _: Reader, db: DB) -> list[dict]:
 def trends(_: Reader, db: DB) -> dict:
     """Defense success per assessment over time and the resilience of each procedure that ran
     more than once (VECTR "resilience trending")."""
-    assessments = list(db.scalars(_assessment_query()))
+    # quick tests are single checks, not exercises: they stay out of the trends
+    assessments = list(db.scalars(_assessment_query().where(PtAssessment.kind != QUICK)))
     assessments.sort(key=lambda a: (a.start_date or a.created_at.date(), a.id))
     series = []
     lineages: dict[str, list[tuple[PtAssessment, PtTestCase]]] = {}

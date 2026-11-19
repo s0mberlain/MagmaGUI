@@ -81,6 +81,7 @@ TEXTS: dict[str, dict[str, str]] = {
     "planned_r": {"en": "Planned", "de": "Geplant", "nl": "Gepland"},
     "executed_r": {"en": "Executed", "de": "Ausgeführt", "nl": "Uitgevoerd"},
     "not_executed": {"en": "Not executed", "de": "Nicht ausgeführt", "nl": "Niet uitgevoerd"},
+    "paused": {"en": "Paused", "de": "Pausiert", "nl": "Gepauzeerd"},
     "blocked": {"en": "Blocked", "de": "Blockiert", "nl": "Geblokkeerd"},
     "alerted": {"en": "Alerted", "de": "Alarmiert", "nl": "Gealarmeerd"},
     "logged_central": {

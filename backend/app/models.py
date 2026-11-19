@@ -749,8 +749,12 @@ class PtAssessmentStatus(enum.StrEnum):
 
 
 class PtRedStatus(enum.StrEnum):
+    """Execution of a test, like VECTR's test case status: planned = Not performed,
+    in_progress = In progress, paused = Paused, executed = Completed, not_executed = Abandoned."""
+
     planned = "planned"
     in_progress = "in_progress"
+    paused = "paused"
     executed = "executed"
     not_executed = "not_executed"
 
@@ -839,6 +843,9 @@ class PtAssessment(Base):
     previous_id: Mapped[int | None] = mapped_column(
         ForeignKey("pt_assessments.id", ondelete="SET NULL")
     )
+    # "assessment", or "quick": the one hidden container of the quick tests
+    # (app/api/purple_quick.py), not listed with the assessments
+    kind: Mapped[str] = mapped_column(String(16), default="assessment", server_default="assessment")
     created_by: Mapped[str] = mapped_column(String(64))
     version: Mapped[int] = mapped_column(Integer, default=1)
     updated_by: Mapped[str] = mapped_column(String(64))

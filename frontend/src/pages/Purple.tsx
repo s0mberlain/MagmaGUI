@@ -6,6 +6,7 @@ import { ErrorNote, Modal, useLoad } from "../components/ui";
 import { fmtDate, pct } from "../lib/format";
 import { ASSESSMENT_STATUS_LABEL, BluePill, OutcomePill, RedPill } from "../lib/purple";
 import { t } from "../i18n";
+import { QuickTestDialog, QuickTests } from "./PurpleQuick";
 
 export const EMPTY_ASSESSMENT: PtAssessmentInput = {
   name: "",
@@ -188,9 +189,12 @@ export default function Purple() {
   const editor = can("admin", "analyst");
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const tab = params.get("tab") === "queue" ? "queue" : "assessments";
+  const tab = params.get("tab") === "queue" ? "queue" : params.get("tab") === "quick" ? "quick" : "assessments";
   const list = useLoad(() => purple.assessments());
   const [creating, setCreating] = useState(false);
+  const [quick, setQuick] = useState(false);
+  const [quickSaved, setQuickSaved] = useState<{ id: number; name: string; verified: { rule: string; result: string }[] } | null>(null);
+  const [quickReload, setQuickReload] = useState(0);
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
   const rows = (list.data ?? []).filter((a) => !q || a.name.toLowerCase().includes(q) || a.environment.toLowerCase().includes(q));
@@ -214,6 +218,11 @@ export default function Purple() {
             {t("Trends")}
           </Link>
           {editor && (
+            <button type="button" className="btn" onClick={() => setQuick(true)}>
+              {t("+ Quick test")}
+            </button>
+          )}
+          {editor && (
             <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
               {t("+ Assessment")}
             </button>
@@ -222,22 +231,35 @@ export default function Purple() {
       </header>
 
       <div className="tabs" role="tablist" aria-label={t("Purple teaming")}>
-        {(["assessments", "queue"] as const).map((k) => (
+        {(["assessments", "quick", "queue"] as const).map((k) => (
           <button
             key={k}
             type="button"
             role="tab"
             aria-selected={tab === k}
             className={"tab" + (tab === k ? " active" : "")}
-            onClick={() => setParams(k === "queue" ? { tab: "queue" } : {})}
+            onClick={() => setParams(k === "assessments" ? {} : { tab: k })}
           >
-            {k === "queue" ? t("My queue") : t("Assessments")}
+            {k === "queue" ? t("My queue") : k === "quick" ? t("Quick tests") : t("Assessments")}
           </button>
         ))}
       </div>
 
+      {quickSaved && (
+        <p className="form-success" role="status">
+          {t("Quick test saved:")} <Link to={`/purple/test-cases/${quickSaved.id}`}>{quickSaved.name}</Link>
+          {quickSaved.verified.length > 0 &&
+            " · " +
+              t("Recorded a verification for {rules}.", {
+                rules: quickSaved.verified.map((v) => `${v.rule} (${v.result === "ok" ? "OK" : t("issues")})`).join(", "),
+              })}
+        </p>
+      )}
+
       {tab === "queue" ? (
         <Queue />
+      ) : tab === "quick" ? (
+        <QuickTests editor={editor} onNew={() => setQuick(true)} reloadKey={quickReload} />
       ) : (
         <>
           <ErrorNote error={list.error} />
@@ -313,6 +335,22 @@ export default function Purple() {
             {t("Defense success: share of executed tests with a result that were blocked or alerted. Visibility: share that was at least logged.")}
           </p>
         </>
+      )}
+
+      {quick && (
+        <QuickTestDialog
+          onClose={() => setQuick(false)}
+          onSaved={(tc, openEvidence) => {
+            setQuick(false);
+            if (openEvidence) {
+              navigate(`/purple/test-cases/${tc.id}?tab=blue`);
+              return;
+            }
+            setQuickSaved({ id: tc.id, name: tc.name, verified: tc.verified ?? [] });
+            setQuickReload((n) => n + 1);
+            setParams({ tab: "quick" });
+          }}
+        />
       )}
 
       {creating && (

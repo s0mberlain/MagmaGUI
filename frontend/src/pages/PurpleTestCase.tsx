@@ -14,6 +14,7 @@ import {
 import { useAuth } from "../auth";
 import EvidenceFiles from "../components/EvidenceFiles";
 import { Markdown, MarkdownField } from "../components/Markdown";
+import { AssigneePicker, RunState } from "../components/RunStatus";
 import TechniquePicker from "../components/TechniquePicker";
 import { confirmDialog, ErrorNote, useLoad, useUnsavedGuard } from "../components/ui";
 import { fmtDate, fmtTime } from "../lib/format";
@@ -222,17 +223,35 @@ export default function PurpleTestCase() {
   });
   const saveRed = async () => apply(await run(() => purple.saveRed(tc.id, redBody(red)), t("Red team side saved")));
 
-  const startStop = async (what: "start" | "stop") => {
+  type RunAction = "start" | "stop" | "pause" | "resume" | "abandon";
+  const RUN_DONE: Record<RunAction, string> = {
+    start: t("Attack started"),
+    stop: t("Attack completed"),
+    pause: t("Attack paused"),
+    resume: t("Attack resumed"),
+    abandon: t("Test abandoned"),
+  };
+  const runAction = async (what: RunAction) => {
+    if (what === "start" && tc.red_status === "executed") {
+      const ok = await confirmDialog(t("Run this test again? The new start time replaces the recorded attack times."), {
+        confirmLabel: t("Run again"),
+      });
+      if (!ok) return;
+    }
+    if (what === "abandon") {
+      const ok = await confirmDialog(t("Abandon this test? It counts as not executed."), { confirmLabel: t("Abandon") });
+      if (!ok) return;
+    }
     if (redDirty) {
       const ok = await confirmDialog(t("Save the red team changes first?"), { confirmLabel: t("Save and continue") });
       if (!ok) return;
       const next = await run(() => purple.saveRed(tc.id, redBody(red)), t("Red team side saved"));
       if (!next) return;
       apply(next);
-      apply(await run(() => purple[what](tc.id, next.red_version), what === "start" ? t("Attack started") : t("Attack stopped")));
+      apply(await run(() => purple[what](tc.id, next.red_version), RUN_DONE[what]));
       return;
     }
-    apply(await run(() => purple[what](tc.id, tc.red_version), what === "start" ? t("Attack started") : t("Attack stopped")));
+    apply(await run(() => purple[what](tc.id, tc.red_version), RUN_DONE[what]));
   };
 
   const saveBlue = async (done = false) => {
@@ -290,8 +309,14 @@ export default function PurpleTestCase() {
     <>
       <nav className="crumbs" aria-label={t("Breadcrumb")}>
         <Link to="/purple">{t("Purple teaming")}</Link> /
-        <Link to={`/purple/assessments/${tc.assessment_id}`}>{tc.assessment_name}</Link> /
-        <span>{tc.campaign_name}</span>
+        {tc.assessment_kind === "quick" ? (
+          <Link to="/purple?tab=quick">{t("Quick tests")}</Link>
+        ) : (
+          <>
+            <Link to={`/purple/assessments/${tc.assessment_id}`}>{tc.assessment_name}</Link> /
+            <span>{tc.campaign_name}</span>
+          </>
+        )}
       </nav>
       <header className="page-header">
         <div>
@@ -430,118 +455,150 @@ export default function PurpleTestCase() {
       )}
 
       {currentTab === "red" && (
-        <div className="two-col">
-          <section className="card stack" aria-label={t("Red team")}>
-            <div className="pt-run">
-              {editor && tc.red_status !== "in_progress" && (
-                <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void startStop("start")}>
-                  ▶ {tc.attack_start ? t("Restart attack") : t("Start attack")}
-                </button>
-              )}
-              {editor && tc.red_status === "in_progress" && (
-                <button type="button" className="btn btn-dark" disabled={busy} onClick={() => void startStop("stop")}>
-                  ■ {t("Stop attack")}
-                </button>
-              )}
-              <span className="small muted">
-                {tc.attack_start ? t("Started {time}", { time: fmtTime(tc.attack_start) }) : t("Not started")}
-                {tc.attack_stop ? ` · ${t("stopped {time}", { time: fmtTime(tc.attack_stop) })}` : ""}
-              </span>
-            </div>
-            <div className="form-grid">
-              <label className="field">
-                {t("Execution status")}
-                <select className="input" disabled={readOnly} value={red.red_status} onChange={(e) => setRed({ ...red, red_status: e.target.value as RedForm["red_status"] })}>
-                  {(Object.keys(RED_STATUS_LABEL) as RedForm["red_status"][]).map((k) => (
-                    <option key={k} value={k}>
-                      {RED_STATUS_LABEL[k]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                {t("Red team operator")}
-                <span className="ttp-add">
-                  <input className="input" disabled={readOnly} value={red.red_assignee} onChange={(e) => setRed({ ...red, red_assignee: e.target.value })} />
-                  {editor && user && red.red_assignee !== user.username && (
-                    <button type="button" className="btn btn-sm" onClick={() => setRed({ ...red, red_assignee: user.username })}>
-                      {t("Me")}
-                    </button>
+        <>
+          <div className="two-col">
+            <section className="card stack" aria-label={t("Red team")}>
+              <div className="pt-runbar">
+                <div className="pt-runbar-main">
+                  <RunState status={tc.red_status} start={tc.attack_start} stop={tc.attack_stop} />
+                  {editor && (
+                    <span className="pt-runbar-btns">
+                      {(tc.red_status === "planned" || tc.red_status === "not_executed") && (
+                        <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => void runAction("start")}>
+                          ▶ {t("Start")}
+                        </button>
+                      )}
+                      {tc.red_status === "in_progress" && (
+                        <button type="button" className="btn btn-sm" disabled={busy} onClick={() => void runAction("pause")}>
+                          ❚❚ {t("Pause")}
+                        </button>
+                      )}
+                      {tc.red_status === "paused" && (
+                        <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => void runAction("resume")}>
+                          ▶ {t("Resume")}
+                        </button>
+                      )}
+                      {(tc.red_status === "in_progress" || tc.red_status === "paused") && (
+                        <button type="button" className="btn btn-dark btn-sm" disabled={busy} onClick={() => void runAction("stop")}>
+                          ■ {t("Complete")}
+                        </button>
+                      )}
+                      {tc.red_status === "executed" && (
+                        <button type="button" className="btn btn-sm" disabled={busy} onClick={() => void runAction("start")}>
+                          ↻ {t("Run again")}
+                        </button>
+                      )}
+                      {(tc.red_status === "planned" || tc.red_status === "in_progress" || tc.red_status === "paused") && (
+                        <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void runAction("abandon")}>
+                          {t("Abandon")}
+                        </button>
+                      )}
+                    </span>
                   )}
-                </span>
-              </label>
-              <label className="field">
-                {t("Attack start")}
-                <input
-                  className="input"
-                  type="datetime-local"
-                  disabled={readOnly}
-                  value={toLocalInput(red.attack_start)}
-                  onChange={(e) => setRed({ ...red, attack_start: fromLocalInput(e.target.value) })}
-                />
-              </label>
-              <label className="field">
-                {t("Attack stop")}
-                <input
-                  className="input"
-                  type="datetime-local"
-                  disabled={readOnly}
-                  value={toLocalInput(red.attack_stop)}
-                  onChange={(e) => setRed({ ...red, attack_stop: fromLocalInput(e.target.value) })}
-                />
-              </label>
+                </div>
+                <label className="field">
+                  {t("Red team operator")}
+                  <AssigneePicker
+                    label={t("Red team operator")}
+                    value={red.red_assignee}
+                    disabled={readOnly}
+                    me={user?.username}
+                    onChange={(v) => setRed({ ...red, red_assignee: v })}
+                  />
+                </label>
+                <div className="pt-runbar-meta">
+                  {tc.attack_start ? t("Started {time}", { time: fmtTime(tc.attack_start) }) : t("Not started")}
+                  {tc.attack_stop ? ` · ${t("stopped {time}", { time: fmtTime(tc.attack_stop) })}` : ""}
+                </div>
+              </div>
+              <div className="form-grid">
+                <label className="field">
+                  {t("Execution status")}
+                  <select className="input" disabled={readOnly} value={red.red_status} onChange={(e) => setRed({ ...red, red_status: e.target.value as RedForm["red_status"] })}>
+                    {(Object.keys(RED_STATUS_LABEL) as RedForm["red_status"][]).map((k) => (
+                      <option key={k} value={k}>
+                        {RED_STATUS_LABEL[k]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  {t("Attack start")}
+                  <input
+                    className="input"
+                    type="datetime-local"
+                    disabled={readOnly}
+                    value={toLocalInput(red.attack_start)}
+                    onChange={(e) => setRed({ ...red, attack_start: fromLocalInput(e.target.value) })}
+                  />
+                </label>
+                <label className="field">
+                  {t("Attack stop")}
+                  <input
+                    className="input"
+                    type="datetime-local"
+                    disabled={readOnly}
+                    value={toLocalInput(red.attack_stop)}
+                    onChange={(e) => setRed({ ...red, attack_stop: fromLocalInput(e.target.value) })}
+                  />
+                </label>
+              </div>
+              <div className="form-grid">
+                <label className="field">
+                  {t("Targets")}
+                  <input className="input" disabled={readOnly} value={red.targets} placeholder={t("hosts, accounts, IPs")} onChange={(e) => setRed({ ...red, targets: e.target.value })} />
+                </label>
+                <label className="field">
+                  {t("Sources")}
+                  <input className="input" disabled={readOnly} value={red.sources} placeholder={t("attacking hosts or IPs")} onChange={(e) => setRed({ ...red, sources: e.target.value })} />
+                </label>
+                <label className="field">
+                  {t("Red team tools")}
+                  <input className="input" disabled={readOnly} value={red.red_tools} placeholder="Cobalt Strike, Rubeus" onChange={(e) => setRed({ ...red, red_tools: e.target.value })} />
+                </label>
+              </div>
+              <MarkdownField
+                label={t("Red team notes")}
+                value={red.red_notes}
+                onChange={(v) => setRed({ ...red, red_notes: v })}
+                readOnly={readOnly}
+                rows={4}
+                placeholder={t("What was run exactly, deviations from the procedure, what worked")}
+              />
+              {tc.red_updated_by && <p className="small muted">{t("Last saved by {user}", { user: tc.red_updated_by })}</p>}
+            </section>
+            <div className="stack">
+              <section className="card stack-sm" aria-labelledby="pt-proc">
+                <h2 id="pt-proc" className="h-sm">
+                  {t("Procedure")}
+                </h2>
+                {tc.command ? <pre className="pt-command">{tc.command}</pre> : <p className="muted small">{t("No command recorded.")}</p>}
+                {tc.operator_guidance && <Markdown text={tc.operator_guidance} />}
+                {tc.cleanup && (
+                  <>
+                    <span className="small muted">{t("Cleanup")}</span>
+                    <pre className="pt-command">{tc.cleanup}</pre>
+                  </>
+                )}
+              </section>
+              {evidence("red")}
             </div>
-            <div className="form-grid">
-              <label className="field">
-                {t("Targets")}
-                <input className="input" disabled={readOnly} value={red.targets} placeholder={t("hosts, accounts, IPs")} onChange={(e) => setRed({ ...red, targets: e.target.value })} />
-              </label>
-              <label className="field">
-                {t("Sources")}
-                <input className="input" disabled={readOnly} value={red.sources} placeholder={t("attacking hosts or IPs")} onChange={(e) => setRed({ ...red, sources: e.target.value })} />
-              </label>
-              <label className="field">
-                {t("Red team tools")}
-                <input className="input" disabled={readOnly} value={red.red_tools} placeholder="Cobalt Strike, Rubeus" onChange={(e) => setRed({ ...red, red_tools: e.target.value })} />
-              </label>
-            </div>
-            <MarkdownField
-              label={t("Red team notes")}
-              value={red.red_notes}
-              onChange={(v) => setRed({ ...red, red_notes: v })}
-              readOnly={readOnly}
-              rows={4}
-              placeholder={t("What was run exactly, deviations from the procedure, what worked")}
-            />
-            {editor && (
-              <div className="row-actions">
-                <button type="button" className="btn" disabled={!redDirty || busy} onClick={() => setRed(redForm(tc))}>
+          </div>
+          {editor && (
+            // always visible at the bottom of the tab, like the blue side
+            <div className="unsaved-bar" role="status">
+              <span>{redDirty ? t("Unsaved changes to the red team side.") : t("No unsaved changes to the red team side.")}</span>
+              <span className="row-actions">
+                <button type="button" className="btn btn-ghost" disabled={!redDirty || busy} onClick={() => setRed(redForm(tc))}>
                   {t("Discard")}
                 </button>
                 <button type="button" className="btn btn-primary" disabled={!redDirty || busy} onClick={() => void saveRed()}>
-                  {t("Save red team side")}
+                  {busy ? t("Saving…") : t("Save red team side")}
                 </button>
-              </div>
-            )}
-            {tc.red_updated_by && <p className="small muted">{t("Last saved by {user}", { user: tc.red_updated_by })}</p>}
-          </section>
-          <div className="stack">
-            <section className="card stack-sm" aria-labelledby="pt-proc">
-              <h2 id="pt-proc" className="h-sm">
-                {t("Procedure")}
-              </h2>
-              {tc.command ? <pre className="pt-command">{tc.command}</pre> : <p className="muted small">{t("No command recorded.")}</p>}
-              {tc.operator_guidance && <Markdown text={tc.operator_guidance} />}
-              {tc.cleanup && (
-                <>
-                  <span className="small muted">{t("Cleanup")}</span>
-                  <pre className="pt-command">{tc.cleanup}</pre>
-                </>
-              )}
-            </section>
-            {evidence("red")}
-          </div>
-        </div>
+              </span>
+            </div>
+          )}
+        </>
       )}
 
       {currentTab === "blue" && (
@@ -785,14 +842,13 @@ export default function PurpleTestCase() {
                   </label>
                   <label className="field">
                     {t("Blue team analyst")}
-                    <span className="ttp-add">
-                      <input className="input" disabled={readOnly} value={blue.blue_assignee} onChange={(e) => setBlue({ ...blue, blue_assignee: e.target.value })} />
-                      {editor && user && blue.blue_assignee !== user.username && (
-                        <button type="button" className="btn btn-sm" onClick={() => setBlue({ ...blue, blue_assignee: user.username })}>
-                          {t("Me")}
-                        </button>
-                      )}
-                    </span>
+                    <AssigneePicker
+                      label={t("Blue team analyst")}
+                      value={blue.blue_assignee}
+                      disabled={readOnly}
+                      me={user?.username}
+                      onChange={(v) => setBlue({ ...blue, blue_assignee: v })}
+                    />
                   </label>
                 </div>
                 {editor && tc.blue_status !== "done" && (
@@ -805,26 +861,36 @@ export default function PurpleTestCase() {
                     {t("When done, record the result as a verification of the linked use case rules (blocked or alerted = OK, logged or not detected = issues)")}
                   </label>
                 )}
-                {editor && (
-                  <div className="row-actions">
-                    <button type="button" className="btn" disabled={!blueDirty || busy} onClick={() => setBlue(blueForm(tc))}>
-                      {t("Discard")}
-                    </button>
-                    <button type="button" className="btn" disabled={!blueDirty || busy} onClick={() => void saveBlue()}>
-                      {t("Save blue team side")}
-                    </button>
-                    {tc.blue_status !== "done" && (
-                      <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void saveBlue(true)}>
-                        {t("Save and mark done")}
-                      </button>
-                    )}
-                  </div>
-                )}
                 {tc.blue_updated_by && <p className="small muted">{t("Last saved by {user}", { user: tc.blue_updated_by })}</p>}
               </section>
               {evidence("blue")}
             </div>
           </div>
+          {editor && (
+            // always visible at the bottom of the tab: the blue side form is long (defenses,
+            // findings, review), so the save buttons must not hide at the end of one card
+            <div className="unsaved-bar" role="status">
+              <span>{blueDirty ? t("Unsaved changes to the blue team side.") : t("No unsaved changes to the blue team side.")}</span>
+              <span className="row-actions">
+                <button type="button" className="btn btn-ghost" disabled={!blueDirty || busy} onClick={() => setBlue(blueForm(tc))}>
+                  {t("Discard")}
+                </button>
+                <button
+                  type="button"
+                  className={tc.blue_status === "done" ? "btn btn-primary" : "btn"}
+                  disabled={!blueDirty || busy}
+                  onClick={() => void saveBlue()}
+                >
+                  {busy ? t("Saving…") : t("Save blue team side")}
+                </button>
+                {tc.blue_status !== "done" && (
+                  <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void saveBlue(true)}>
+                    {t("Save and mark done")}
+                  </button>
+                )}
+              </span>
+            </div>
+          )}
         </>
       )}
 

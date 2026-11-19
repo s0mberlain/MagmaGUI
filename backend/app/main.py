@@ -31,6 +31,7 @@ from app.api import (
     output,
     purple,
     purple_library,
+    purple_quick,
     scores,
     snapshots,
     systems,
@@ -215,6 +216,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         evidence.router,
         purple.router,
         purple_library.router,
+        purple_quick.router,
     ):
         api.include_router(r)
     app.include_router(api)

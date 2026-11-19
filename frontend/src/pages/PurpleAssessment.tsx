@@ -3,10 +3,11 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, purple, type PtAssessment, type PtAssessmentInput, type PtCampaign, type PtMetrics } from "../api";
 import { useAuth } from "../auth";
 import { Markdown, MarkdownField } from "../components/Markdown";
+import { AssigneePicker, RunState } from "../components/RunStatus";
 import TechniquePicker from "../components/TechniquePicker";
 import { confirmDialog, ErrorNote, Modal, useLoad, useUnsavedGuard } from "../components/ui";
 import { fmtDate, pct } from "../lib/format";
-import { BluePill, fmtDuration, OUTCOME_LABEL, OutcomePill, RedPill } from "../lib/purple";
+import { BluePill, fmtDuration, OUTCOME_LABEL, OutcomePill } from "../lib/purple";
 import { getLang, t } from "../i18n";
 import { AssessmentStatusPill } from "./Purple";
 
@@ -361,7 +362,7 @@ function Heatmap({ a }: { a: PtAssessment }) {
 export default function PurpleAssessment() {
   const { id = "" } = useParams();
   const aid = Number(id);
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const editor = can("admin", "analyst");
   const navigate = useNavigate();
   const load = useLoad(() => purple.assessment(aid), [aid]);
@@ -386,6 +387,25 @@ export default function PurpleAssessment() {
     load.setData(next);
     setError(null);
   };
+
+  /** Who works on the red or blue side of a test, saved right away from the table. */
+  async function assign(testCaseId: number, side: "red" | "blue", assignee: string) {
+    try {
+      const tc = await purple.setAssignee(testCaseId, side, assignee);
+      load.setData((cur) =>
+        cur && {
+          ...cur,
+          campaign_list: cur.campaign_list.map((c) => ({
+            ...c,
+            test_cases: c.test_cases.map((x) => (x.id === tc.id ? { ...x, red_assignee: tc.red_assignee, blue_assignee: tc.blue_assignee } : x)),
+          })),
+        },
+      );
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
 
   async function saveSummary() {
     if (!a || summary === null) return;
@@ -602,12 +622,36 @@ export default function PurpleAssessment() {
                             {tc.techniques.join(", ") || "–"}
                           </td>
                           <td data-label={t("Red")}>
-                            <RedPill status={tc.red_status} />
-                            {tc.red_assignee && <div className="small muted">{tc.red_assignee}</div>}
+                            <div className="pt-cell-stack">
+                              <RunState status={tc.red_status} start={tc.attack_start} stop={tc.attack_stop ?? null} size="sm" />
+                              {editor ? (
+                                <AssigneePicker
+                                  compact
+                                  label={t("Red team operator of {test}", { test: tc.name })}
+                                  value={tc.red_assignee}
+                                  me={user?.username}
+                                  onChange={(v) => void assign(tc.id, "red", v)}
+                                />
+                              ) : (
+                                tc.red_assignee && <div className="small muted">{tc.red_assignee}</div>
+                              )}
+                            </div>
                           </td>
                           <td data-label={t("Blue")}>
-                            <BluePill status={tc.blue_status} />
-                            {tc.blue_assignee && <div className="small muted">{tc.blue_assignee}</div>}
+                            <div className="pt-cell-stack">
+                              <BluePill status={tc.blue_status} />
+                              {editor ? (
+                                <AssigneePicker
+                                  compact
+                                  label={t("Blue team analyst of {test}", { test: tc.name })}
+                                  value={tc.blue_assignee}
+                                  me={user?.username}
+                                  onChange={(v) => void assign(tc.id, "blue", v)}
+                                />
+                              ) : (
+                                tc.blue_assignee && <div className="small muted">{tc.blue_assignee}</div>
+                              )}
+                            </div>
                           </td>
                           <td data-label={t("Outcome")}>
                             <OutcomePill outcome={tc.outcome} overridden={tc.overridden} />

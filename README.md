@@ -255,9 +255,12 @@ results sit next to the use cases they prove or disprove.
 - **Assessment → campaigns → test cases.** An assessment is one exercise (scope, environment,
   dates, a summary of the findings). Campaigns group test cases, e.g. by adversary or kill chain
   phase. A test case is one procedure: ATT&CK techniques, command, cleanup, operator guidance.
-- **Red team side.** *Start attack* / *Stop attack* record the attack times; the operator notes
+- **Red team side.** A run control like VECTR's: the status (*Not performed*, *In progress*,
+  *Paused*, *Completed*, *Abandoned*) with a run clock and *Start* / *Pause* / *Resume* /
+  *Complete* / *Abandon* / *Run again*, which record the attack times. The operator notes
   targets, sources, tools, what was run, and adds evidence. When the attack ran, the test goes
-  to the blue team (*In review*).
+  to the blue team (*In review*). Who works on the red and blue side is picked from the app's
+  analysts and admins (or typed, e.g. an external operator), also right in the campaign table.
 - **Blue team side.** One row per defense: an **L3 use case rule** of the catalogue (the rules
   whose ATT&CK techniques cover the test are suggested) or **any other detection**, e.g. a
   Defender/EDR alert, a firewall block or "only in the logs". Each row has an outcome:
@@ -285,6 +288,15 @@ results sit next to the use cases they prove or disprove.
   regressed (VECTR's resilience trending).
 - **Exports**: PDF report (EN/DE/NL, "Draft" until completed), ATT&CK Navigator layer coloured
   by the weakest outcome per technique, CSV.
+- **Quick tests** (*+ Quick test*, tab *Quick tests*). Test one detection or script without
+  planning an assessment: one form takes what was tested (optionally from the library), the
+  ATT&CK techniques, the script or command, targets and time, what each defense did (suggested
+  use case rules or any other detection), and the finding. Saving records the test as executed
+  and, unless unticked, the blue review as done with a verification of the linked rules. A quick
+  test is an ordinary test case, so its page adds evidence or changes it later, and the rule
+  page and *Priorities* show its result. Quick tests live in one hidden container (not listed
+  with the assessments, cannot be deleted or re-run as a whole) and stay out of *Purple team
+  trends*. API: `GET/POST /api/purple/quick-tests`.
 
 ## Excel import / export
 

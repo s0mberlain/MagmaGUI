@@ -32,11 +32,13 @@ export const OUTCOME_HINT: Record<PtOutcome, string> = {
   tbd: t("Not assessed yet."),
 };
 
+/** VECTR test case status names (NotPerformed, InProgress, Paused, Completed, Abandon). */
 export const RED_STATUS_LABEL: Record<PtRedStatus, string> = {
-  planned: t("Planned"),
-  in_progress: t("Running"),
-  executed: t("Executed"),
-  not_executed: t("Not executed"),
+  planned: t("Not performed"),
+  in_progress: t("In progress"),
+  paused: t("Paused"),
+  executed: t("Completed"),
+  not_executed: t("Abandoned"),
 };
 
 export const BLUE_STATUS_LABEL: Record<PtBlueStatus, string> = {

@@ -1,43 +1,55 @@
 import { Link } from "react-router-dom";
-import { api, type DriverCoverageReport, type DueRule, type Kpis, type RecentCommit, type Scores } from "../api";
+import { api, type DriverCoverageReport, type OverviewRequest, type SystemRow, type DueRule, type Kpis, type RecentCommit, type Scores } from "../api";
 import { useAuth } from "../auth";
 import { CoverageCell } from "../components/Drivers";
 import { ErrorNote, GapBadge, MetricBars, MetricLegend, useLoad } from "../components/ui";
-import { fmtDate, num, pct } from "../lib/format";
+import { fmtDate, num, pct, today } from "../lib/format";
 import { t } from "../i18n";
 
-const UP = t("Higher is better");
-const DOWN = t("Lower is better");
+interface Tile {
+  label: string;
+  value: number | null;
+  sub: string;
+  /** where the figure comes from */
+  to: string;
+  /** growth potential shrinks as the detection score grows */
+  lower?: boolean;
+}
 
-function kpiTiles(k: Kpis): { label: string; value: number | null; sub: string; good: string }[] {
-  const tiles = [
-    { label: t("SOC detection score"), value: k.soc_detection_score, sub: t("Average weight of applicable L1") },
-    {
-      label: t("Catalogue coverage"),
-      value: k.catalogue_coverage,
-      sub: t("Same average, L2 without scored rules count as 0"),
-    },
-    { label: t("Growth potential"), value: k.growth_potential, sub: t("Average effectiveness − weight") },
-    { label: t("Detection gap"), value: k.detection_gap, sub: t("1 − detection score") },
-    {
-      label: t("Framework completeness"),
-      value: k.framework_completeness,
-      sub: t("{a} of {b} L2 have scored rules", { a: k.l2_with_scored_rules, b: k.applicable_l2 }),
-    },
-    {
-      label: t("Assessment coverage"),
-      value: k.assessment_coverage,
-      sub: t("{a} of {b} active rules assessed", { a: k.assessed_rules, b: k.active_rules }),
-    },
-    {
-      label: t("Verification health"),
-      value: k.verification_health,
-      sub: t("{a} of {b} rules overdue", { a: k.verification_overdue, b: k.operational_rules }),
-    },
-  ];
-  // growth potential is what is still to gain: it shrinks as the detection score grows
-  const lower = new Set([t("Detection gap"), t("Growth potential")]);
-  return tiles.map((x) => ({ ...x, good: lower.has(x.label) ? DOWN : UP }));
+/** The four figures that answer "how well are we covered"; the rest sits under "More figures". */
+function kpiTiles(k: Kpis): { main: Tile[]; more: Tile[] } {
+  return {
+    main: [
+      { label: t("SOC detection score"), value: k.soc_detection_score, sub: t("Average weight of applicable L1"), to: "/usecases" },
+      {
+        label: t("Catalogue coverage"),
+        value: k.catalogue_coverage,
+        sub: t("Same average, L2 without scored rules count as 0"),
+        to: "/usecases?view=table",
+      },
+      {
+        label: t("Framework completeness"),
+        value: k.framework_completeness,
+        sub: t("{a} of {b} L2 have scored rules", { a: k.l2_with_scored_rules, b: k.applicable_l2 }),
+        to: "/usecases?view=table",
+      },
+      {
+        label: t("Verification health"),
+        value: k.verification_health,
+        sub: t("{a} of {b} rules overdue", { a: k.verification_overdue, b: k.operational_rules }),
+        to: "/verification",
+      },
+    ],
+    more: [
+      {
+        label: t("Assessment coverage"),
+        value: k.assessment_coverage,
+        sub: t("{a} of {b} active rules assessed", { a: k.assessed_rules, b: k.active_rules }),
+        to: "/usecases?view=table",
+      },
+      { label: t("Growth potential"), value: k.growth_potential, sub: t("Average effectiveness − weight"), to: "/priorities", lower: true },
+    ],
+  };
 }
 
 type Rating = "good" | "fair" | "poor";
@@ -62,6 +74,75 @@ export function DueBadge({ d }: { d: Pick<DueRule, "due" | "overdue" | "days_lef
   return <span className="pill pill-ok">{t("due in {n} days", { n: d.days_left })}</span>;
 }
 
+/** One KPI tile: the label links to the list behind the figure. */
+function KpiTile({ k, ready }: { k: Tile; ready: boolean }) {
+  const rating = ready ? rateKpi(k.value, !!k.lower) : null;
+  return (
+    <div className="card kpi">
+      <Link to={k.to} className="kpi-label">
+        {k.label}
+      </Link>
+      <div className="kpi-head">
+        <span className="kpi-value">{ready ? pct(k.value) : "–"}</span>
+        {rating && <span className={`kpi-rating rating-${rating}`}>{RATING_LABEL[rating]}</span>}
+      </div>
+      <div className="bar">
+        <div style={{ width: `${Math.round((k.value ?? 0) * 100)}%` }} className={rating ? `rating-${rating}` : ""} />
+      </div>
+      <span className="kpi-sub">{ready ? k.sub : "…"}</span>
+      {k.lower && (
+        <span className="kpi-good">
+          <span aria-hidden="true">↓</span> {t("Lower is better")}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Work that is waiting, with a link to each list. Shown before the scores. */
+function Attention({
+  overdue,
+  requests,
+  gaps,
+  interviews,
+  ready,
+}: {
+  overdue: number | null;
+  requests: number | null;
+  gaps: number | null;
+  interviews: number | null;
+  ready: boolean;
+}) {
+  const items = [
+    { n: overdue, label: t("rules never verified or overdue"), to: "/verification", action: t("Verify") },
+    { n: requests, label: t("open detection requests"), to: "/usecases/requests", action: t("Show requests") },
+    { n: gaps, label: t("uncovered risks in systems"), to: "/systems", action: t("Show systems") },
+    { n: interviews, label: t("interviews due"), to: "/systems?due=1", action: t("Show systems") },
+  ].filter((x) => x.n);
+  return (
+    <section className="card stack-sm attention" aria-labelledby="needh">
+      <h2 id="needh">{t("Needs attention")}</h2>
+      {!ready ? (
+        <p className="muted small">…</p>
+      ) : items.length === 0 ? (
+        <p className="muted">{t("Nothing needs attention right now.")}</p>
+      ) : (
+        <ul className="plain-list attention-list">
+          {items.map((x) => (
+            <li key={x.to}>
+              <strong className="attention-n">{x.n}</strong>
+              <span className="attention-label">{x.label}</span>
+              <Link to={x.to} className="btn btn-sm">
+                {x.action}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export default function Dashboard() {
   const { can } = useAuth();
   const scores = useLoad<Scores>(() => api.scores());
@@ -69,7 +150,11 @@ export default function Dashboard() {
   const commits = useLoad<RecentCommit[]>(() => api.recentCommits(5));
   const drivers = useLoad<DriverCoverageReport>(() => api.driverCoverage());
   const interviewsDue = useLoad(() => api.systemsDue());
+  const requests = useLoad<{ requests: OverviewRequest[] }>(() => api.detectionRequests());
+  const systems = useLoad<SystemRow[]>(() => api.systems());
   const s = scores.data;
+  const tiles = kpiTiles(s ? s.kpis : ({} as Kpis));
+  const ready = due.data !== null && requests.data !== null && systems.data !== null && interviewsDue.data !== null;
 
   return (
     <>
@@ -96,40 +181,38 @@ export default function Dashboard() {
 
       <ErrorNote error={scores.error} />
 
-      <section className="kpi-grid" aria-label={t("Key figures")}>
-        {(s ? kpiTiles(s.kpis) : kpiTiles({} as Kpis)).map((k) => {
-          const rating = s ? rateKpi(k.value, k.good === DOWN) : null;
-          return (
-          <div className="card kpi" key={k.label}>
-            <span className="kpi-label">{k.label}</span>
-            <div className="kpi-head">
-              <span className="kpi-value">{s ? pct(k.value) : "–"}</span>
-              {rating && <span className={`kpi-rating rating-${rating}`}>{RATING_LABEL[rating]}</span>}
-            </div>
-            <div className="bar">
-              <div
-                style={{ width: `${Math.round((k.value ?? 0) * 100)}%` }}
-                className={rating ? `rating-${rating}` : ""}
-              />
-            </div>
-            <span className="kpi-sub">{s ? k.sub : "…"}</span>
-            <span className="kpi-good">
-              <span aria-hidden="true">{k.good === UP ? "↑" : "↓"}</span> {k.good}
-            </span>
-          </div>
-          );
-        })}
-      </section>
+      <Attention
+        ready={ready}
+        overdue={due.data ? due.data.filter((d) => !d.due || d.overdue).length : null}
+        requests={
+          requests.data ? requests.data.requests.filter((r) => !r.archived && (r.status === "open" || r.status === "in_progress")).length : null
+        }
+        gaps={systems.data ? systems.data.reduce((a, x) => a + x.gaps, 0) : null}
+        interviews={interviewsDue.data?.due ?? null}
+      />
 
-      {interviewsDue.data && interviewsDue.data.due > 0 && (
-        <Link className="notice-bar interviews-due" to="/systems?due=1">
-          <div>
-            <strong>{t("Interviews due: {n}", { n: interviewsDue.data.due })}</strong>{" "}
-            {t("Systems without a business owner interview or whose review interval has passed.")}
+      <section className="stack-sm" aria-labelledby="kpih">
+        <h2 id="kpih">
+          {t("Key figures")}
+        </h2>
+        <div className="kpi-grid kpi-grid-4">
+          {tiles.main.map((k) => (
+            <KpiTile key={k.label} k={k} ready={!!s} />
+          ))}
+        </div>
+        <p className="muted small">
+          {t("Figures as of {date}.", { date: fmtDate(today()) })}{" "}
+          {t("Rating: Good from 70 %, Fair from 40 %, Poor below. For figures where lower is better, the scale is mirrored.")}
+        </p>
+        <details className="kpi-more">
+          <summary>{t("More figures")}</summary>
+          <div className="kpi-grid kpi-grid-4">
+            {tiles.more.map((k) => (
+              <KpiTile key={k.label} k={k} ready={!!s} />
+            ))}
           </div>
-          <span className="btn btn-sm">{t("Show systems")}</span>
-        </Link>
-      )}
+        </details>
+      </section>
 
       <div className="split">
         <section className="card split-main" aria-labelledby="l1h">

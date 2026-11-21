@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { Detection, RiskCoverageState, RiskRow } from "../api";
+import { StatusChip } from "./RequestStatus";
 import { num } from "../lib/format";
 import { STRIDE, STRIDE_LABEL, threatLabel } from "../lib/stride";
 import { t } from "../i18n";
@@ -290,7 +291,8 @@ export function RiskCoverage({
                   <ul className="plain-list small rcov-reqs">
                     {r.requests.map((q, i) => (
                       <li key={i}>
-                        <span className="chip chip-neutral">{t("Detection request")}</span> {q}
+                        <span className="chip chip-neutral">{t("Detection request")}</span> {q.title}{" "}
+                        <StatusChip status={q.status} />
                       </li>
                     ))}
                   </ul>

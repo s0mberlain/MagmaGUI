@@ -10,6 +10,8 @@ export interface NavItem {
   roles?: Role[];
   /** Heading the entry is listed under in the sidebar. */
   group: "work" | "analysis" | "admin";
+  /** Path of the entry this one is listed under; shown indented when that entry is opened. */
+  parent?: string;
 }
 
 export const NAV_GROUPS: { key: NavItem["group"]; label: string }[] = [
@@ -21,6 +23,7 @@ export const NAV_GROUPS: { key: NavItem["group"]; label: string }[] = [
 export const NAV_ITEMS: NavItem[] = [
   { label: t("Dashboard"), path: "/", group: "work" },
   { label: t("Use cases"), path: "/usecases", group: "work" },
+  { label: t("Detection requests"), path: "/usecases/requests", group: "work", parent: "/usecases" },
   { label: t("Verification"), path: "/verification", group: "work" },
   { label: t("Priorities"), path: "/priorities", group: "work" },
   { label: t("Threat modelling"), path: "/systems", group: "work" },

@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    app_name: str = "Magma UCF"
+    app_name: str = "Vulcan UCF"
     database_url: str = "sqlite:////data/magma.db"
     # PostgreSQL connection pool and limits (ignored for SQLite).
     db_pool_size: int = 5

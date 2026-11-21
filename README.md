@@ -1,4 +1,4 @@
-# MagmaGUI
+# Vulcan UCF
 
 Web application for the FI-ISAC **MaGMa Use Case Framework**: manage SIEM / SOC use cases across the business, threat (L1/L2) and implementation (L3) layers, score them, track verification and keep versioned YAML configs per use case.
 

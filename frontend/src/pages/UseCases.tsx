@@ -826,9 +826,9 @@ function RuleTable({
           <tr>
             <th>{t("Rule")}</th>
             <th>{t("Status")}</th>
-            <th className="num">{t("Eff")}</th>
-            <th className="num">{t("Impl")}</th>
-            <th className="num">{t("Cov")}</th>
+            <th className="num" title={t("Effectiveness / Implementation / Coverage")}>
+              {t("Eff / Impl / Cov")}
+            </th>
             <th className="num">{t("Weight")}</th>
             <th>{t("Data sources")}</th>
             <th>{t("Last verified")}</th>
@@ -850,9 +850,13 @@ function RuleTable({
               <td>
                 <StatusPill status={r.lifecycle_status} />
               </td>
-              <td className="num">{pct(r.effectiveness)}</td>
-              <td className="num">{pct(r.implementation)}</td>
-              <td className="num">{pct(r.coverage)}</td>
+              <td className="num metric-trio">
+                {pct(r.effectiveness)}
+                <span className="sep" aria-hidden="true">/</span>
+                {pct(r.implementation)}
+                <span className="sep" aria-hidden="true">/</span>
+                {pct(r.coverage)}
+              </td>
               <td className="num strong">
                 {r.assessed ? num(r.weight) : <span className="muted">{t("not assessed")}</span>}
               </td>

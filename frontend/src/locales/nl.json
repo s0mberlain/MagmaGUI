@@ -1291,5 +1291,9 @@
   "Rating: Good from 70 %, Fair from 40 %, Poor below. For figures where lower is better, the scale is mirrored.": "Beoordeling: goed vanaf 70 %, matig vanaf 40 %, zwak daaronder. Bij kengetallen waarbij lager beter is, geldt de schaal gespiegeld.",
   "+ New": "+ Nieuw",
   "Select an L2 use case first": "Selecteer eerst een L2-use case",
-  "Filters": "Filters"
+  "Filters": "Filters",
+  "Administration": "Beheer",
+  "Skip to content": "Naar de inhoud",
+  "{n} open": "{n} open",
+  "{n} overdue": "{n} achterstallig"
 }

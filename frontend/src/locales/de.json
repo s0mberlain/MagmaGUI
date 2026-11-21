@@ -1291,5 +1291,9 @@
   "Rating: Good from 70 %, Fair from 40 %, Poor below. For figures where lower is better, the scale is mirrored.": "Bewertung: Gut ab 70 %, Mittel ab 40 %, Schwach darunter. Bei Kennzahlen, bei denen weniger besser ist, gilt die Skala gespiegelt.",
   "+ New": "+ Neu",
   "Select an L2 use case first": "Zuerst einen L2-Use-Case auswählen",
-  "Filters": "Filter"
+  "Filters": "Filter",
+  "Administration": "Verwaltung",
+  "Skip to content": "Zum Inhalt springen",
+  "{n} open": "{n} offen",
+  "{n} overdue": "{n} überfällig"
 }

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 import { createPortal } from "react-dom";
 import { Link, useBlocker } from "react-router-dom";
 import { isLeavingSession, type Lifecycle } from "../api";
-import { STATUS_LABEL } from "../lib/format";
+import { fmtClock, STATUS_LABEL } from "../lib/format";
+import { openIn, useCountUp } from "../lib/motion";
 import { t } from "../i18n";
 
 /** Load data on mount and when deps change; `reload` refetches. */
@@ -119,7 +120,10 @@ export function Modal({
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
-    if (open && !d.open) d.showModal();
+    if (open && !d.open) {
+      d.showModal();
+      openIn(d);
+    }
     if (!open && d.open) d.close();
   }, [open]);
   // Rendered into <body>: a dialog opened from inside a page <form> (the rule editor) would otherwise
@@ -465,7 +469,7 @@ export function DraftRestoreBanner({ at, onRestore, onDiscard }: { at: number; o
     <div className="note-box draft-restore" role="status">
       <span>
         {t("Unsaved changes from {time} were kept when your session ended.", {
-          time: new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          time: fmtClock(at),
         })}
       </span>
       <span className="grow" />
@@ -477,4 +481,96 @@ export function DraftRestoreBanner({ at, onRestore, onDiscard }: { at: number; o
       </button>
     </div>
   );
+}
+
+/**
+ * A save refused because someone else saved first (409). One pattern for every form with
+ * optimistic locking: keep my edits on top of their version (the next save overwrites theirs),
+ * or drop mine and load theirs. ConfigPanel adds a diff on top of the same choice.
+ */
+export function ConflictBox({
+  message,
+  busy,
+  onKeepMine,
+  onLoadTheirs,
+}: {
+  message: string | null;
+  busy?: boolean;
+  onKeepMine: () => void;
+  onLoadTheirs: () => void;
+}) {
+  return (
+    <div className="form-error-box conflict-box" role="alert">
+      <div className="stack-xs">
+        <strong>{t("Someone else saved this in the meantime.")}</strong>
+        <span>
+          {t("Your changes are still here and were not saved. Keep them to save over the other version, or load the other version and lose your changes.")}
+        </span>
+        {message && <span className="small">{message}</span>}
+      </div>
+      <span className="row-actions">
+        <button type="button" className="btn btn-sm" disabled={busy} onClick={onLoadTheirs}>
+          {t("Load their version")}
+        </button>
+        <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={onKeepMine}>
+          {t("Keep my changes")}
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/**
+ * A button that opens a short list of actions or links (native <details>: keyboard and screen
+ * reader support for free). Closes on outside click, Escape and after a choice.
+ */
+export function MenuButton({ label, children, align = "right" }: { label: string; children: ReactNode; align?: "left" | "right" }) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const close = (e: Event) => {
+      const d = ref.current;
+      if (!d?.open) return;
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !d.contains(e.target as Node)) {
+        d.open = false;
+        if (e instanceof KeyboardEvent) d.querySelector("summary")?.focus();
+      }
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, []);
+  return (
+    <details
+      className="menu"
+      ref={ref}
+      onToggle={(e) => {
+        if ((e.currentTarget as HTMLDetailsElement).open) openIn(e.currentTarget.querySelector(".menu-list"), -4);
+      }}
+    >
+      <summary className="btn">
+        {label}
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+          <path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </summary>
+      <div
+        className={"menu-list" + (align === "left" ? " menu-left" : "")}
+        role="menu"
+        onClick={() => {
+          if (ref.current) ref.current.open = false;
+        }}
+      >
+        {children}
+      </div>
+    </details>
+  );
+}
+
+/** A figure that counts to its value (lib/motion.ts useCountUp); "–" while there is none. */
+export function CountUp({ value, format, className }: { value: number | null | undefined; format: (v: number) => string; className?: string }) {
+  const ref = useCountUp(value, format);
+  return <span ref={ref} className={className} />;
 }

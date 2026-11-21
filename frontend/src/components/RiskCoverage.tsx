@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { Detection, RiskCoverageState, RiskRow } from "../api";
 import { num } from "../lib/format";
+import { CountUp } from "./ui";
 import { STRIDE, STRIDE_LABEL, threatLabel } from "../lib/stride";
 import { t } from "../i18n";
 
@@ -49,6 +50,13 @@ export function useCaseHref(u: { level?: string; code: string }): string {
   return u.level === "L3" ? `/usecases/l3/${encodeURIComponent(u.code)}` : `/usecases?l2=${encodeURIComponent(u.code)}`;
 }
 
+const int = (v: number) => String(Math.round(v));
+
+/** How many of a risk's use cases actually detect it (state ok). */
+export const detecting = (r: Pick<RiskRow, "use_cases">) => r.use_cases.filter((u) => u.state === "ok").length;
+export const detectRatio = (r: Pick<RiskRow, "use_cases">) =>
+  t("{a} of {n} detect", { a: detecting(r), n: r.use_cases.length });
+
 const riskId = (r: { component: string; category: string }) => `risk-${r.component}-${r.category}`;
 
 type Filter = "all" | "open" | RiskCoverageState;
@@ -83,6 +91,16 @@ export function RiskCoverage({
     const c: Record<RiskCoverageState, number> = { covered: 0, partial: 0, gap: 0, below: 0, unrated: 0 };
     for (const r of risks) c[r.coverage]++;
     return c;
+  }, [risks]);
+  // use cases that do not detect (blind, no active rule, deleted) on risks that need detection:
+  // a risk can be "covered" by one use case while others on it see nothing (#critique)
+  const notDetecting = useMemo(() => {
+    const codes = new Set<string>();
+    for (const r of risks) {
+      if (!r.above_threshold) continue;
+      for (const u of r.use_cases) if (u.state === "gap") codes.add(u.code);
+    }
+    return codes.size;
   }, [risks]);
   const hasCustom = risks.some((r) => r.custom);
   const byRef = useMemo(() => new Map(risks.map((r) => [`${r.component}:${r.category}`, r])), [risks]);
@@ -121,16 +139,29 @@ export function RiskCoverage({
           <dl className="rcov-stats">
             <div>
               <dt>{t("Risks")}</dt>
-              <dd>{risks.length}</dd>
+              <dd>
+                <CountUp value={risks.length} format={int} />
+              </dd>
             </div>
             {(["covered", "partial", "gap", "below"] as const).map((k) => (
               <div key={k} className={`rcov-stat cov-${k}`} title={COVERAGE_HINT[k]}>
                 <dt>
                   <span className={`cov-dot cov-${k}`} aria-hidden="true" /> {COVERAGE_LABEL[k]}
                 </dt>
-                <dd>{counts[k]}</dd>
+                <dd>
+                  <CountUp value={counts[k]} format={int} />
+                </dd>
               </div>
             ))}
+            <div
+              className={"rcov-stat" + (notDetecting ? " cov-gap" : "")}
+              title={t("Use cases on risks above the threshold that detect nothing: no active rule, or none of the log sources they need is delivered.")}
+            >
+              <dt>{t("Use cases not detecting")}</dt>
+              <dd>
+                <CountUp value={notDetecting} format={int} />
+              </dd>
+            </div>
           </dl>
 
           <div className="scroll-x">
@@ -171,10 +202,10 @@ export function RiskCoverage({
                             type="button"
                             className={`rcov-cell cov-${r.coverage}`}
                             onClick={() => jump(r)}
-                            title={`${c.name} / ${STRIDE_LABEL[cat]}: ${COVERAGE_LABEL[r.coverage]} · ${t("{n} use cases", { n: r.use_cases.length })}`}
+                            title={`${c.name} / ${STRIDE_LABEL[cat]}: ${COVERAGE_LABEL[r.coverage]} · ${detectRatio(r)}`}
                           >
                             <strong>{r.score ?? "–"}</strong>
-                            <span className="rcov-n">{r.use_cases.length ? t("{n} UC", { n: r.use_cases.length }) : "–"}</span>
+                            <span className="rcov-n">{r.use_cases.length ? `${detecting(r)}/${r.use_cases.length}` : "–"}</span>
                           </button>
                         </td>
                       );
@@ -189,10 +220,10 @@ export function RiskCoverage({
                               type="button"
                               className={`rcov-cell cov-${r.coverage}`}
                               onClick={() => jump(r)}
-                              title={`${c.name} / ${threatLabel(r.category)} (${(r.techniques ?? []).join(", ")}): ${COVERAGE_LABEL[r.coverage]} · ${t("{n} use cases", { n: r.use_cases.length })}`}
+                              title={`${c.name} / ${threatLabel(r.category)} (${(r.techniques ?? []).join(", ")}): ${COVERAGE_LABEL[r.coverage]} · ${detectRatio(r)}`}
                             >
                               <strong>{r.score ?? "–"}</strong>
-                              <span className="rcov-n">{r.use_cases.length ? t("{n} UC", { n: r.use_cases.length }) : "–"}</span>
+                              <span className="rcov-n">{r.use_cases.length ? `${detecting(r)}/${r.use_cases.length}` : "–"}</span>
                             </button>
                           ))}
                         {!risks.some((r) => r.custom && r.component === c.key) && <span aria-label={t("None")}>·</span>}
@@ -204,7 +235,7 @@ export function RiskCoverage({
             </table>
           </div>
           <p className="muted small rcov-legend" style={{ margin: 0 }}>
-            {t("Cells show the risk score (likelihood × impact) and the number of use cases; the colour shows the coverage. Click a cell to jump to the risk.")}
+            {t("Cells show the risk score (likelihood × impact) and how many of its use cases detect (detecting/all); the colour shows the coverage. Click a cell to jump to the risk.")}
           </p>
 
           <div className="filter-row" role="group" aria-label={t("Show")}>
@@ -224,7 +255,7 @@ export function RiskCoverage({
           {!shown.length && <p className="muted small">{t("No risk matches the filter.")}</p>}
           <ul className="plain-list rcov-list">
             {shown.map((r) => (
-              <li key={riskId(r)} id={riskId(r)} className={`rcov-risk cov-edge-${r.coverage}` + (focus === riskId(r) ? " is-focus" : "")}>
+              <li key={riskId(r)} id={riskId(r)} className={"rcov-risk" + (focus === riskId(r) ? " is-focus" : "")}>
                 <div className="rcov-risk-head">
                   <span className={`risk risk-${r.level ?? 0}`} title={t("Risk level {r}", { r: r.level ?? "–" })}>
                     {r.score ?? "–"}
@@ -240,6 +271,7 @@ export function RiskCoverage({
                   <span className={`cov-badge cov-${r.coverage}`} title={COVERAGE_HINT[r.coverage]}>
                     {COVERAGE_LABEL[r.coverage]}
                   </span>
+                  {r.use_cases.length > 0 && <span className="small muted">{detectRatio(r)}</span>}
                   <span className="grow" />
                   {onAdd && (
                     <button type="button" className="btn btn-sm" disabled={addDisabled} onClick={() => onAdd(r)}>
@@ -269,7 +301,7 @@ export function RiskCoverage({
                         {onRemove && (
                           <button
                             type="button"
-                            className="link-btn small rcov-uc-remove"
+                            className="link-btn link-quiet small rcov-uc-remove"
                             disabled={addDisabled}
                             title={t("Remove {code} from this risk", { code: u.code })}
                             aria-label={t("Remove {code} from this risk", { code: u.code })}
@@ -283,7 +315,11 @@ export function RiskCoverage({
                   </ul>
                 ) : (
                   <p className="small muted" style={{ margin: 0 }}>
-                    {r.above_threshold ? t("No use case addresses this risk.") : t("No use case chosen (below the threshold).")}
+                    {r.coverage === "unrated"
+                      ? t("Rate likelihood and impact to get use case proposals.")
+                      : r.above_threshold
+                        ? t("No use case addresses this risk.")
+                        : t("No use case chosen (below the threshold).")}
                   </p>
                 )}
                 {r.requests.length > 0 && (

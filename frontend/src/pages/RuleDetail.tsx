@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { flushSync } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, type L3, type RefItem, type RefKind } from "../api";
+import { api, ApiError, type L3, type RefItem, type RefKind } from "../api";
 import { useAuth } from "../auth";
 import ConfigPanel from "../components/ConfigPanel";
 import LifecyclePanel from "../components/LifecyclePanel";
@@ -11,6 +11,7 @@ import OutputPanel from "../components/OutputPanel";
 import PurpleTestsPanel from "../components/PurpleTestsPanel";
 import {
   Chips,
+  ConflictBox,
   confirmDialog,
   DraftRestoreBanner,
   ErrorNote,
@@ -98,6 +99,7 @@ export default function RuleDetail() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [conflict, setConflict] = useState(false);
 
   // The form follows the server data, except while it has unsaved edits: changing the status,
   // ticking the checklist or verifying reloads the rule and must not throw those edits away.
@@ -183,11 +185,27 @@ export default function RuleDetail() {
       rule.setData(updated);
       setSaved(t("Saved."));
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) setConflict(true);
       setError((err as Error).message);
     } finally {
       setBusy(false);
     }
   }
+
+  // 409: the form keeps unsaved edits across a reload (see `base`), so "keep mine" only takes
+  // the newer version as the base of the next save; "load theirs" drops the edits first.
+  const keepMine = () => {
+    setConflict(false);
+    setError(null);
+    void rule.reload();
+  };
+  const loadTheirs = () => {
+    setConflict(false);
+    setError(null);
+    base.current = null;
+    backup.clear();
+    void rule.reload();
+  };
 
   async function remove() {
     const ok = await confirmDialog(
@@ -292,22 +310,29 @@ export default function RuleDetail() {
           </div>
           {editor && (
             <div className="row-actions">
-              {can("admin") && (
-                <button type="button" className="btn" onClick={remove}>
-                  {t("Delete")}
-                </button>
-              )}
               <button type="button" className="btn btn-dark" onClick={() => setVerifying(true)}>
                 {t("Verify now")}
               </button>
-              <button type="submit" className="btn btn-primary" disabled={busy || !dirty}>
-                {dirty ? t("Save changes") : t("Saved")}
-              </button>
+              {/* unsaved edits are saved from the bar at the bottom; here only while there are some */}
+              {dirty && (
+                <button type="submit" className="btn btn-primary" disabled={busy}>
+                  {t("Save changes")}
+                </button>
+              )}
+              {can("admin") && (
+                <button type="button" className="btn btn-danger sep-left" onClick={remove}>
+                  {t("Delete")}
+                </button>
+              )}
             </div>
           )}
         </header>
         {!editor && <p className="form-notice">{t("Read-only: your role cannot change rules.")}</p>}
-        <ErrorNote error={error} />
+        {conflict ? (
+          <ConflictBox message={error} busy={busy} onKeepMine={keepMine} onLoadTheirs={loadTheirs} />
+        ) : (
+          <ErrorNote error={error} />
+        )}
         {saved && !dirty && (
           <p className="form-notice" role="status">
             {saved}
@@ -326,17 +351,32 @@ export default function RuleDetail() {
                       <label htmlFor={m.key}>{m.label}</label>
                       <span className="strong">{v === null ? t("not set") : `${Math.round(v * 100)} %`}</span>
                     </div>
-                    <input
-                      id={m.key}
-                      type="range"
-                      min={0}
-                      max={100}
-                      step={5}
-                      disabled={!editor}
-                      value={v === null ? 0 : Math.round(v * 100)}
-                      className={v === null ? "unset" : ""}
-                      onChange={(ev) => set({ [m.key]: Number(ev.target.value) / 100 } as Partial<Form>)}
-                    />
+                    {v === null ? (
+                      // not set is not 0: an empty track, no thumb (DESIGN.md: null renders empty)
+                      editor ? (
+                        <button
+                          id={m.key}
+                          type="button"
+                          className="slider-unset"
+                          onClick={() => set({ [m.key]: 0.5 } as Partial<Form>)}
+                        >
+                          {t("Not rated yet · set a value")}
+                        </button>
+                      ) : (
+                        <span className="slider-unset is-static">{t("Not rated yet")}</span>
+                      )
+                    ) : (
+                      <input
+                        id={m.key}
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={5}
+                        disabled={!editor}
+                        value={Math.round(v * 100)}
+                        onChange={(ev) => set({ [m.key]: Number(ev.target.value) / 100 } as Partial<Form>)}
+                      />
+                    )}
                     <span className="small muted">
                       {m.hint}
                       {editor && v !== null && (
@@ -409,7 +449,13 @@ export default function RuleDetail() {
                 <VerifiedCell rule={r} />
               </div>
               <p className="small muted" style={{ margin: 0 }}>
-                {t("Next due")} {fmtDate(r.verification_due)}
+                {r.last_verified_at || r.verification_due ? (
+                  <>
+                    {t("Next due")} {fmtDate(r.verification_due)}
+                  </>
+                ) : (
+                  <strong className="text-err">{t("Overdue: never verified")}</strong>
+                )}
                 {r.verification_interval_days
                   ? ` · ${t("every {n} days", { n: r.verification_interval_days })}`
                   : t(" · default interval")}

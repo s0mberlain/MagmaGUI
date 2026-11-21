@@ -6,7 +6,7 @@ import { fmtDate, fmtSize } from "../lib/format";
 import { renderRuleName, RULE_NAME_BUILTINS, ruleNameValues, unknownNames, type RuleNameVariable } from "../lib/ruleName";
 import { t } from "../i18n";
 
-const EXAMPLE = { code: "IA-CMT-LOG-02", name: "Failed Login Monitoring", l2_code: "IA-CMT", l1_code: "IA" };
+const EXAMPLE = { code: "AO-CRE-01", name: "Detect Credential Dumping Attempt", l2_code: "AO-CRE", l1_code: "AO" };
 
 const BUILTIN_HINT: Record<(typeof RULE_NAME_BUILTINS)[number], string> = {
   ucID: t("Rule ID"),

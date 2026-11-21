@@ -2,11 +2,14 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type DueRule } from "../api";
 import { useAuth } from "../auth";
-import { ErrorNote, ShowMore, StatusPill, useLoad, useShowMore } from "../components/ui";
+import { BulkBar, BulkVerifyDialog, SelectAll, useSelection } from "../components/BulkActions";
+import { CountUp, ErrorNote, ShowMore, StatusPill, useLoad, useShowMore } from "../components/ui";
 import { fmtDate } from "../lib/format";
 import { DueBadge } from "./Dashboard";
 import { VerifyDialog } from "./UseCases";
 import { t } from "../i18n";
+
+const int = (v: number) => String(Math.round(v));
 
 const WINDOWS = [
   { days: 0, label: t("Overdue only") },
@@ -29,6 +32,9 @@ export default function Verification() {
   const failed = rows.filter((d) => d.issues_at).length;
   const soon = rows.filter((d) => d.due && !d.overdue && !d.issues_at).length;
   const page = useShowMore(rows, 50);
+  const selection = useSelection();
+  const [bulk, setBulk] = useState(false);
+  const shownCodes = page.shown.map((d) => d.code);
 
   return (
     <>
@@ -47,31 +53,29 @@ export default function Verification() {
       <section className="kpi-grid" aria-label={t("Verification figures")}>
         <div className="card kpi">
           <span className="kpi-label">{t("Verification health")}</span>
-          <span className="kpi-value">
-            {k?.verification_health == null ? "–" : `${Math.round(k.verification_health * 100)} %`}
-          </span>
+          <CountUp className="kpi-value" value={k?.verification_health} format={(v) => `${Math.round(v * 100)} %`} />
           <span className="kpi-sub">
             {k ? t("{a} of {b} rules verified in time", { a: k.verified_in_time, b: k.operational_rules }) : "…"}
           </span>
         </div>
         <div className="card kpi">
           <span className="kpi-label">{t("Never verified")}</span>
-          <span className="kpi-value">{due.data ? never : "–"}</span>
+          <CountUp className="kpi-value" value={due.data ? never : null} format={int} />
           <span className="kpi-sub">{t("Count as overdue")}</span>
         </div>
         <div className="card kpi">
           <span className="kpi-label">{t("Overdue")}</span>
-          <span className="kpi-value">{due.data ? overdue : "–"}</span>
+          <CountUp className="kpi-value" value={due.data ? overdue : null} format={int} />
           <span className="kpi-sub">{t("Past their due date")}</span>
         </div>
         <div className="card kpi">
           <span className="kpi-label">{t("Due soon")}</span>
-          <span className="kpi-value">{due.data ? soon : "–"}</span>
+          <CountUp className="kpi-value" value={due.data ? soon : null} format={int} />
           <span className="kpi-sub">{t("Within the chosen window")}</span>
         </div>
         <div className="card kpi">
           <span className="kpi-label">{t("Failed last check")}</span>
-          <span className="kpi-value">{due.data ? failed : "–"}</span>
+          <CountUp className="kpi-value" value={due.data ? failed : null} format={int} />
           <span className="kpi-sub">{t("Issues found, not verified until a check is OK")}</span>
         </div>
       </section>
@@ -95,6 +99,11 @@ export default function Verification() {
         <table className="table">
           <thead>
             <tr>
+              {editor && (
+                <th className="col-check">
+                  <SelectAll codes={shownCodes} sel={selection.sel} setAll={selection.setAll} />
+                </th>
+              )}
               <th>{t("Rule")}</th>
               <th>{t("Status")}</th>
               <th>{t("Last verified")}</th>
@@ -105,7 +114,17 @@ export default function Verification() {
           </thead>
           <tbody>
             {page.shown.map((d) => (
-              <tr key={d.code}>
+              <tr key={d.code} className={selection.has(d.code) ? "is-selected" : undefined}>
+                {editor && (
+                  <td className="col-check">
+                    <input
+                      type="checkbox"
+                      aria-label={t("Select {code}", { code: d.code })}
+                      checked={selection.has(d.code)}
+                      onChange={() => selection.toggle(d.code)}
+                    />
+                  </td>
+                )}
                 <td>
                   <Link to={`/usecases/l3/${d.code}`} className="rule-link">
                     <span className="mono small muted">{d.code}</span>
@@ -144,7 +163,7 @@ export default function Verification() {
             ))}
             {due.data && !rows.length && (
               <tr>
-                <td colSpan={6} className="muted">
+                <td colSpan={editor ? 7 : 6} className="muted">
                   {t("Nothing to verify in this window.")}
                 </td>
               </tr>
@@ -153,6 +172,24 @@ export default function Verification() {
         </table>
         <ShowMore {...page} />
       </div>
+      {editor && (
+        <BulkBar count={selection.sel.size} onClear={selection.clear}>
+          <button type="button" className="btn btn-primary" onClick={() => setBulk(true)}>
+            {t("Verify selected…")}
+          </button>
+        </BulkBar>
+      )}
+      {bulk && (
+        <BulkVerifyDialog
+          codes={[...selection.sel]}
+          onClose={() => setBulk(false)}
+          onDone={() => {
+            selection.clear();
+            void due.reload();
+            void scores.reload();
+          }}
+        />
+      )}
 
       {verifying && (
         <VerifyDialog

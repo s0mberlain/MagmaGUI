@@ -367,7 +367,7 @@ export default function Integrations() {
       <div className="stack-lg">
         {d && d.sources.length === 0 && (
           <section className="card empty">
-            <h3>{t("No SIEM has reported yet")}</h3>
+            <h2 className="h-sm">{t("No SIEM has reported yet")}</h2>
             <p>
               {t(
                 "Create an API token, then let your SIEM or a scheduled script push its rules and monthly alert counts with the calls below.",

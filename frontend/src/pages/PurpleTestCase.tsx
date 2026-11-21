@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   api,
+  ApiError,
   purple,
   type PtAttachment,
   type PtBlueInput,
@@ -16,7 +17,7 @@ import EvidenceFiles from "../components/EvidenceFiles";
 import { Markdown, MarkdownField } from "../components/Markdown";
 import { AssigneePicker, RunState } from "../components/RunStatus";
 import TechniquePicker from "../components/TechniquePicker";
-import { confirmDialog, ErrorNote, useLoad, useUnsavedGuard } from "../components/ui";
+import { ConflictBox, confirmDialog, ErrorNote, useLoad, useUnsavedGuard } from "../components/ui";
 import { fmtDate, fmtTime } from "../lib/format";
 import {
   BLUE_STATUS_LABEL,
@@ -153,6 +154,8 @@ export default function PurpleTestCase() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // a save refused with 409: someone else saved this test case since it was loaded
+  const [conflict, setConflict] = useState(false);
   const seen = useRef<{ plan?: number; red?: number; blue?: number; blueStatus?: string; id?: number }>({});
 
   // Each side keeps its own form; a save of one side must not throw away edits on another.
@@ -192,12 +195,32 @@ export default function PurpleTestCase() {
       setSaved(message);
       return r;
     } catch (e) {
+      if (e instanceof ApiError && e.status === 409) setConflict(true);
       setError((e as Error).message);
       return null;
     } finally {
       setBusy(false);
     }
   }
+
+  /** 409: take the other person's version but keep every edit made here; the next save
+   * then overwrites theirs (like a config conflict). */
+  const keepMine = async () => {
+    const fresh = await run(() => purple.testCase(tid), "");
+    if (!fresh) return;
+    // tell the form sync that these versions are already seen, so it keeps the local forms
+    seen.current = { id: fresh.id, plan: fresh.plan_version, red: fresh.red_version, blue: fresh.blue_version, blueStatus: fresh.blue_status };
+    load.setData(fresh);
+    setSaved(null);
+    setConflict(false);
+    setError(null);
+  };
+  const loadTheirs = () => {
+    seen.current = {};
+    setConflict(false);
+    setError(null);
+    load.reload();
+  };
 
   const apply = (next: PtTestCase | null) => {
     if (next) load.setData(next);
@@ -308,7 +331,7 @@ export default function PurpleTestCase() {
   return (
     <>
       <nav className="crumbs" aria-label={t("Breadcrumb")}>
-        <Link to="/purple">{t("Purple teaming")}</Link> /
+        <Link to="/purple">{t("Purple team assessments")}</Link> /
         {tc.assessment_kind === "quick" ? (
           <Link to="/purple?tab=quick">{t("Quick tests")}</Link>
         ) : (
@@ -322,10 +345,24 @@ export default function PurpleTestCase() {
         <div>
           <h1>{tc.name}</h1>
           <div className="subtitle pt-head-pills">
-            <OutcomePill outcome={tc.outcome} overridden={tc.overridden} />
-            <RedPill status={tc.red_status} />
-            <BluePill status={tc.blue_status} />
-            {["improved", "regressed", "unchanged"].includes(tc.trend) && <TrendPill trend={tc.trend} />}
+            <span className="pill-labelled">
+              <span className="pill-label">{t("Outcome")}</span>
+              <OutcomePill outcome={tc.outcome} overridden={tc.overridden} />
+            </span>
+            <span className="pill-labelled">
+              <span className="pill-label">{t("Red team")}</span>
+              <RedPill status={tc.red_status} />
+            </span>
+            <span className="pill-labelled">
+              <span className="pill-label">{t("Blue team")}</span>
+              <BluePill status={tc.blue_status} />
+            </span>
+            {["improved", "regressed", "unchanged"].includes(tc.trend) && (
+              <span className="pill-labelled">
+                <span className="pill-label">{t("Since last run")}</span>
+                <TrendPill trend={tc.trend} />
+              </span>
+            )}
             {tc.techniques.map((x) => (
               <span key={x} className="code-tag" title={names.get(x) ?? x}>
                 {x}
@@ -335,13 +372,17 @@ export default function PurpleTestCase() {
         </div>
         {editor && (
           <div className="row-actions">
-            <button type="button" className="btn" onClick={() => void remove()} disabled={busy}>
+            <button type="button" className="btn btn-danger" onClick={() => void remove()} disabled={busy}>
               {t("Delete")}
             </button>
           </div>
         )}
       </header>
-      <ErrorNote error={error} />
+      {conflict ? (
+        <ConflictBox message={error} busy={busy} onKeepMine={() => void keepMine()} onLoadTheirs={loadTheirs} />
+      ) : (
+        <ErrorNote error={error} />
+      )}
       {saved && (
         <p className="form-success" role="status">
           {saved}
@@ -585,9 +626,10 @@ export default function PurpleTestCase() {
             </div>
           </div>
           {editor && (
-            // always visible at the bottom of the tab, like the blue side
-            <div className="unsaved-bar" role="status">
-              <span>{redDirty ? t("Unsaved changes to the red team side.") : t("No unsaved changes to the red team side.")}</span>
+            // floats over the page only while there is something to save; otherwise it rests at
+            // the end of the tab and keeps the run actions reachable without covering content
+            <div className={"unsaved-bar" + (redDirty ? "" : " is-clean")} role="status">
+              <span>{redDirty ? t("Unsaved changes to the red team side.") : t("All red team changes are saved.")}</span>
               <span className="row-actions">
                 <button type="button" className="btn btn-ghost" disabled={!redDirty || busy} onClick={() => setRed(redForm(tc))}>
                   {t("Discard")}
@@ -867,10 +909,10 @@ export default function PurpleTestCase() {
             </div>
           </div>
           {editor && (
-            // always visible at the bottom of the tab: the blue side form is long (defenses,
-            // findings, review), so the save buttons must not hide at the end of one card
-            <div className="unsaved-bar" role="status">
-              <span>{blueDirty ? t("Unsaved changes to the blue team side.") : t("No unsaved changes to the blue team side.")}</span>
+            // the blue side form is long (defenses, findings, review): while it has unsaved changes
+            // the bar floats so Save stays in reach; when clean it rests at the end of the tab
+            <div className={"unsaved-bar" + (blueDirty ? "" : " is-clean")} role="status">
+              <span>{blueDirty ? t("Unsaved changes to the blue team side.") : t("All blue team changes are saved.")}</span>
               <span className="row-actions">
                 <button type="button" className="btn btn-ghost" disabled={!blueDirty || busy} onClick={() => setBlue(blueForm(tc))}>
                   {t("Discard")}

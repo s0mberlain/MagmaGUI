@@ -18,9 +18,6 @@ export default function PurpleTrends() {
 
   return (
     <>
-      <nav className="crumbs" aria-label={t("Breadcrumb")}>
-        <Link to="/purple">{t("Purple teaming")}</Link> /
-      </nav>
       <header className="page-header">
         <div>
           <h1>{t("Purple team trends")}</h1>
@@ -107,6 +104,7 @@ export default function PurpleTrends() {
                 {t("No executed procedures match.")}
               </p>
             ) : (
+              <>
               <div className="scroll-x">
                 <table className="table cards-sm">
                   <thead>
@@ -149,6 +147,15 @@ export default function PurpleTrends() {
                   </tbody>
                 </table>
               </div>
+                <div className="legend pt-legend small" style={{ padding: "12px 18px" }}>
+                  <span className="muted">{t("Runs:")}</span>
+                  {(["blocked", "alerted", "logged_central", "logged_local", "none"] as const).map((o) => (
+                    <span key={o}>
+                      <i className={`pt-${o}`} /> {OUTCOME_LABEL[o]}
+                    </span>
+                  ))}
+                </div>
+              </>
             )}
           </section>
         </>

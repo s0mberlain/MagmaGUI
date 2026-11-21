@@ -30,12 +30,34 @@ export function fmtDate(iso: string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? iso : DATE_FMT.format(d);
 }
 
-/** Date and time, e.g. "14 Nov 2026 09:05"; null → "never". */
-export function fmtTime(iso: string | null | undefined): string {
+/** Date and time in the UI language, e.g. "14 Nov 2026 09:05" (24 h); null → "never".
+ * The one date-time format of the app: audit log, users, commits and evidence use it. */
+export function fmtTime(iso: string | null | undefined, seconds = false): string {
   if (!iso) return t("never");
   const d = parseTime(iso);
-  return `${fmtDate(iso)} ${d.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" })}`;
+  if (Number.isNaN(d.getTime())) return iso;
+  const time = d.toLocaleTimeString(locale(), {
+    hour: "2-digit",
+    minute: "2-digit",
+    ...(seconds ? { second: "2-digit" } : {}),
+    hour12: false,
+  });
+  return `${fmtDate(iso)} ${time}`;
 }
+
+/** Clock time of a local timestamp (ms), e.g. "09:05". */
+export function fmtClock(ms: number): string {
+  return new Date(ms).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+/** Whole numbers with the UI language's digit grouping. */
+export function fmtInt(v: number): string {
+  return v.toLocaleString(locale());
+}
+
+/** Control metrics where a fall is an improvement, keyed by metric id (not by label, which is
+ * translated): the detection gap, and growth potential (what is still to gain). */
+export const LOWER_IS_BETTER = new Set(["detection_gap", "growth_potential"]);
 
 export function today(): string {
   const d = new Date();
@@ -97,5 +119,7 @@ export function codeList(codes: string[], max = 20): string {
 export function fmtSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  const mb = bytes / (1024 * 1024);
+  if (mb < 1024) return `${mb.toFixed(1).replace(/\.0$/, "")} MB`;
+  return `${(mb / 1024).toFixed(1).replace(/\.0$/, "")} GB`;
 }

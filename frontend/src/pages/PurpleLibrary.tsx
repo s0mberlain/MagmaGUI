@@ -241,7 +241,7 @@ function Procedures({ editor }: { editor: boolean }) {
                           <button type="button" className="btn btn-sm" onClick={() => setEditing(x)}>
                             {t("Edit")}
                           </button>
-                          <button type="button" className="btn btn-sm" onClick={() => void remove(x)}>
+                          <button type="button" className="btn btn-sm btn-danger" onClick={() => void remove(x)}>
                             {t("Delete")}
                           </button>
                         </>
@@ -390,7 +390,7 @@ function CampaignTemplates({ editor }: { editor: boolean }) {
                   <button type="button" className="btn btn-sm" onClick={() => setEditing(ct)}>
                     {t("Edit")}
                   </button>
-                  <button type="button" className="btn btn-sm" onClick={() => void remove(ct)}>
+                  <button type="button" className="btn btn-sm btn-danger" onClick={() => void remove(ct)}>
                     {t("Delete")}
                   </button>
                 </span>
@@ -669,9 +669,6 @@ export default function PurpleLibrary() {
   const tab = (tabs.find(([k]) => k === params.get("tab"))?.[0] ?? "procedures") as Tab;
   return (
     <>
-      <nav className="crumbs" aria-label={t("Breadcrumb")}>
-        <Link to="/purple">{t("Purple teaming")}</Link> /
-      </nav>
       <header className="page-header">
         <div>
           <h1>{t("Purple team library")}</h1>

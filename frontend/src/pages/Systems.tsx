@@ -11,9 +11,17 @@ type SortKey = "name" | "owner_name" | "criticality" | "linked" | "coverage" | "
 
 const STATE_ORDER: Record<SystemRow["state"], number> = { none: 0, due: 1, ok: 2 };
 
-export function StatePill({ state }: { state: SystemRow["state"] }) {
+/** Interview state of a system. A first interview still in draft reads "Draft open", not
+ * "No interview"; a re-interview in draft keeps the state and adds the draft note. */
+export function StatePill({ state, draft = false }: { state: SystemRow["state"]; draft?: boolean }) {
+  if (state === "none" && draft) return <span className="pill iv-draft">{t("Draft open")}</span>;
   const cls = state === "ok" ? "pill pill-ok" : state === "due" ? "pill pill-warn" : "pill pill-none";
-  return <span className={cls}>{SYSTEM_STATE_LABEL[state]}</span>;
+  return (
+    <>
+      <span className={cls}>{SYSTEM_STATE_LABEL[state]}</span>
+      {draft && <span className="muted small"> · {t("Draft open")}</span>}
+    </>
+  );
 }
 
 export const EMPTY_SYSTEM: SystemInput = {
@@ -357,11 +365,18 @@ export default function Systems() {
                     {s.linked ? <Link to={`/usecases?sys=${s.id}&view=table`}>{s.linked}</Link> : <span className="muted">0</span>}
                   </td>
                   <td className="num" data-label={t("Detection coverage")}>{pct(s.coverage)}</td>
-                  <td className="num" data-label={t("Gaps")}>{s.gaps ? <span className="count-gap">{s.gaps}</span> : <span className="muted">0</span>}</td>
+                  <td className="num" data-label={t("Gaps")}>
+                    {!s.last_interview ? (
+                      <span className="muted" title={t("Not assessed yet: no completed interview.")}>–</span>
+                    ) : s.gaps ? (
+                      <span className="count-gap">{s.gaps}</span>
+                    ) : (
+                      <span className="muted">0</span>
+                    )}
+                  </td>
                   <td data-label={t("Last interview")}>{fmtDate(s.last_interview)}</td>
                   <td data-label={t("Interview status")}>
-                    <StatePill state={s.state} />
-                    {s.draft_id && <span className="muted small"> · {t("Draft open")}</span>}
+                    <StatePill state={s.state} draft={!!s.draft_id} />
                   </td>
                 </tr>
               ))}

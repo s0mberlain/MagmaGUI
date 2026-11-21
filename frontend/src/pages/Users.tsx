@@ -2,13 +2,13 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, type Role, type User } from "../api";
 import { ROLE_LABEL, useAuth } from "../auth";
 import { confirmDialog, ErrorNote, Modal } from "../components/ui";
-import { locale, t } from "../i18n";
-import { parseTime } from "../lib/format";
+import { t } from "../i18n";
+import { fmtTime } from "../lib/format";
 
 const ROLES: Role[] = ["admin", "analyst", "auditor"];
 
 function fmt(ts: string | null): string {
-  return ts ? parseTime(ts).toLocaleString(locale()) : t("never");
+  return fmtTime(ts);
 }
 
 export default function Users() {

@@ -1,4 +1,4 @@
-import { t } from "../i18n";
+import { locale, t } from "../i18n";
 import { useState } from "react";
 
 export interface MonthBar {
@@ -110,5 +110,5 @@ function niceStep(max: number): number {
 }
 
 export function fmtCount(v: number): string {
-  return v >= 10000 ? `${Math.round(v / 1000)}k` : v.toLocaleString();
+  return v >= 10000 ? `${Math.round(v / 1000)}k` : v.toLocaleString(locale());
 }

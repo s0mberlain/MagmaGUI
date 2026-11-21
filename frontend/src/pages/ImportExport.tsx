@@ -139,7 +139,7 @@ export default function ImportExport() {
           <a className="btn btn-primary" href="/api/export/excel" download>
             {t("Download Excel (.xlsx)")}
           </a>
-          <a className="btn" href="/api/export/json" download="magma-ucf-export.json">
+          <a className="btn" href="/api/export/json" download="vulcan-export.json">
             {t("Download JSON export")}
           </a>
         </div>

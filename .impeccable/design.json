@@ -1,0 +1,484 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-21T12:59:32+00:00",
+  "title": "Design System: Vulcan",
+  "extensions": {
+    "colorMeta": {
+      "ember-rust": {
+        "role": "primary",
+        "displayName": "Ember Rust",
+        "canonical": "oklch(55.3% 0.174 38)",
+        "tonalRamp": [
+          "oklch(15% 0.066 38)",
+          "oklch(26% 0.096 38)",
+          "oklch(37% 0.125 38)",
+          "oklch(48% 0.155 38)",
+          "oklch(59% 0.163 38)",
+          "oklch(71% 0.131 38)",
+          "oklch(83% 0.099 38)",
+          "oklch(95% 0.066 38)"
+        ]
+      },
+      "graphite": {
+        "role": "neutral",
+        "displayName": "Graphite",
+        "canonical": "oklch(20.9% 0.010 268)",
+        "tonalRamp": [
+          "oklch(15% 0.004 268)",
+          "oklch(26% 0.006 268)",
+          "oklch(37% 0.007 268)",
+          "oklch(48% 0.009 268)",
+          "oklch(59% 0.010 268)",
+          "oklch(71% 0.008 268)",
+          "oklch(83% 0.006 268)",
+          "oklch(95% 0.004 268)"
+        ]
+      },
+      "info-ink": {
+        "role": "secondary",
+        "displayName": "Info Ink",
+        "canonical": "oklch(37.9% 0.138 266)",
+        "tonalRamp": [
+          "oklch(15% 0.053 266)",
+          "oklch(26% 0.076 266)",
+          "oklch(37% 0.099 266)",
+          "oklch(48% 0.123 266)",
+          "oklch(59% 0.129 266)",
+          "oklch(71% 0.104 266)",
+          "oklch(83% 0.078 266)",
+          "oklch(95% 0.053 266)"
+        ]
+      },
+      "data-effectiveness": {
+        "role": "data",
+        "displayName": "Effectiveness Blue",
+        "canonical": "oklch(48.8% 0.217 264)",
+        "tonalRamp": [
+          "oklch(15% 0.083 264)",
+          "oklch(26% 0.120 264)",
+          "oklch(37% 0.157 264)",
+          "oklch(48% 0.194 264)",
+          "oklch(59% 0.204 264)",
+          "oklch(71% 0.163 264)",
+          "oklch(83% 0.123 264)",
+          "oklch(95% 0.083 264)"
+        ]
+      },
+      "ok-ink": {
+        "role": "status",
+        "displayName": "OK Green",
+        "canonical": "oklch(44.8% 0.108 151)",
+        "tonalRamp": [
+          "oklch(15% 0.041 151)",
+          "oklch(26% 0.060 151)",
+          "oklch(37% 0.078 151)",
+          "oklch(48% 0.097 151)",
+          "oklch(59% 0.102 151)",
+          "oklch(71% 0.082 151)",
+          "oklch(83% 0.061 151)",
+          "oklch(95% 0.041 151)"
+        ]
+      },
+      "caution-ink": {
+        "role": "status",
+        "displayName": "Caution Amber",
+        "canonical": "oklch(47.6% 0.103 62)",
+        "tonalRamp": [
+          "oklch(15% 0.039 62)",
+          "oklch(26% 0.057 62)",
+          "oklch(37% 0.075 62)",
+          "oklch(48% 0.092 62)",
+          "oklch(59% 0.097 62)",
+          "oklch(71% 0.078 62)",
+          "oklch(83% 0.059 62)",
+          "oklch(95% 0.039 62)"
+        ]
+      },
+      "danger-ink": {
+        "role": "status",
+        "displayName": "Danger Red",
+        "canonical": "oklch(50.5% 0.190 28)",
+        "tonalRamp": [
+          "oklch(15% 0.073 28)",
+          "oklch(26% 0.105 28)",
+          "oklch(37% 0.138 28)",
+          "oklch(48% 0.170 28)",
+          "oklch(59% 0.179 28)",
+          "oklch(71% 0.143 28)",
+          "oklch(83% 0.108 28)",
+          "oklch(95% 0.073 28)"
+        ]
+      },
+      "muted-slate": {
+        "role": "neutral",
+        "displayName": "Muted Slate",
+        "canonical": "oklch(49.3% 0.025 268)",
+        "tonalRamp": [
+          "oklch(15% 0.010 268)",
+          "oklch(26% 0.014 268)",
+          "oklch(37% 0.018 268)",
+          "oklch(48% 0.022 268)",
+          "oklch(59% 0.024 268)",
+          "oklch(71% 0.019 268)",
+          "oklch(83% 0.014 268)",
+          "oklch(95% 0.010 268)"
+        ]
+      },
+      "ember-rust-deep": {
+        "role": "primary",
+        "displayName": "Ember Rust Deep"
+      },
+      "ember-wash": {
+        "role": "primary",
+        "displayName": "Ember Wash"
+      },
+      "ember-flare": {
+        "role": "primary",
+        "displayName": "Ember Flare (logo spark only)"
+      },
+      "graphite-raised": {
+        "role": "neutral",
+        "displayName": "Graphite Raised"
+      },
+      "slate-ink": {
+        "role": "neutral",
+        "displayName": "Slate Ink"
+      },
+      "page-mist": {
+        "role": "neutral",
+        "displayName": "Page Mist"
+      },
+      "surface-white": {
+        "role": "neutral",
+        "displayName": "Surface White"
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline"
+      },
+      "hairline-strong": {
+        "role": "neutral",
+        "displayName": "Hairline Strong"
+      },
+      "subtle-fill": {
+        "role": "neutral",
+        "displayName": "Subtle Fill"
+      },
+      "track": {
+        "role": "neutral",
+        "displayName": "Track"
+      },
+      "info-wash": {
+        "role": "secondary",
+        "displayName": "Info Wash"
+      },
+      "data-implementation": {
+        "role": "data",
+        "displayName": "Implementation Sky"
+      },
+      "data-coverage": {
+        "role": "data",
+        "displayName": "Coverage Orange"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Login hero headline only."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page title (h1), one per page."
+      },
+      "metric": {
+        "displayName": "Metric",
+        "purpose": "Dashboard KPI readouts."
+      },
+      "metric-sm": {
+        "displayName": "Metric small",
+        "purpose": "Stat grids, trend values, secondary KPIs."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Card and section headings (h2)."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Base text, inputs, buttons, nav links."
+      },
+      "body-dense": {
+        "displayName": "Body dense",
+        "purpose": "Table cells, notices, breadcrumbs."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Field and KPI labels."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Table headers, pills, badges, chips, legends."
+      },
+      "overline": {
+        "displayName": "Overline",
+        "purpose": "Nav group headings only (uppercase)."
+      },
+      "code": {
+        "displayName": "Code",
+        "purpose": "Configs, diffs, code blocks, identifiers."
+      }
+    },
+    "shadows": [
+      {
+        "name": "popover",
+        "value": "0 8px 24px rgba(22, 24, 29, 0.12)",
+        "purpose": "Dropdown lists and anchored popovers."
+      },
+      {
+        "name": "floating-bar",
+        "value": "0 10px 30px rgba(22, 24, 29, 0.25)",
+        "purpose": "Sticky unsaved-changes bar."
+      },
+      {
+        "name": "dialog",
+        "value": "0 20px 60px rgba(22, 24, 29, 0.3)",
+        "purpose": "Modal dialogs (backdrop rgba(22, 24, 29, 0.45))."
+      },
+      {
+        "name": "selection-ring",
+        "value": "0 0 0 2px #fff1e8, 0 0 0 3px #c2410c",
+        "purpose": "Focused risk in coverage views."
+      },
+      {
+        "name": "invalid-ring",
+        "value": "0 0 0 1px #c2410c",
+        "purpose": "Invalid input, with an Ember border."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out",
+        "value": "expo.out (≈ cubic-bezier(0.16, 1, 0.3, 1))",
+        "purpose": "Arrivals: bars, dialogs, menus, rising bars."
+      },
+      {
+        "name": "count-up",
+        "value": "0.6s power2.out",
+        "purpose": "Figures count to their value when data first arrives or changes."
+      },
+      {
+        "name": "bar-fill",
+        "value": "0.6s expo.out, scaleX from 0, stagger 0.03s",
+        "purpose": "Metric and KPI bars fill from the left on first load."
+      },
+      {
+        "name": "rise-in",
+        "value": "0.24s expo.out, y 14px → 0",
+        "purpose": "Floating bulk and save bars entering."
+      },
+      {
+        "name": "open-in",
+        "value": "0.24s expo.out, opacity 0 → 1, y 4–6px, scale 0.985",
+        "purpose": "Dialogs and menus opening."
+      },
+      {
+        "name": "flip-rows",
+        "value": "0.36s power2.inOut (GSAP Flip)",
+        "purpose": "Ranked rows gliding to a new order after a filter change."
+      },
+      {
+        "name": "sign-in-strike",
+        "value": "~0.9s timeline: V drop 0.32s power3.in, spark 0.5s expo.out with glow, copy 0.5s",
+        "purpose": "The one authored moment, on the sign-in page."
+      },
+      {
+        "name": "rail-collapse",
+        "value": "flex-basis 0.15s ease",
+        "purpose": "Sidebar fold/unfold; off under prefers-reduced-motion."
+      },
+      {
+        "name": "run-pulse",
+        "value": "pt-pulse 1.4s ease-in-out infinite",
+        "purpose": "Dot of an in-progress purple-team run only; off under reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "rail-to-topbar",
+        "value": "800px"
+      },
+      {
+        "name": "compact-padding",
+        "value": "640px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Logo: The Struck V",
+      "kind": "custom",
+      "refersTo": "",
+      "description": "V monogram with an Ember Flare spark at the notch; on Graphite and on light.",
+      "html": "<span class=\"ds-logo ds-logo-dark\"><svg viewBox=\"0 0 32 32\" width=\"56\" height=\"56\" aria-hidden=\"true\"><path d=\"M4.5 6.5h6.2L16 19.2l5.3-12.7h6.2L18.6 26h-5.2Z\" fill=\"currentColor\"/><path d=\"M16 2.6l1.1 2.7 2.7 1.1-2.7 1.1L16 10.2l-1.1-2.7-2.7-1.1 2.7-1.1Z\" fill=\"#f97316\"/></svg></span> <span class=\"ds-logo ds-logo-light\"><svg viewBox=\"0 0 32 32\" width=\"56\" height=\"56\" aria-hidden=\"true\"><path d=\"M4.5 6.5h6.2L16 19.2l5.3-12.7h6.2L18.6 26h-5.2Z\" fill=\"currentColor\"/><path d=\"M16 2.6l1.1 2.7 2.7 1.1-2.7 1.1L16 10.2l-1.1-2.7-2.7-1.1 2.7-1.1Z\" fill=\"#f97316\"/></svg></span>",
+      "css": ".ds-logo{display:inline-flex;align-items:center;justify-content:center;width:88px;height:88px;border-radius:14px}.ds-logo-dark{background:#16181d;color:#e6e8ec}.ds-logo-light{background:#fff;border:1px solid #e2e4e9;color:#16181d}"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one Ember Rust action per area: Save, Create, Complete.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Save</button>",
+      "css": ".ds-btn{font-family: var(--font-body, Inter, system-ui, sans-serif);height:44px;padding:0 16px;border-radius:8px;border:1px solid #d5d8de;background:#fff;color:#16181d;font-size:14px;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:8px}.ds-btn-primary{background:var(--c-accent,#c2410c);border-color:var(--c-accent,#c2410c);color:#fff;font-weight:600}.ds-btn-primary:hover{background:var(--c-accent-hover,#9a3412);border-color:var(--c-accent-hover,#9a3412)}.ds-btn:focus-visible{outline:2px solid #c2410c;outline-offset:2px}.ds-btn:disabled{opacity:.55;cursor:not-allowed}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Default neutral outlined button for every other action.",
+      "html": "<button class=\"ds-btn-secondary\">Export Excel</button> <button class=\"ds-btn-secondary ds-btn-sm\">Edit</button>",
+      "css": ".ds-btn-secondary{font-family: var(--font-body, Inter, system-ui, sans-serif);height:44px;padding:0 16px;border-radius:8px;border:1px solid var(--c-border-strong,#d5d8de);background:#fff;color:var(--c-ink,#16181d);font-size:14px;font-weight:500;cursor:pointer}.ds-btn-secondary:hover{background:var(--c-subtle,#f1f2f5)}.ds-btn-secondary:focus-visible{outline:2px solid #c2410c;outline-offset:2px}.ds-btn-sm{height:36px;padding:0 12px;font-size:13px}"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Destructive action as a red-text outline; solid red only inside the confirm dialog.",
+      "html": "<button class=\"ds-btn-danger\">Delete rule</button>",
+      "css": ".ds-btn-danger{font-family: var(--font-body, Inter, system-ui, sans-serif);height:44px;padding:0 16px;border-radius:8px;border:1px solid #fecaca;background:#fff;color:#b91c1c;font-size:14px;font-weight:500;cursor:pointer}.ds-btn-danger:hover{background:#fef2f2}.ds-btn-danger:focus-visible{outline:2px solid #c2410c;outline-offset:2px}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Labelled 44px input with Ember focus and error ring.",
+      "html": "<label class=\"ds-field\">Rule name<input class=\"ds-input\" value=\"Brute force on VPN\"></label>",
+      "css": ".ds-field{font-family: var(--font-body, Inter, system-ui, sans-serif);display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:500;color:#16181d;width:280px}.ds-input{font:inherit;height:44px;border:1px solid var(--c-border-strong,#d5d8de);border-radius:8px;padding:0 12px;font-size:14px;font-weight:400;background:#fff;color:#16181d}.ds-input:focus{outline:2px solid #c2410c;outline-offset:2px}"
+    },
+    {
+      "name": "Navigation Rail",
+      "kind": "nav",
+      "refersTo": "nav-rail",
+      "description": "Graphite sidebar with overline groups and a raised active link.",
+      "html": "<nav class=\"ds-nav\"><div class=\"ds-brand\"><svg width=\"24\" height=\"24\" viewBox=\"0 0 32 32\" aria-hidden=\"true\"><path d=\"M4.5 6.5h6.2L16 19.2l5.3-12.7h6.2L18.6 26h-5.2Z\" fill=\"#e6e8ec\"/><path d=\"M16 2.6l1.1 2.7 2.7 1.1-2.7 1.1L16 10.2l-1.1-2.7-2.7-1.1 2.7-1.1Z\" fill=\"#f97316\"/></svg>Vulcan</div><div class=\"ds-nav-head\">Daily work</div><a class=\"ds-nav-link ds-active\" href=\"#\">Dashboard</a><a class=\"ds-nav-link\" href=\"#\">Use cases</a><a class=\"ds-nav-link\" href=\"#\">Verification</a></nav>",
+      "css": ".ds-nav{font-family: var(--font-body, Inter, system-ui, sans-serif);width:232px;background:#16181d;padding:20px 14px;display:flex;flex-direction:column;gap:2px;border-radius:12px}.ds-brand{display:flex;align-items:center;gap:10px;padding:4px 10px 20px;color:#fff;font-family:'Space Grotesk',Inter,sans-serif;font-weight:700;font-size:18px;letter-spacing:.02em}.ds-nav-head{padding:6px 12px 4px;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#a9aeb8}.ds-nav-link{display:flex;align-items:center;min-height:40px;padding:0 12px;border-radius:8px;font-size:14px;font-weight:500;color:#c9cdd4;text-decoration:none}.ds-nav-link:hover{color:#fff;background:rgba(255,255,255,.06)}.ds-nav-link.ds-active{background:#2c3038;color:#fff;font-weight:600}.ds-nav-link:focus-visible{outline:2px solid #c2410c;outline-offset:2px}"
+    },
+    {
+      "name": "Status Pills & Gap Badge",
+      "kind": "chip",
+      "refersTo": "pill-operational",
+      "description": "Lifecycle pills and the Detection gap badge: status colour lives only here.",
+      "html": "<span class=\"ds-pill ds-ok\">Operational</span> <span class=\"ds-pill ds-info\">Maintenance</span> <span class=\"ds-pill ds-caution\">Onboarding</span> <span class=\"ds-pill ds-neutral\">Retired</span> <span class=\"ds-pill ds-gap\">Detection gap</span>",
+      "css": ".ds-pill{font-family:Inter,system-ui,sans-serif;font-size:12px;font-weight:600;border-radius:999px;padding:4px 10px;display:inline-block}.ds-ok{background:#e7f6ec;color:#166534}.ds-info{background:#eef2ff;color:#1e3a8a}.ds-caution{background:#fef6dc;color:#854d0e}.ds-neutral{background:#f1f2f5;color:#5b6170}.ds-gap{background:#fff1e8;color:#9a3412}"
+    },
+    {
+      "name": "Chips & Level Tags",
+      "kind": "chip",
+      "refersTo": "chip-info",
+      "description": "4px-radius label chips for log sources etc.; mono L2/L3 tags.",
+      "html": "<span class=\"ds-chip\">OS logging</span> <span class=\"ds-chip\">EDR</span> <span class=\"ds-lvl ds-l2\">L2</span> <span class=\"ds-lvl ds-l3\">L3</span> <span class=\"ds-code\">AO-CRE-01</span>",
+      "css": ".ds-chip{font-family:Inter,system-ui,sans-serif;font-size:12px;border-radius:4px;padding:2px 7px;background:#eef2ff;color:#1e3a8a}.ds-lvl{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;font-weight:700;border-radius:4px;padding:1px 5px}.ds-l2{background:#eef2ff;color:#1e3a8a}.ds-l3{background:#f3e8ff;color:#6b21a8}.ds-code{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;color:#16181d}"
+    },
+    {
+      "name": "KPI Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Flat white card with hairline border; Space Grotesk readout.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-kpi-label\">SOC detection score</div><div class=\"ds-kpi-value\">42 %</div><div class=\"ds-bar\"><div style=\"width:42%\"></div></div><div class=\"ds-kpi-sub\">Detection gap 58 %</div></div>",
+      "css": ".ds-card{font-family:Inter,system-ui,sans-serif;background:#fff;border:1px solid #e2e4e9;border-radius:12px;padding:20px 22px;display:flex;flex-direction:column;gap:8px;width:220px}.ds-kpi-label{font-size:13px;font-weight:500;color:#5b6170}.ds-kpi-value{font-family:'Space Grotesk',Inter,sans-serif;font-size:34px;font-weight:600;line-height:1;color:#16181d}.ds-bar{height:6px;border-radius:3px;background:#eef0f3;overflow:hidden}.ds-bar>div{height:100%;border-radius:3px;background:#c2410c}.ds-kpi-sub{font-size:12px;color:#5b6170}"
+    },
+    {
+      "name": "Metric Bars",
+      "kind": "custom",
+      "refersTo": "",
+      "description": "Signature triad: effectiveness, implementation, coverage; null shows an empty track.",
+      "html": "<div class=\"ds-mbars\"><div class=\"ds-mbar\"><div style=\"width:80%;background:#1d4ed8\"></div></div><div class=\"ds-mbar\"><div style=\"width:60%;background:#93c5fd\"></div></div><div class=\"ds-mbar\"><div style=\"width:0\"></div></div></div>",
+      "css": ".ds-mbars{display:flex;flex-direction:column;gap:3px;width:120px}.ds-mbar{height:6px;border-radius:3px;background:#eef0f3;overflow:hidden}.ds-mbar>div{height:100%;border-radius:3px}"
+    },
+    {
+      "name": "Unsaved-changes Bar",
+      "kind": "custom",
+      "refersTo": "unsaved-bar",
+      "description": "Sticky Graphite bar keeping Save in reach on long editors.",
+      "html": "<div class=\"ds-unsaved\"><span>3 unsaved changes</span><span><button class=\"ds-ghost\">Discard</button> <button class=\"ds-save\">Save</button></span></div>",
+      "css": ".ds-unsaved{font-family:Inter,system-ui,sans-serif;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-radius:12px;background:#16181d;color:#fff;font-size:13px;box-shadow:0 10px 30px rgba(22,24,29,.25);width:460px}.ds-ghost,.ds-save{font:inherit;height:36px;padding:0 12px;border-radius:8px;cursor:pointer}.ds-ghost{background:transparent;color:#fff;border:1px solid #2c3038}.ds-save{background:#c2410c;border:1px solid #c2410c;color:#fff;font-weight:600}.ds-save:hover{background:#9a3412}.ds-ghost:focus-visible,.ds-save:focus-visible{outline:2px solid #c2410c;outline-offset:2px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Basalt Ledger",
+    "overview": "Vulcan is a dark Graphite frame of cooled stone around a light, precise record. The near-black rail and the occasional dark band (code, the sticky save bar) are the basalt. The pale page and its white, hairline-bordered cards hold the ledger, where every rule, score, verification and decision is written down and can be traced. Ember Rust is the heat that remains. It marks the one action that moves work forward and the gaps that still need attention, and nothing else. The name fits the world: Vulcan is the forge, and the mark is a V struck like a hammer blow, throwing one Ember spark.\n\nFour kinds of experts use the system at their desks all day, so it is dense, calm and exact. Information beats ornament: tables, readouts, chips and small status pills do the work, and the type pairing splits voices cleanly. Space Grotesk speaks for headings and numbers; Inter carries everything you read and fill in; JetBrains Mono marks identifiers, configs and code. Controls are precise and quiet: neutral outlined buttons and inputs, with orange reserved for the single primary action in an area.\n\nThe system rejects four looks. It is not a neon \"hacker\" terminal with green or cyan glow, not a generic SaaS dashboard with gradients, glassy cards and decorative hero blocks, and not a clone of the old Excel grid. It also refuses traffic-light overload: red, amber and green appear only where a real status is being reported.",
+    "keyCharacteristics": [
+      "Graphite rail and frame, pale Page Mist canvas, white cards separated by 1px hairlines.",
+      "One warm accent (Ember Rust), used sparingly for primary actions, active indicators, links and gaps.",
+      "Flat surfaces; shadows only on things that float.",
+      "Space Grotesk for headings and metrics, Inter for text and controls, JetBrains Mono for IDs and code.",
+      "Dense desktop layouts: 13–14px text, 44px controls, tables that scroll inside their card.",
+      "Status colour is semantic and local: pills, dots, outcome cells and badges, never page decoration."
+    ],
+    "rules": [
+      {
+        "name": "The Ember Budget Rule",
+        "body": "Each area gets at most one Ember Rust button. Every other action is a neutral outlined button. If two things on a screen are orange and only one is a gap or the primary action, one of them is wrong.",
+        "section": "colors"
+      },
+      {
+        "name": "The Status Is Local Rule",
+        "body": "Status colours live inside the element that reports the status (a pill, dot, cell, badge or border edge). They never tint whole cards, page headers or backgrounds.",
+        "section": "colors"
+      },
+      {
+        "name": "The Data Triad Rule",
+        "body": "Effectiveness, implementation and coverage always use the three data colours, in that order, with a legend nearby. No other series may borrow them.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two Voices Rule",
+        "body": "Space Grotesk is for headings and numbers; Inter is for everything people read or type. Never set body text, labels or table cells in Space Grotesk, and never set a page title in Inter.",
+        "section": "typography"
+      },
+      {
+        "name": "The Identifier Rule",
+        "body": "Anything a user could copy into a SIEM, a ticket or a search (rule codes, technique IDs, SHAs, tags) is set in mono.",
+        "section": "typography"
+      },
+      {
+        "name": "The Dense, Not Cramped Rule",
+        "body": "Density comes from small type and tight tables, not from removing padding. Cards keep their 20–22px inner padding and controls keep their 44px height (36px for small, 28px for in-table extra-small).",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat-By-Default Rule",
+        "body": "Cards, tables, tiles and panels are separated by borders and tone, never by resting shadows. If it doesn't float over other content, it doesn't get a shadow.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Pill Means State Rule",
+        "body": "Fully rounded shapes are reserved for statuses, outcomes and filters. Identifiers and tags use the 4px tag shape.",
+        "section": "shapes"
+      },
+      {
+        "name": "The One Strike Rule",
+        "body": "Only the sign-in mark gets an authored sequence. Everything else in the app is feedback or continuity under 0.4 s, and nothing waits on an animation.",
+        "section": "motion"
+      }
+    ],
+    "dos": [
+      "Do keep one Ember Rust (`#c2410c`) primary button per area, and use neutral outlined buttons for everything else.",
+      "Do show missing data explicitly: a Detection gap badge, a muted \"–\", a dashed \"unrated\" or empty-state box. Never show a fabricated 0.",
+      "Do use the 1px Hairline border on white for every card and panel, and keep shadows for floating elements only.",
+      "Do set rule codes, ATT&CK IDs, SHAs, tags and SIEM names in JetBrains Mono.",
+      "Do reuse the existing status mappings (lifecycle pills, coverage badges, outcome scale) instead of inventing new colour meanings.",
+      "Do give every interactive element the 2px Ember Rust focus outline at a 2px offset.",
+      "Do let wide tables scroll inside their card, keeping the 720px minimum width.",
+      "Do run every new label through translation and leave room for longer German and Dutch strings in buttons, tabs and table headers."
+    ],
+    "donts": [
+      "Don't use a neon \"hacker\" look: no dark terminal pages, green or cyan glows, scanlines or matrix motifs. Graphite is a frame, not a theme.",
+      "Don't import generic SaaS dashboard tropes: gradients, glassmorphism, glowing cards, large decorative icon tiles or marketing hero blocks inside the app.",
+      "Don't recreate the old Excel's grid look (gridlines on every cell, coloured header bands, spreadsheet chrome). Vulcan is its own tool.",
+      "Don't apply red, amber and green to things that are not statuses. No coloured page headers, card backgrounds or decorative traffic lights.",
+      "Don't add a new amber or red when an existing one fits. Two near-duplicate caution pairs exist today (`#fef6dc`/`#854d0e` and `#fef3c7`/`#92400e`); use the first and consolidate the second when touching that code.",
+      "Don't use Ember Flare (`#f97316`) anywhere but the logo's spark, and don't use the coverage orange (`#ea580c`) as an action colour.",
+      "Don't set body text or table content in Space Grotesk, or page titles in Inter.",
+      "Don't add resting shadows to cards, tables or KPI tiles."
+    ]
+  }
+}

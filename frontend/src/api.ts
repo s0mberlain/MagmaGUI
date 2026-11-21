@@ -31,6 +31,15 @@ export interface CatalogueSummary {
   references: Record<string, number>;
 }
 
+/** Filters of the audit log; dates are YYYY-MM-DD (UTC days, inclusive). */
+export interface AuditFilter {
+  user?: string;
+  action?: string;
+  entity?: string;
+  search?: string;
+  since?: string;
+  until?: string;
+}
 export interface AuditEntry {
   id: number;
   at: string;
@@ -1106,7 +1115,12 @@ export const api = {
   updateUser: (id: number, u: Partial<{ display_name: string; role: Role; active: boolean; password: string }>) =>
     request<User>("PATCH", `/api/users/${id}`, u),
   deleteUser: (id: number) => request<void>("DELETE", `/api/users/${id}`),
-  audit: (limit = 100) => request<AuditEntry[]>("GET", `/api/audit?limit=${limit}`),
+  audit: (limit = 100, filter: AuditFilter = {}, offset = 0) => {
+    const q = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    for (const [k, v] of Object.entries(filter)) if (v) q.set(k, v);
+    return request<AuditEntry[]>("GET", `/api/audit?${q}`);
+  },
+  auditFacets: () => request<{ users: string[]; actions: string[]; entities: string[] }>("GET", "/api/audit/facets"),
 
   scores: () => request<Scores>("GET", "/api/scores"),
   due: (withinDays = 30) => request<DueRule[]>("GET", `/api/verification/due?within_days=${withinDays}`),

@@ -8,16 +8,13 @@ import {
   type Level,
   type ConfigCheck,
 } from "../api";
-import { fmtDate, parseTime } from "../lib/format";
+import { fmtTime } from "../lib/format";
 import { confirmDialog, ErrorNote, useLoad } from "./ui";
 import { t } from "../i18n";
 
 type Tab = "editor" | "history" | "diff";
 
-function when(iso: string) {
-  const d = parseTime(iso);
-  return `${fmtDate(iso)} ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
-}
+const when = (iso: string) => fmtTime(iso);
 
 export function DiffView({ lines, empty = t("No differences.") }: { lines: DiffLine[]; empty?: string }) {
   if (!lines.length) return <p className="muted small">{empty}</p>;

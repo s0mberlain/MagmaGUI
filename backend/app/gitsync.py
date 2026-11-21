@@ -188,9 +188,9 @@ def legacy_path(rel: str) -> str | None:
 
 README = """# MaGMa use case configurations
 
-This repository is written by the MaGMa UCF web application. Every configuration commit made in
-the app appears here as a git commit with the same author, date and message. Tags are named
-`<use case>/<tag>`, for example `AO-CRE-01/verified-2026-11-13`.
+This repository is written by Vulcan, the MaGMa use case management web application. Every
+configuration commit made in the app appears here as a git commit with the same author, date
+and message. Tags are named `<use case>/<tag>`, for example `AO-CRE-01/verified-2026-11-13`.
 
 Layout: `usecases/<L1>/<L2>/<L3>.json` for an L3 rule. When two-way sync is on in the app,
 commits pushed here that change these files are read back into the app (valid JSON only,

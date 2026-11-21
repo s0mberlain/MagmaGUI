@@ -9,6 +9,8 @@ import {
   type L1,
   type L2,
   type L3,
+  LIFECYCLES,
+  type Lifecycle,
   type RefKind,
   type Scores,
   type SystemRow,
@@ -16,6 +18,7 @@ import {
 import { useAuth } from "../auth";
 import { Markdown, MarkdownField } from "../components/Markdown";
 import { BusinessChips, ComplianceChips, DriverBlock, DriverPickers, EditDriversDialog } from "../components/Drivers";
+import { BulkBar, BulkStatusDialog, BulkVerifyDialog, SelectAll, useSelection } from "../components/BulkActions";
 import LifecyclePanel from "../components/LifecyclePanel";
 import {
   Chips,
@@ -131,7 +134,8 @@ export default function UseCases() {
   };
   const matchesFilters = (l2: L2) => matchesDrivers(l2, filter) && matchesRef(l2);
   const filtering = !!(filter.bd || filter.src || filter.cd || filter.sys || refActive);
-  const view = params.get("view") === "table" ? "table" : "tree";
+  const viewParam = params.get("view");
+  const view = viewParam === "table" ? "table" : viewParam === "rules" ? "rules" : "tree";
   /** Change some URL parameters and keep the others (filters, view, selection). */
   const setParam = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(params);
@@ -193,9 +197,19 @@ export default function UseCases() {
   // Table view with a rule filter lists the matching rules of all L2 use cases.
   const ruleTable = view === "table" && !!ruleKind;
   const allHeads = useLoad(
-    () => (ruleTable ? api.configHeads("l3", "") : Promise.resolve({})),
-    [ruleTable],
+    () => (ruleTable || view === "rules" ? api.configHeads("l3", "") : Promise.resolve({})),
+    [ruleTable, view === "rules"],
   );
+  // L3 rules view: every rule in one list, with the page's driver and reference filters
+  const flat = useLoad<L3[] | null>(() => (view === "rules" ? api.l3s() : Promise.resolve(null)), [view === "rules"]);
+  const flatRules = useMemo(() => {
+    if (view !== "rules" || !cat.data) return [];
+    const l2s = new Map(cat.data.l2s.map((x) => [x.code, x]));
+    return (flat.data ?? []).filter((r) => {
+      const l2 = l2s.get(r.l2_code);
+      return ruleMatches(r) && !!l2 && matchesDrivers(l2, filter);
+    });
+  }, [view, cat.data, flat.data, refName, params]);
   const tableRules = useMemo(() => {
     if (!ruleTable || !cat.data) return [];
     const l2s = new Map(cat.data.l2s.map((x) => [x.code, x]));
@@ -240,7 +254,7 @@ export default function UseCases() {
 
       <section className="card uc-filters" aria-label={t("Filter use cases")}>
         <div className="view-toggle" role="group" aria-label={t("View")}>
-          {(["tree", "table"] as const).map((v) => (
+          {(["tree", "table", "rules"] as const).map((v) => (
             <button
               key={v}
               type="button"
@@ -248,7 +262,7 @@ export default function UseCases() {
               aria-pressed={view === v}
               onClick={() => setParam({ view: v === "tree" ? null : v })}
             >
-              {v === "tree" ? t("Tree") : t("Table")}
+              {v === "tree" ? t("Tree") : v === "table" ? t("L2 table") : t("L3 rules")}
             </button>
           ))}
         </div>
@@ -373,6 +387,22 @@ export default function UseCases() {
         </section>
       )}
 
+      {view === "rules" && cat.data && !refMissing && (
+        <RulesView
+          rules={flatRules}
+          loading={!flat.data}
+          error={flat.error}
+          heads={allHeads.data ?? {}}
+          refLink={refLink}
+          editor={editor}
+          onChanged={() => {
+            void flat.reload();
+            void allHeads.reload();
+            refresh();
+          }}
+        />
+      )}
+
       {view === "table" && !ruleTable && cat.data && (
         <UseCaseTable
           cat={cat.data}
@@ -393,7 +423,8 @@ export default function UseCases() {
           <input
             id="uc-search"
             className="input input-sm"
-            placeholder={t("Search use cases, rules, ATT&CK IDs")}
+            data-hotkey-search
+            placeholder={t("Search use cases, rules, ATT&CK IDs  ( / )")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -760,21 +791,157 @@ function UseCaseTable({
   );
 }
 
+type RuleFlag = "" | "unscored" | "overdue" | "unassessed";
+
+/** Every L3 rule in one filterable list with bulk verify and bulk status change. */
+function RulesView({
+  rules,
+  loading,
+  error,
+  heads,
+  refLink,
+  editor,
+  onChanged,
+}: {
+  rules: L3[];
+  loading: boolean;
+  error: string | null;
+  heads: Record<string, ConfigCommit>;
+  refLink: RefLink;
+  editor: boolean;
+  onChanged: () => void;
+}) {
+  const [q, setQ] = useState("");
+  const [status, setStatus] = useState<Lifecycle | "">("");
+  const [ls, setLs] = useState("");
+  const [flag, setFlag] = useState<RuleFlag>("");
+  const [limit, setLimit] = useState(100);
+  const [dialog, setDialog] = useState<"verify" | "status" | null>(null);
+  const selection = useSelection();
+  const logSources = useMemo(() => [...new Set(rules.flatMap((r) => r.log_sources))].sort(), [rules]);
+  const needle = q.trim().toLowerCase();
+  const shown = rules.filter((r) => {
+    if (status && r.lifecycle_status !== status) return false;
+    if (ls && !r.log_sources.includes(ls)) return false;
+    if (flag === "unscored" && r.scored) return false;
+    if (flag === "unassessed" && r.assessed) return false;
+    if (flag === "overdue" && !r.verification_overdue) return false;
+    if (!needle) return true;
+    const text = [r.code, r.name, r.siem_name ?? "", ...r.attack_techniques, ...(r.siem_rule_ids ?? [])].join(" ").toLowerCase();
+    return text.includes(needle);
+  });
+  const statusOf = useMemo(() => new Map(rules.map((r) => [r.code, r.lifecycle_status])), [rules]);
+  const page = shown.slice(0, limit);
+
+  return (
+    <section className="stack">
+      <div className="card filters rules-filters" role="search" aria-label={t("Filter rules")}>
+        <label className="sr-only" htmlFor="rules-q">
+          {t("Search rules")}
+        </label>
+        <input
+          id="rules-q"
+          className="input input-sm grow-2"
+          data-hotkey-search
+          placeholder={t("Search code, name, SIEM name, ATT&CK ID  ( / )")}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+        <select className="input input-sm" aria-label={t("Status")} value={status} onChange={(e) => setStatus(e.target.value as Lifecycle | "")}>
+          <option value="">{t("Any status")}</option>
+          {LIFECYCLES.map((x) => (
+            <option key={x} value={x}>
+              {STATUS_LABEL[x]}
+            </option>
+          ))}
+        </select>
+        <select className="input input-sm" aria-label={t("Log source")} value={ls} onChange={(e) => setLs(e.target.value)}>
+          <option value="">{t("Any log source")}</option>
+          {logSources.map((x) => (
+            <option key={x} value={x}>
+              {x}
+            </option>
+          ))}
+        </select>
+        <select className="input input-sm" aria-label={t("Show")} value={flag} onChange={(e) => setFlag(e.target.value as RuleFlag)}>
+          <option value="">{t("All rules")}</option>
+          <option value="unscored">{t("Not scored")}</option>
+          <option value="unassessed">{t("Metrics missing")}</option>
+          <option value="overdue">{t("Verification overdue")}</option>
+        </select>
+        <span className="small muted nowrap">{t("{n} of {total} rules", { n: shown.length, total: rules.length })}</span>
+      </div>
+      <ErrorNote error={error} />
+      {loading && <p className="muted">{t("Loading…")}</p>}
+      {!loading && page.length > 0 && (
+        <RuleTable rules={page} heads={heads} refLink={refLink} selection={editor ? selection : undefined} />
+      )}
+      {!loading && !shown.length && <p className="muted empty-flat">{t("No L3 rule matches the filters.")}</p>}
+      {shown.length > limit && (
+        <div className="row-actions start">
+          <button type="button" className="btn btn-sm" onClick={() => setLimit((n) => n + 200)}>
+            {t("Show {n} more", { n: Math.min(200, shown.length - limit) })}
+          </button>
+        </div>
+      )}
+      {editor && (
+        <BulkBar count={selection.sel.size} onClear={selection.clear}>
+          <button type="button" className="btn" onClick={() => setDialog("status")}>
+            {t("Change status…")}
+          </button>
+          <button type="button" className="btn btn-primary" onClick={() => setDialog("verify")}>
+            {t("Verify…")}
+          </button>
+        </BulkBar>
+      )}
+      {dialog === "verify" && (
+        <BulkVerifyDialog
+          codes={[...selection.sel]}
+          onClose={() => setDialog(null)}
+          onDone={() => {
+            selection.clear();
+            onChanged();
+          }}
+        />
+      )}
+      {dialog === "status" && (
+        <BulkStatusDialog
+          codes={[...selection.sel]}
+          statusOf={(c) => statusOf.get(c)}
+          onClose={() => setDialog(null)}
+          onDone={() => {
+            selection.clear();
+            onChanged();
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
 function RuleTable({
   rules,
   heads,
   refLink,
+  selection,
 }: {
   rules: L3[];
   heads: Record<string, ConfigCommit>;
   refLink: RefLink;
+  /** check boxes for bulk actions (L3 rules view) */
+  selection?: ReturnType<typeof useSelection>;
 }) {
   return (
     <div className="card table-card">
       <table className="table">
         <thead>
           <tr>
-            <th>{t("Rule")}</th>
+            {selection && (
+              <th className="col-check">
+                <SelectAll codes={rules.map((r) => r.code)} sel={selection.sel} setAll={selection.setAll} />
+              </th>
+            )}
+            <th className="col-rule">{t("Rule")}</th>
             <th>{t("Status")}</th>
             <th className="num">{t("Eff")}</th>
             <th className="num">{t("Impl")}</th>
@@ -787,8 +954,18 @@ function RuleTable({
         </thead>
         <tbody>
           {rules.map((r) => (
-            <tr key={r.code}>
-              <td>
+            <tr key={r.code} className={selection?.has(r.code) ? "is-selected" : undefined}>
+              {selection && (
+                <td className="col-check">
+                  <input
+                    type="checkbox"
+                    aria-label={t("Select {code}", { code: r.code })}
+                    checked={selection.has(r.code)}
+                    onChange={() => selection.toggle(r.code)}
+                  />
+                </td>
+              )}
+              <td className="col-rule">
                 <Link to={`/usecases/l3/${r.code}`} className="rule-link">
                   <span className="mono small muted">
                     {r.code}

@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, type AuthConfig } from "../api";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
 import Logo from "../components/Logo";
+import { useSignInStrike } from "../lib/motion";
 import { t } from "../i18n";
 import LanguageSelect from "../components/LanguageSelect";
 
@@ -50,6 +51,9 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [cfg, setCfg] = useState<AuthConfig | null>(null);
+  // the one authored moment of the app: the Vulcan mark is struck (lib/motion.ts)
+  const hero = useRef<HTMLDivElement>(null);
+  useSignInStrike(hero);
   const ssoError = new URLSearchParams(location.search).get("sso_error");
 
   useEffect(() => {
@@ -81,11 +85,11 @@ export default function Login() {
 
   return (
     <div className="login">
-      <div className="login-hero">
+      <div className="login-hero" ref={hero}>
         <div className="brand">
           <Logo size={36} />
           <span className="brand-name" style={{ fontSize: 22 }}>
-            {t("Magma UCF")}
+            {t("Vulcan")}
           </span>
         </div>
         <div>

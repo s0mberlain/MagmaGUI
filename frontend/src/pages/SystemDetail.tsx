@@ -108,7 +108,7 @@ export default function SystemDetail() {
             {s.name} {s.archived && <span className="chip chip-neutral">{t("Archived")}</span>}
           </h1>
           <div className="subtitle">
-            <StatePill state={s.state} />{" "}
+            <StatePill state={s.state} draft={!!s.draft_id} />{" "}
             {s.last_interview && t("Last interview {date}", { date: fmtDate(s.last_interview) })}
           </div>
         </div>
@@ -261,7 +261,15 @@ export default function SystemDetail() {
             </span>
           )}
         </h2>
-        {!gapCount && <p className="muted" style={{ margin: 0 }}>{t("No gaps.")}</p>}
+        {!gapCount && (
+          <p className="muted" style={{ margin: 0 }}>
+            {s.last_interview
+              ? t("No gaps.")
+              : s.draft_id
+                ? t("Not assessed yet: the first interview is still a draft.")
+                : t("Not assessed yet: no completed interview.")}
+          </p>
+        )}
         {uncovered.length > 0 && (
           <div>
             <h3 className="small strong">{t("Risks that no use case addresses")}</h3>

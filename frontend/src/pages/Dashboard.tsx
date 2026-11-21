@@ -2,42 +2,52 @@ import { Link } from "react-router-dom";
 import { api, type DriverCoverageReport, type DueRule, type Kpis, type RecentCommit, type Scores } from "../api";
 import { useAuth } from "../auth";
 import { CoverageCell } from "../components/Drivers";
-import { ErrorNote, GapBadge, MetricBars, MetricLegend, useLoad } from "../components/ui";
-import { fmtDate, num, pct } from "../lib/format";
+import { CountUp, ErrorNote, GapBadge, MetricBars, MetricLegend, useLoad } from "../components/ui";
+import { useFillBars } from "../lib/motion";
+import { useRef } from "react";
+import { fmtDate, LOWER_IS_BETTER, num, pct } from "../lib/format";
 import { t } from "../i18n";
 
 const UP = t("Higher is better");
 const DOWN = t("Lower is better");
 
-function kpiTiles(k: Kpis): { label: string; value: number | null; sub: string; invert?: boolean; good: string }[] {
+function kpiTiles(k: Kpis): { key: string; label: string; value: number | null; sub: string; invert?: boolean; good: string }[] {
   const tiles = [
-    { label: t("SOC detection score"), value: k.soc_detection_score, sub: t("Average weight of applicable L1") },
     {
+      key: "soc_detection_score",
+      label: t("SOC detection score"),
+      value: k.soc_detection_score,
+      // the detection gap is 1 − this score: shown here instead of as a tile of its own
+      sub: t("Average weight of applicable L1 · detection gap {p}", { p: pct(k.detection_gap) }),
+    },
+    {
+      key: "catalogue_coverage",
       label: t("Catalogue coverage"),
       value: k.catalogue_coverage,
       sub: t("Same average, L2 without scored rules count as 0"),
     },
-    { label: t("Growth potential"), value: k.growth_potential, sub: t("Average effectiveness − weight") },
-    { label: t("Detection gap"), value: k.detection_gap, sub: t("1 − detection score"), invert: true },
+    { key: "growth_potential", label: t("Growth potential"), value: k.growth_potential, sub: t("Average effectiveness − weight") },
     {
+      key: "framework_completeness",
       label: t("Framework completeness"),
       value: k.framework_completeness,
       sub: t("{a} of {b} L2 have scored rules", { a: k.l2_with_scored_rules, b: k.applicable_l2 }),
     },
     {
+      key: "assessment_coverage",
       label: t("Assessment coverage"),
       value: k.assessment_coverage,
       sub: t("{a} of {b} active rules assessed", { a: k.assessed_rules, b: k.active_rules }),
     },
     {
+      key: "verification_health",
       label: t("Verification health"),
       value: k.verification_health,
       sub: t("{a} of {b} rules overdue", { a: k.verification_overdue, b: k.operational_rules }),
     },
   ];
   // growth potential is what is still to gain: it shrinks as the detection score grows
-  const lower = new Set([t("Detection gap"), t("Growth potential")]);
-  return tiles.map((x) => ({ ...x, good: lower.has(x.label) ? DOWN : UP }));
+  return tiles.map((x) => ({ ...x, good: LOWER_IS_BETTER.has(x.key) ? DOWN : UP }));
 }
 
 export function DueBadge({ d }: { d: Pick<DueRule, "due" | "overdue" | "days_left"> }) {
@@ -54,6 +64,11 @@ export default function Dashboard() {
   const drivers = useLoad<DriverCoverageReport>(() => api.driverCoverage());
   const interviewsDue = useLoad(() => api.systemsDue());
   const s = scores.data;
+  // first arrival of the figures: numbers count up and the bars fill (lib/motion.ts)
+  const kpiRef = useRef<HTMLElement>(null);
+  const l1Ref = useRef<HTMLElement>(null);
+  useFillBars(kpiRef, !!s);
+  useFillBars(l1Ref, !!s);
 
   return (
     <>
@@ -80,11 +95,11 @@ export default function Dashboard() {
 
       <ErrorNote error={scores.error} />
 
-      <section className="kpi-grid" aria-label={t("Key figures")}>
+      <section className="kpi-grid" aria-label={t("Key figures")} ref={kpiRef}>
         {(s ? kpiTiles(s.kpis) : kpiTiles({} as Kpis)).map((k) => (
           <div className="card kpi" key={k.label}>
             <span className="kpi-label">{k.label}</span>
-            <span className="kpi-value">{s ? pct(k.value) : "–"}</span>
+            <CountUp className="kpi-value" value={s ? k.value : null} format={(v) => pct(v)} />
             <div className="bar">
               <div style={{ width: `${Math.round((k.value ?? 0) * 100)}%` }} className={k.invert ? "bar-muted" : ""} />
             </div>
@@ -99,7 +114,7 @@ export default function Dashboard() {
       {interviewsDue.data && interviewsDue.data.due > 0 && (
         <Link className="notice-bar interviews-due" to="/systems?due=1">
           <div>
-            <strong>{t("Interviews due: {n}", { n: interviewsDue.data.due })}</strong>{" "}
+            <span className="pill pill-warn">{t("Interviews due: {n}", { n: interviewsDue.data.due })}</span>{" "}
             {t("Systems without a business owner interview or whose review interval has passed.")}
           </div>
           <span className="btn btn-sm">{t("Show systems")}</span>
@@ -107,7 +122,7 @@ export default function Dashboard() {
       )}
 
       <div className="split">
-        <section className="card split-main" aria-labelledby="l1h">
+        <section className="card split-main" aria-labelledby="l1h" ref={l1Ref}>
           <div className="section-head">
             <h2 id="l1h">{t("Detection per L1 use case")}</h2>
             <MetricLegend />
@@ -167,7 +182,7 @@ export default function Dashboard() {
             <div className="section-head">
               <h2 id="vh">{t("Verification due")}</h2>
               <Link to="/verification" className="small">
-                {t("All")} {due.data?.length ?? ""}
+                {due.data ? t("All {n} due within 30 days", { n: due.data.length }) : t("All")}
               </Link>
             </div>
             <ErrorNote error={due.error} />

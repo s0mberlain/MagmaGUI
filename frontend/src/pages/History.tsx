@@ -5,7 +5,7 @@ import { useAuth } from "../auth";
 import { driverLabel, DRIVER_TYPE_LABEL, loadMeta } from "../components/LifecyclePanel";
 import TrendChart from "../components/TrendChart";
 import { confirmDialog, ErrorNote, Modal, StatusPill, useLoad } from "../components/ui";
-import { fmtDate, pct, STATUS_LABEL } from "../lib/format";
+import { fmtDate, LOWER_IS_BETTER, pct, STATUS_LABEL } from "../lib/format";
 import { t } from "../i18n";
 
 const SCHEDULE_LABEL: Record<string, string> = {
@@ -27,13 +27,30 @@ function fmtMetric(v: number | null | undefined, unit: string) {
   return unit === "pct" ? pct(v) : String(v);
 }
 
-function Delta({ a, b, unit }: { a: number | null | undefined; b: number | null | undefined; unit: string }) {
+/** Change between two snapshots. Colour says better or worse, so it follows the metric's
+ * direction: a falling growth potential is an improvement (LOWER_IS_BETTER). */
+function Delta({
+  a,
+  b,
+  unit,
+  metric,
+}: {
+  a: number | null | undefined;
+  b: number | null | undefined;
+  unit: string;
+  metric: string;
+}) {
   if (a === null || a === undefined || b === null || b === undefined) return <span className="muted">–</span>;
   const d = b - a;
   if (Math.abs(d) < 1e-9) return <span className="muted">±0</span>;
   const txt =
     unit === "pct" ? `${d > 0 ? "+" : "−"}${Math.abs(d * 100).toFixed(1)} pt` : `${d > 0 ? "+" : "−"}${Math.abs(d)}`;
-  return <span className={d > 0 ? "delta-up" : "delta-down"}>{txt}</span>;
+  const better = LOWER_IS_BETTER.has(metric) ? d < 0 : d > 0;
+  return (
+    <span className={better ? "delta-up" : "delta-down"} title={better ? t("Better") : t("Worse")}>
+      {txt}
+    </span>
+  );
 }
 
 export default function History() {
@@ -130,7 +147,7 @@ export default function History() {
               <div className="card trend-card" key={m.key}>
                 <div className="trend-head">
                   <span className="kpi-label">{t(m.label)}</span>
-                  <Delta a={first?.kpis[m.key]} b={last?.kpis[m.key]} unit={m.unit} />
+                  <Delta a={first?.kpis[m.key]} b={last?.kpis[m.key]} unit={m.unit} metric={m.key} />
                 </div>
                 <span className="trend-value">{fmtMetric(last?.kpis[m.key], m.unit)}</span>
                 <TrendChart
@@ -286,7 +303,7 @@ export default function History() {
                       {can("admin") && (
                         <button
                           type="button"
-                          className="link-btn small text-err"
+                          className="link-btn link-danger small"
                           style={{ marginLeft: 12 }}
                           onClick={() => void remove(s.id, s.label)}
                         >
@@ -443,7 +460,7 @@ function CompareDialog({
                 <td className="num">{fmtMetric(cmp.kpis[m.key]?.a, m.unit)}</td>
                 <td className="num">{fmtMetric(cmp.kpis[m.key]?.b, m.unit)}</td>
                 <td className="num">
-                  <Delta a={cmp.kpis[m.key]?.a} b={cmp.kpis[m.key]?.b} unit={m.unit} />
+                  <Delta a={cmp.kpis[m.key]?.a} b={cmp.kpis[m.key]?.b} unit={m.unit} metric={m.key} />
                 </td>
               </tr>
             ))}
@@ -466,7 +483,7 @@ function CompareDialog({
                       <td className="num">{pct(w(g.a), 1)}</td>
                       <td className="num">{pct(w(g.b), 1)}</td>
                       <td className="num">
-                        <Delta a={w(g.a)} b={w(g.b)} unit="pct" />
+                        <Delta a={w(g.a)} b={w(g.b)} unit="pct" metric="weight" />
                       </td>
                     </tr>
                   ))}

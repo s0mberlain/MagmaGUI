@@ -123,7 +123,7 @@ export default function Drivers() {
             >
               {t("+ Business driver")}
             </button>
-            <button type="button" className="btn btn-primary" onClick={() => setSource({ name: "" })}>
+            <button type="button" className="btn" onClick={() => setSource({ name: "" })}>
               {t("+ Compliance source")}
             </button>
           </div>
@@ -168,7 +168,7 @@ export default function Drivers() {
                       </button>
                       <button
                         type="button"
-                        className="btn btn-sm"
+                        className="btn btn-sm btn-danger"
                         onClick={() =>
                           setDeleting({
                             title: t("Delete {code}?", { code: d.code }),
@@ -231,7 +231,7 @@ export default function Drivers() {
                 </button>
                 <button
                   type="button"
-                  className="btn btn-sm"
+                  className="btn btn-sm btn-danger"
                   onClick={() =>
                     setDeleting({
                       title: t("Delete {name} and all its requirements?", { name: src.name }),
@@ -282,7 +282,7 @@ export default function Drivers() {
                         </button>
                         <button
                           type="button"
-                          className="btn btn-sm"
+                          className="btn btn-sm btn-danger"
                           onClick={() =>
                             setDeleting({
                               title: t("Delete {name}?", { name: `${src.name} ${c.ref}` }),

@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type DriverCoverageReport, type GapRow, type Gaps, type L1 } from "../api";
 import { CoverageCell } from "../components/Drivers";
 import { ErrorNote, StatusPill, useLoad } from "../components/ui";
 import { fmtDate, num, pct } from "../lib/format";
 import { OutcomePill } from "../lib/purple";
+import { useFlipRows } from "../lib/motion";
 import { t } from "../i18n";
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -22,6 +23,27 @@ function TargetBar({ impl, target }: { impl: number | null; target: number | nul
       <div className={below ? "fill below" : "fill"} style={{ width: `${Math.round((impl ?? 0) * 100)}%` }} />
       {target !== null && <i style={{ left: `${Math.round(target * 100)}%` }} />}
     </div>
+  );
+}
+
+/** Priority as a band next to the number. The scale tops out at 1.35 (90 % gap x risk 5/5 x
+ * the full +50 % driver boost); 0.5 is e.g. risk 4 with ~half its target missing. */
+function PriorityCell({ r }: { r: GapRow }) {
+  if (r.priority === null) return <span className="muted">–</span>;
+  if (r.priority <= 0) return <span className="muted">{num(r.priority)}</span>;
+  const band = r.priority >= 0.5 ? "high" : r.priority >= 0.2 ? "medium" : "low";
+  const label = band === "high" ? t("High") : band === "medium" ? t("Medium") : t("Low");
+  const why = t("Gap to target {g} × risk {r}/5 × driver boost ×{b} = {p}", {
+    g: pct(r.gap),
+    r: r.risk ?? "–",
+    b: r.driver_boost.toFixed(1),
+    p: num(r.priority),
+  });
+  return (
+    <span className="prio" title={why}>
+      <span className={`prio-band prio-${band}`}>{label}</span>
+      <span className="prio-n">{num(r.priority)}</span>
+    </span>
   );
 }
 
@@ -52,6 +74,9 @@ export default function Priorities() {
   const [allDrivers, setAllDrivers] = useState(false);
   const g = gaps.data;
   const s = g?.summary;
+  // a filter reorders the ranking: rows glide to their new rank when the data arrives
+  const tbody = useRef<HTMLTableSectionElement>(null);
+  const flip = useFlipRows(tbody, g);
 
   return (
     <>
@@ -186,7 +211,10 @@ export default function Priorities() {
             className="input input-sm"
             aria-label={t("L1 use case")}
             value={l1}
-            onChange={(e) => setL1(e.target.value)}
+            onChange={(e) => {
+              flip.capture();
+              setL1(e.target.value);
+            }}
           >
             <option value="">{t("All L1 use cases")}</option>
             {cat.data?.map((x) => (
@@ -199,7 +227,10 @@ export default function Priorities() {
             className="input input-sm"
             aria-label={t("Minimum risk level")}
             value={minRisk}
-            onChange={(e) => setMinRisk(Number(e.target.value))}
+            onChange={(e) => {
+              flip.capture();
+              setMinRisk(Number(e.target.value));
+            }}
           >
             <option value={1}>{t("Any risk")}</option>
             {[2, 3, 4, 5].map((n) => (
@@ -210,35 +241,38 @@ export default function Priorities() {
             ))}
           </select>
           <label className="check small">
-            <input type="checkbox" checked={below} onChange={(e) => setBelow(e.target.checked)} />
+            <input type="checkbox" checked={below} onChange={(e) => {
+                flip.capture();
+                setBelow(e.target.checked);
+              }} />
             {t("Only below target")}
           </label>
           <span className="grow" />
           <span className="small muted">{g ? t("{n} rules", { n: g.rows.length }) : ""}</span>
         </div>
-        <div className="scroll-x">
-          <table className="table">
+        <div className="scroll-x scroll-sticky">
+          <table className="table table-sticky">
             <thead>
               <tr>
                 <th className="num" style={{ width: 48 }}>
                   #
                 </th>
-                <th>{t("Rule")}</th>
+                <th className="col-rule">{t("Rule")}</th>
                 <th>{t("Status")}</th>
                 <th className="num">{t("Risk")}</th>
                 <th style={{ width: "22%" }}>{t("Implementation vs target")}</th>
-                <th className="num">{t("Gap")}</th>
+                <th className="num">{t("Gap to target")}</th>
                 <th className="num">{t("Potential")}</th>
                 <th>{t("Drivers")}</th>
                 <th>{t("Last test")}</th>
                 <th className="num">{t("Priority")}</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody ref={tbody}>
               {g?.rows.slice(0, limit).map((r, idx) => (
-                <tr key={r.code}>
+                <tr key={r.code} data-flip-id={r.code}>
                   <td className="num muted">{idx + 1}</td>
-                  <td>
+                  <td className="col-rule">
                     <Link className="rule-link" to={`/usecases/l3/${r.code}`}>
                       <span className="mono small muted">{r.code}</span>
                       <span>{r.name}</span>
@@ -262,7 +296,7 @@ export default function Priorities() {
                       {r.target_source && ` · ${SOURCE_LABEL[r.target_source]}`}
                     </span>
                   </td>
-                  <td className="num">{r.gap ? pct(r.gap) : <span className="text-ok">reached</span>}</td>
+                  <td className="num">{r.gap ? pct(r.gap) : <span className="text-ok">{t("reached")}</span>}</td>
                   <td className="num">{num(r.potential)}</td>
                   <td>
                     {r.business_drivers.length + r.compliance_drivers.length > 0 ? (
@@ -291,7 +325,9 @@ export default function Priorities() {
                       <span className="muted small">–</span>
                     )}
                   </td>
-                  <td className="num strong">{num(r.priority)}</td>
+                  <td className="num">
+                    <PriorityCell r={r} />
+                  </td>
                 </tr>
               ))}
             </tbody>

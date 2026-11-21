@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ROLE_LABEL, useAuth } from "../auth";
-import { NAV_GROUPS, NAV_ITEMS } from "../nav";
+import { NAV_GROUPS, NAV_ITEMS, navActive } from "../nav";
 import LanguageSelect from "./LanguageSelect";
 import Logo from "./Logo";
 import { t } from "../i18n";
@@ -42,7 +42,34 @@ export default function Layout() {
       return !x;
     });
   const location = useLocation();
+  const navigate = useNavigate();
   useEffect(() => setOpen(false), [location.pathname]);
+  // "/" jumps to the search of the page (any element marked data-hotkey-search); pages without
+  // one open the L3 rule list with its search focused. Ignored while typing in a field.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      if (document.querySelector("dialog[open]")) return;
+      e.preventDefault();
+      const focus = () => {
+        const box = document.querySelector<HTMLInputElement>("[data-hotkey-search]");
+        box?.focus();
+        box?.select();
+        return !!box;
+      };
+      if (focus()) return;
+      navigate("/usecases?view=rules");
+      let tries = 0;
+      const wait = () => {
+        if (!focus() && ++tries < 40) requestAnimationFrame(wait);
+      };
+      requestAnimationFrame(wait);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [navigate]);
   const visible = NAV_ITEMS.filter((item) => !item.roles || can(...item.roles));
 
   return (
@@ -53,7 +80,7 @@ export default function Layout() {
       >
         <div className="brand">
           <Logo />
-          <span className="brand-name">{t("Magma UCF")}</span>
+          <span className="brand-name">{t("Vulcan")}</span>
           <button
             type="button"
             className="nav-collapse"
@@ -92,20 +119,14 @@ export default function Layout() {
               <div key={g.key} className="nav-group" role="group" aria-label={g.label}>
                 <span className="nav-group-head">{g.label}</span>
                 {items.map((item) => (
-                  <NavLink
+                  <Link
                     key={item.path}
                     to={item.path}
-                    end={item.path === "/"}
-                    className={({ isActive }) =>
-                      "nav-link" +
-                      // /purple/trends and /purple/library have their own entries
-                      (isActive && !(item.path === "/purple" && /^\/purple\/(trends|library)/.test(location.pathname))
-                        ? " active"
-                        : "")
-                    }
+                    className={"nav-link" + (navActive(item, location.pathname) ? " active" : "")}
+                    aria-current={navActive(item, location.pathname) ? "page" : undefined}
                   >
                     {item.label}
-                  </NavLink>
+                  </Link>
                 ))}
               </div>
             );

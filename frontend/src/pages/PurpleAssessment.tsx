@@ -5,7 +5,7 @@ import { useAuth } from "../auth";
 import { Markdown, MarkdownField } from "../components/Markdown";
 import { AssigneePicker, RunState } from "../components/RunStatus";
 import TechniquePicker from "../components/TechniquePicker";
-import { confirmDialog, ErrorNote, Modal, useLoad, useUnsavedGuard } from "../components/ui";
+import { confirmDialog, ErrorNote, MenuButton, Modal, useLoad, useUnsavedGuard } from "../components/ui";
 import { fmtDate, pct } from "../lib/format";
 import { BluePill, fmtDuration, OUTCOME_LABEL, OutcomePill } from "../lib/purple";
 import { getLang, t } from "../i18n";
@@ -464,7 +464,7 @@ export default function PurpleAssessment() {
   return (
     <>
       <nav className="crumbs" aria-label={t("Breadcrumb")}>
-        <Link to="/purple">{t("Purple teaming")}</Link> /
+        <Link to="/purple">{t("Purple team assessments")}</Link> / <span aria-current="page">{a.name}</span>
       </nav>
       <header className="page-header">
         <div>
@@ -486,24 +486,26 @@ export default function PurpleAssessment() {
           </div>
         </div>
         <div className="row-actions">
-          <a className="btn" href={purple.reportUrl(a.id, getLang())}>
-            {t("PDF report")}
-          </a>
-          <a className="btn" href={purple.navigatorUrl(a.id)} title={t("ATT&CK Navigator layer")}>
-            {t("Navigator")}
-          </a>
-          <a className="btn" href={purple.csvUrl(a.id)}>
-            CSV
-          </a>
+          <MenuButton label={t("Export")}>
+            <a role="menuitem" href={purple.reportUrl(a.id, getLang())}>
+              {t("PDF report")}
+            </a>
+            <a role="menuitem" href={purple.navigatorUrl(a.id)}>
+              {t("ATT&CK Navigator layer")}
+            </a>
+            <a role="menuitem" href={purple.csvUrl(a.id)}>
+              {t("Test cases as CSV")}
+            </a>
+          </MenuButton>
           {editor && (
             <>
-              <button type="button" className="btn" onClick={() => void rerun()}>
-                {t("Re-run")}
-              </button>
               <button type="button" className="btn" onClick={() => setEditing(true)}>
                 {t("Edit")}
               </button>
-              <button type="button" className="btn" onClick={() => void remove()}>
+              <button type="button" className="btn" onClick={() => void rerun()}>
+                {t("Re-run")}
+              </button>
+              <button type="button" className="btn btn-danger sep-left" onClick={() => void remove()}>
                 {t("Delete")}
               </button>
             </>
@@ -590,7 +592,7 @@ export default function PurpleAssessment() {
                   <button type="button" className="btn btn-sm" onClick={() => setCampaignDialog(c)}>
                     {t("Edit")}
                   </button>
-                  <button type="button" className="btn btn-sm" onClick={() => void removeCampaign(c)}>
+                  <button type="button" className="btn btn-sm btn-danger" onClick={() => void removeCampaign(c)}>
                     {t("Delete")}
                   </button>
                 </>
@@ -627,6 +629,7 @@ export default function PurpleAssessment() {
                               {editor ? (
                                 <AssigneePicker
                                   compact
+                                  quiet
                                   label={t("Red team operator of {test}", { test: tc.name })}
                                   value={tc.red_assignee}
                                   me={user?.username}
@@ -643,6 +646,7 @@ export default function PurpleAssessment() {
                               {editor ? (
                                 <AssigneePicker
                                   compact
+                                  quiet
                                   label={t("Blue team analyst of {test}", { test: tc.name })}
                                   value={tc.blue_assignee}
                                   me={user?.username}

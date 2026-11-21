@@ -20,6 +20,7 @@ import {
 } from "../api";
 import { useAuth } from "../auth";
 import {
+  ConflictBox,
   confirmDialog,
   DraftRestoreBanner,
   ErrorNote,
@@ -232,6 +233,27 @@ export default function Interview() {
     }
   }
 
+  /** 409: adopt the other person's version number but keep this form, so the next save
+   * overwrites theirs; or drop the local edits and load theirs. */
+  async function keepMine() {
+    if (!iv) return;
+    try {
+      const fresh = await api.interview(iv.id);
+      setIv(fresh);
+      setConflict(false);
+      setError(null);
+      setDirty(true);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  function loadTheirs() {
+    setConflict(false);
+    setError(null);
+    backup.clear();
+    void loaded.reload();
+  }
+
   /** Change the form and save at once (step 3 actions re-evaluate the proposals). */
   const saveWith = (fn: (f: Form) => Form) => (form ? save(fn(form)) : Promise.resolve(null));
 
@@ -271,7 +293,9 @@ export default function Interview() {
       setStep(2);
       return;
     }
-    if (canEdit && (dirty || n === 3)) {
+    // Steps 1 and 2 edit one form in memory: moving between them does not save. Step 3 shows the
+    // proposals of the saved draft, so opening it saves first (the tab says so).
+    if (canEdit && n === 3 && (dirty || step !== 3)) {
       const ok = await save();
       if (!ok) return;
     }
@@ -388,15 +412,14 @@ export default function Interview() {
         </div>
       </header>
 
-      {error && (
-        <div className="form-error-box" role="alert">
-          <span>{error}</span>
-          {conflict && (
-            <button type="button" className="btn btn-sm" onClick={() => void loaded.reload()}>
-              {t("Reload")}
-            </button>
-          )}
-        </div>
+      {conflict ? (
+        <ConflictBox message={error} busy={busy} onKeepMine={() => void keepMine()} onLoadTheirs={loadTheirs} />
+      ) : (
+        error && (
+          <div className="form-error-box" role="alert">
+            <span>{error}</span>
+          </div>
+        )
       )}
       {savedAt && !dirty && !error && draft && (
         <p className="saved-tick small" role="status">
@@ -426,6 +449,7 @@ export default function Interview() {
                 role="tab"
                 aria-selected={step === i + 1}
                 className={"tab" + (step === i + 1 ? " active" : "")}
+                title={i === 2 && canEdit && step !== 3 ? t("Saves the draft and shows the proposals") : undefined}
                 onClick={() => void goto(i + 1)}
               >
                 {label}

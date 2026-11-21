@@ -94,6 +94,7 @@ export function AssigneePicker({
   label,
   me,
   compact,
+  quiet,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -101,6 +102,8 @@ export function AssigneePicker({
   label: string;
   me?: string;
   compact?: boolean;
+  /** in table rows: reads as text (no field border) until hovered or focused */
+  quiet?: boolean;
 }) {
   const people = usePeople();
   const known = people.some((p) => p.username === value);
@@ -131,7 +134,7 @@ export function AssigneePicker({
     );
   }
   return (
-    <span className={"pt-assignee" + (compact ? " pt-assignee-sm" : "")}>
+    <span className={"pt-assignee" + (compact ? " pt-assignee-sm" : "") + (quiet ? " pt-assignee-quiet" : "")}>
       <select
         className={"input" + (compact ? " input-sm" : "")}
         aria-label={label}
@@ -156,7 +159,12 @@ export function AssigneePicker({
         <option value={"\u0000other"}>{t("Someone else…")}</option>
       </select>
       {me && !disabled && value !== me && (
-        <button type="button" className={"btn " + (compact ? "btn-xs" : "btn-sm")} onClick={() => onChange(me)}>
+        <button
+          type="button"
+          className={quiet ? "link-btn link-quiet small" : "btn " + (compact ? "btn-xs" : "btn-sm")}
+          title={t("Assign to me")}
+          onClick={() => onChange(me)}
+        >
           {t("Me")}
         </button>
       )}

@@ -1,6 +1,6 @@
-# MagmaGUI
+# Vulcan
 
-Web application for the FI-ISAC **MaGMa Use Case Framework**: manage SIEM / SOC use cases across the business, threat (L1/L2) and implementation (L3) layers, score them, track verification and keep versioned YAML configs per use case.
+**Vulcan** (formerly MagmaGUI / "Magma UCF") is a web application for the FI-ISAC **MaGMa Use Case Framework**: manage SIEM / SOC use cases across the business, threat (L1/L2) and implementation (L3) layers, score them, track verification and keep versioned YAML configs per use case.
 
 Status: **M7**: MVP (catalogue, scoring, verification, JSON configs with history, Excel import/export, local login and SSO) plus lifecycle change log, history and trends, optional git sync, risk-based priorities, two-factor login, ATT&CK coverage, output metrics, PostgreSQL support, German and Dutch UI, two-way git sync and a SIEM push API. See [docs/PLAN.md](docs/PLAN.md) for the full plan and milestones, and [docs/design/](docs/design/) for the approved desktop design draft.
 
@@ -173,6 +173,17 @@ metrics over time from snapshots (taken manually or by `SNAPSHOT_SCHEDULE`, mont
 compares any two snapshots, and lists all status changes. Demo data includes twelve monthly
 snapshots and a matching change log.
 
+*Use cases → L3 rules* lists every rule in one table with search and filters (status, log
+source, not scored, metrics missing, verification overdue). Tick rules there, or on
+*Verification*, to verify them together or to change their status together. Each rule goes
+through the same check as on its own page: the definition of done still applies (no override in
+bulk), every change is in the audit log, and rules that could not be changed are listed. Press
+`/` anywhere to jump to the search of the page, or to the rule list when the page has none.
+
+When someone else saved a rule, an interview or a purple team test case while you were editing,
+the save is refused and you choose: keep your changes (the next save overwrites theirs) or load
+their version.
+
 ## Priorities
 
 Every L2 use case has a risk level (1–5) and an optional target implementation; a rule follows
@@ -181,7 +192,9 @@ its L2 unless it sets its own. Without an explicit target the risk level gives o
 rules with the gap between implementation and target, sorted by priority = gap to target × risk ÷ 5
 × driver boost, so the biggest shortfalls on the riskiest use cases come first. A rule that meets
 its target has priority 0; a rule without an implementation score counts its whole target as gap,
-so unassessed high-risk rules show up at the top instead of disappearing.
+so unassessed high-risk rules show up at the top instead of disappearing. Next to the number a
+band says how urgent it is: *High* from 0.5, *Medium* from 0.2, otherwise *Low* (the scale tops out
+at 1.35); the tooltip shows the calculation.
 
 ## Business and compliance drivers
 
@@ -385,6 +398,9 @@ trend metrics) are listed in `frontend/src/serverTexts.ts` so they are translate
 | analyst | read and edit use cases, drivers, reference lists, interviews and purple team assessments |
 | auditor | read everything incl. the audit log, no changes |
 
+The audit log can be filtered by user, action, object type, object (part of the key) and date
+range (`GET /api/audit?user=&action=&entity=&search=&since=&until=`).
+
 ## Layout
 
 ```
@@ -393,3 +409,7 @@ frontend/   React single-page app
 docs/       plan and design draft
 Dockerfile  multi-stage build: frontend → Python runtime, one container on port 8080
 ```
+
+Motion in the UI uses [GSAP](https://gsap.com/) 3.13 (free "Standard" license, including commercial
+use), only through `frontend/src/lib/motion.ts`; it respects the operating system's
+reduced-motion setting.

@@ -5,7 +5,7 @@ import { useAuth } from "../auth";
 import OutputChart, { OutputLegend, fmtCount } from "../components/OutputChart";
 import { ErrorNote, useLoad } from "../components/ui";
 import { pct } from "../lib/format";
-import { t } from "../i18n";
+import { locale, t } from "../i18n";
 
 export default function OutputPage() {
   const { can } = useAuth();
@@ -106,9 +106,9 @@ export default function OutputPage() {
                       </Link>
                     </td>
                     <td className="num">{r.months}</td>
-                    <td className="num">{r.alerts.toLocaleString()}</td>
-                    <td className="num">{r.incidents.toLocaleString()}</td>
-                    <td className="num strong">{r.false_positives.toLocaleString()}</td>
+                    <td className="num">{r.alerts.toLocaleString(locale())}</td>
+                    <td className="num">{r.incidents.toLocaleString(locale())}</td>
+                    <td className="num strong">{r.false_positives.toLocaleString(locale())}</td>
                     <td>
                       <div className="fp-cell">
                         <div className="bar">

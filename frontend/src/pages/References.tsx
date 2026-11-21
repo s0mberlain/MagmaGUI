@@ -275,7 +275,7 @@ function RefList({ kind }: { kind: RefKind }) {
                         </button>
                         <button
                           type="button"
-                          className="btn btn-sm"
+                          className="btn btn-sm btn-danger"
                           onClick={() => void remove(item)}
                         >
                           {t("Delete")}

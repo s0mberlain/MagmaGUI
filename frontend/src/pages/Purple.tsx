@@ -203,7 +203,7 @@ export default function Purple() {
     <>
       <header className="page-header">
         <div>
-          <h1>{t("Purple teaming")}</h1>
+          <h1>{t("Purple team assessments")}</h1>
           <div className="subtitle">
             {t(
               "Run attack simulations together with the SOC: the red team executes a test, the blue team records what each defense did and the findings. Results show on the use cases they prove.",
@@ -211,12 +211,6 @@ export default function Purple() {
           </div>
         </div>
         <div className="row-actions">
-          <Link className="btn" to="/purple/library">
-            {t("Library")}
-          </Link>
-          <Link className="btn" to="/purple/trends">
-            {t("Trends")}
-          </Link>
           {editor && (
             <button type="button" className="btn" onClick={() => setQuick(true)}>
               {t("+ Quick test")}

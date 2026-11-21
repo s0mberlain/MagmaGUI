@@ -5,7 +5,7 @@ feature details) and `docs/PLAN.md` (original design and decisions) go deeper.
 
 ## What this app is
 
-**MagmaGUI** ("Magma UCF" in the UI) is a self-hosted web app that replaces the FI-ISAC
+**Vulcan** (repository and technical names: MagmaGUI / `magma`; renamed in the UI on 2026-11-21) is a self-hosted web app that replaces the FI-ISAC
 **MaGMa Use Case Framework (UCF) Excel tool** (v1.0, 2017). It is used by a SOC to manage its
 security-monitoring (SIEM) use cases. The source is the short framework paper:
 https://www.betaalvereniging.nl/wp-content/uploads/2026/03/FI-ISAC-use-case-framework-verkorte-versie.pdf
@@ -208,11 +208,14 @@ proxies `/api`).
 Verified against a running container (demo data) through the HTTP API, which is the same API
 the SPA calls. These are the actual contracts; check them before writing scripts or tests.
 
-**UI map** (`frontend/src/nav.ts`): Daily work: Dashboard `/`, Use cases `/usecases`,
-Verification `/verification`, Priorities `/priorities`, Threat modelling `/systems`.
-Analysis: ATT&CK coverage `/attack`, Output metrics `/output`, History & trends `/history`.
-Setup: Business drivers `/drivers`, STRIDE mapping, Reference lists, Import / Export,
-Integrations, Audit log (admin+auditor), Users and Settings (admin only).
+**UI map** (`frontend/src/nav.ts`, grouped by domain since 2026-11-21): Daily work: Dashboard `/`,
+Use cases `/usecases` (views Tree, L2 table, L3 rules `?view=rules` with bulk actions),
+Verification `/verification`, Priorities `/priorities`. Threat modelling: Systems `/systems`,
+STRIDE mapping. Purple teaming: Assessments `/purple`, Trends, Library. Analysis: ATT&CK coverage
+`/attack`, Output metrics `/output`, History & trends `/history`. Setup: Business drivers
+`/drivers`, Reference lists, Import / Export, Integrations, Audit log (admin+auditor), Users and
+Settings (admin only). `/` focuses the page search (`data-hotkey-search`). Visual rules live in
+`DESIGN.md`, product context in `PRODUCT.md`.
 
 **Catalogue / demo data**: the seed has 169 L3 rules. Demo data adds about 67 generated rules
 (description = `DEMO_MARK`) to L2s that had none, so a demo DB shows about 236 L3s.
@@ -304,6 +307,12 @@ cd frontend && npm run build && npm run i18n:check
 
 ## Conventions
 
+- **Name**: the product is **Vulcan** in everything people see (UI, titles, reports, file names,
+  docs). "MaGMa" is the framework and stays. Technical identifiers keep `magma` (CLI, `MAGMA_*`,
+  cookie, `magma.db`, Docker names, `Magma-Token`, the JSON export `format` id) for compatibility.
+- **Motion** uses GSAP through `frontend/src/lib/motion.ts` only (count-up, bar fill, rise-in,
+  open-in, Flip rows, the sign-in strike). Content renders final first; every effect has a
+  `prefers-reduced-motion` path. See DESIGN.md (Overview → Motion).
 - **Every new UI string** goes through `t("English text")` and needs entries in
   `frontend/src/locales/de.json` and `nl.json` (CI fails otherwise; keep `{placeholders}`).
   Labels sent by the API must be listed in `serverTexts.ts`.

@@ -37,7 +37,7 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 @router.get("/export/excel")
 def export_excel(_: Reader, db: DB) -> Response:
     data = excel.export_workbook(db)
-    name = f"magma-ucf-{date.today().isoformat()}.xlsx"
+    name = f"vulcan-{date.today().isoformat()}.xlsx"
     return Response(
         data, media_type=XLSX, headers={"Content-Disposition": f'attachment; filename="{name}"'}
     )

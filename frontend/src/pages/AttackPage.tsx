@@ -161,6 +161,7 @@ export default function AttackPage() {
               </span>
             </div>
           </div>
+          {!sel && <p className="muted small" style={{ margin: 0 }}>{t("Pick a technique to see its rules.")}</p>}
           <div className="attack-matrix">
             {c?.tactics.map((tt) => {
               const techs = tt.techniques.filter((x) => match(x) || x.subs.some(match));
@@ -181,7 +182,8 @@ export default function AttackPage() {
                       key={x.id}
                       className={`tech tt-${level(x)}` + (sel?.id === x.id ? " sel" : "")}
                       onClick={() => setSel(x)}
-                      title={`${x.id} ${x.name}${x.rules.length ? ` · ${t("{n} rule(s)", { n: x.rules.length })}` : ""}`}
+                      title={`${x.id} ${x.name}${x.rules.length ? ` · ${t("{n} rule(s)", { n: x.rules.length })}` : ""}${x.best !== null && x.rules.length ? ` · ${t("best weight {w}", { w: pct(x.best) })}` : ""}`}
+                      aria-pressed={sel?.id === x.id}
                     >
                       <span className="tech-name">{x.name}</span>
                       <TechNumbers tt={x} />
@@ -194,13 +196,18 @@ export default function AttackPage() {
           </div>
         </section>
 
-        <aside className="card split-side stack attack-detail" aria-live="polite">
-          {sel ? (
+        {/* the panel opens with a technique, so the matrix keeps the full width until then */}
+        {sel && (
+          <aside className="card split-side stack attack-detail" aria-live="polite">
+            <div className="section-head">
+              <span className="small muted">{t("Technique")}</span>
+              <button type="button" className="icon-btn" aria-label={t("Close")} title={t("Close")} onClick={() => setSel(null)}>
+                ×
+              </button>
+            </div>
             <TechDetail tt={sel} onPick={setSel} />
-          ) : (
-            <p className="muted">{t("Pick a technique to see its rules.")}</p>
-          )}
-        </aside>
+          </aside>
+        )}
       </div>
 
       {remapOpen && (

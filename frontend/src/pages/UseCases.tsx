@@ -11,6 +11,8 @@ import {
   type L3,
   type RefKind,
   type Scores,
+  type Stride,
+  type StrideMapping,
   type SystemRow,
 } from "../api";
 import { useAuth } from "../auth";
@@ -40,7 +42,13 @@ import {
   STATUS_LABEL,
   today,
 } from "../lib/format";
+import { STRIDE, STRIDE_HINT, STRIDE_LABEL } from "../lib/stride";
 import { t } from "../i18n";
+
+/** STRIDE categories an L2 use case is mapped to. */
+function strideOf(m: StrideMapping | undefined, l2Id: number): Stride[] {
+  return STRIDE.filter((c) => m?.categories.find((x) => x.category === c)?.l2s.some((x) => x.l2_id === l2Id));
+}
 
 interface Catalogue {
   l1s: L1[];
@@ -49,6 +57,7 @@ interface Catalogue {
   drivers: BusinessDriver[];
   sources: ComplianceSource[];
   systems: SystemRow[];
+  mapping: StrideMapping;
 }
 
 /** Filter by business driver (bd), compliance source (src), compliance driver (cd) and system
@@ -90,15 +99,16 @@ export default function UseCases() {
   const [driversOf, setDriversOf] = useState<L2 | null>(null);
 
   const cat = useLoad<Catalogue>(async () => {
-    const [l1s, l2s, scores, drivers, sources, systems] = await Promise.all([
+    const [l1s, l2s, scores, drivers, sources, systems, mapping] = await Promise.all([
       api.l1s(),
       api.l2s(),
       api.scores(),
       api.drivers(),
       api.compliance(),
       api.systems({ archived: true }),
+      api.strideMapping(),
     ]);
-    return { l1s, l2s, scores, drivers, sources, systems };
+    return { l1s, l2s, scores, drivers, sources, systems, mapping };
   });
   const filter: DriverFilter = {
     bd: params.get("bd") ?? "",
@@ -222,17 +232,32 @@ export default function UseCases() {
           <div className="subtitle">{total}</div>
         </div>
         {editor && (
-          <div className="row-actions">
-            <button type="button" className="btn" onClick={() => setDialog("newL1")}>
-              {t("+ L1 use case")}
-            </button>
-            <button type="button" className="btn" onClick={() => setDialog("newL2")}>
-              {t("+ L2 use case")}
-            </button>
-            <button type="button" className="btn btn-primary" disabled={!selected} onClick={() => setDialog("newL3")}>
-              {t("+ L3 rule")}
-            </button>
-          </div>
+          <details className="menu-btn">
+            <summary className="btn btn-primary">{t("+ New")}</summary>
+            <div className="menu-pop" role="menu">
+              {(
+                [
+                  ["newL1", t("L1 use case")],
+                  ["newL2", t("L2 use case")],
+                  ["newL3", t("L3 rule")],
+                ] as const
+              ).map(([d, label]) => (
+                <button
+                  key={d}
+                  type="button"
+                  role="menuitem"
+                  disabled={d === "newL3" && !selected}
+                  title={d === "newL3" && !selected ? t("Select an L2 use case first") : undefined}
+                  onClick={(e) => {
+                    e.currentTarget.closest("details")?.removeAttribute("open");
+                    setDialog(d);
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </details>
         )}
       </header>
 
@@ -253,6 +278,12 @@ export default function UseCases() {
           ))}
         </div>
         <span className="grow" />
+        <details className="uc-filter-more" open={filtering || undefined}>
+          <summary className="btn btn-sm">
+            {t("Filters")}
+            {[filter.bd, filter.src, filter.cd, filter.sys].filter(Boolean).length > 0 ? ` (${[filter.bd, filter.src, filter.cd, filter.sys].filter(Boolean).length})` : ""}
+          </summary>
+          <div className="uc-filter-fields">
         <label className="sr-only" htmlFor="f-bd">
           {t("Business driver")}
         </label>
@@ -325,6 +356,8 @@ export default function UseCases() {
             </option>
           ))}
         </select>
+          </div>
+        </details>
         {refActive && (
           <span className="ref-filter-chip">
             <span>
@@ -481,6 +514,7 @@ export default function UseCases() {
               l2={selected}
               score={l2Score.get(selected.code)}
               drivers={cat.data?.drivers}
+              stride={strideOf(cat.data?.mapping, selected.id)}
               editor={editor}
               onEdit={() => setDialog("editL2")}
               onEditDrivers={() => setDriversOf(selected)}
@@ -523,7 +557,7 @@ export default function UseCases() {
         <EditDriversDialog l2={driversOf} onClose={() => setDriversOf(null)} onSaved={refresh} />
       )}
       {selected && dialog === "editL2" && (
-        <EditL2Dialog l2={selected} onClose={() => setDialog(null)} onSaved={refresh} />
+        <EditL2Dialog l2={selected} stride={strideOf(cat.data?.mapping, selected.id)} onClose={() => setDialog(null)} onSaved={refresh} />
       )}
       {selected && dialog === "verifyL2" && (
         <VerifyDialog level="l2" code={selected.code} onClose={() => setDialog(null)} onSaved={refresh} />
@@ -566,6 +600,7 @@ function L2Header({
   l2,
   score,
   drivers,
+  stride,
   editor,
   onEdit,
   onEditDrivers,
@@ -575,6 +610,7 @@ function L2Header({
   l2: L2;
   score?: Scores["l2"][number];
   drivers?: BusinessDriver[];
+  stride: Stride[];
   editor: boolean;
   onEdit: () => void;
   onEditDrivers: () => void;
@@ -620,6 +656,20 @@ function L2Header({
               {t("Target impl.")} {pct(l2.target_implementation)}
             </span>
           )}
+        </div>
+        <div className="driver-block">
+          <span className="small muted">{t("STRIDE")}:</span>{" "}
+          <span className="chips" style={{ display: "inline-flex" }}>
+            {stride.length ? (
+              stride.map((c) => (
+                <Link key={c} to="/stride-mapping" className="chip chip-info chip-link" title={STRIDE_HINT[c]}>
+                  {STRIDE_LABEL[c]}
+                </Link>
+              ))
+            ) : (
+              <span className="small muted">{t("Not mapped to any category")}</span>
+            )}
+          </span>
         </div>
         <DriverBlock business={l2.business_drivers} compliance={l2.compliance_drivers} drivers={drivers} />
         {(l2.systems ?? []).length > 0 && (
@@ -872,7 +922,7 @@ export function VerifiedCell({ rule }: { rule: L3 }) {
 
 // ------------------------------------------------------------------ dialogs
 
-function EditL2Dialog({ l2, onClose, onSaved }: { l2: L2; onClose: () => void; onSaved: () => void }) {
+function EditL2Dialog({ l2, stride, onClose, onSaved }: { l2: L2; stride: Stride[]; onClose: () => void; onSaved: () => void }) {
   const lists = useLoad(async () => {
     const [actors, drivers, compliance] = await Promise.all([
       api.refs("threat_actor"),
@@ -891,6 +941,7 @@ function EditL2Dialog({ l2, onClose, onSaved }: { l2: L2; onClose: () => void; o
     business_drivers: l2.business_drivers,
     compliance_driver_ids: l2.compliance_driver_ids.map(String),
   });
+  const [cats, setCats] = useState<Stride[]>(stride);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const admin = useAuth().can("admin");
@@ -912,6 +963,15 @@ function EditL2Dialog({ l2, onClose, onSaved }: { l2: L2; onClose: () => void; o
         compliance_driver_ids: form.compliance_driver_ids.map(Number),
         expected_updated_at: l2.updated_at,
       });
+      // the mapping belongs to the admin; set only the categories that changed
+      if (admin && (cats.length !== stride.length || cats.some((c) => !stride.includes(c)))) {
+        const fresh = await api.strideMapping();
+        for (const c of STRIDE) {
+          if (cats.includes(c) === stride.includes(c)) continue;
+          const ids = fresh.categories.find((x) => x.category === c)?.l2s.map((x) => x.l2_id) ?? [];
+          await api.setStrideMapping(c, cats.includes(c) ? [...ids, l2.id] : ids.filter((i) => i !== l2.id));
+        }
+      }
       onSaved();
       onClose();
     } catch (err) {
@@ -1028,6 +1088,27 @@ function EditL2Dialog({ l2, onClose, onSaved }: { l2: L2; onClose: () => void; o
             />
           </div>
         )}
+        <fieldset className="fieldset stride-pick">
+          <legend>{t("STRIDE categories")}</legend>
+          <div className="stride-pick-list">
+            {STRIDE.map((c) => (
+              <label key={c} className="check" title={STRIDE_HINT[c]}>
+                <input
+                  type="checkbox"
+                  disabled={!admin}
+                  checked={cats.includes(c)}
+                  onChange={(e) => setCats(e.target.checked ? [...cats, c] : cats.filter((x) => x !== c))}
+                />{" "}
+                {STRIDE_LABEL[c]}
+              </label>
+            ))}
+          </div>
+          <span className="small muted">
+            {admin
+              ? t("Interviews propose this use case for the checked threats. One use case can belong to several categories.")
+              : t("Only admins can change the STRIDE mapping.")}
+          </span>
+        </fieldset>
         <div className="row-actions">
           {admin && (
             <button

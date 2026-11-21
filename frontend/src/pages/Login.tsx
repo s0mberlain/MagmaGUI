@@ -85,7 +85,7 @@ export default function Login() {
         <div className="brand">
           <Logo size={36} />
           <span className="brand-name" style={{ fontSize: 22 }}>
-            {t("Magma UCF")}
+            {t("Vulcan UCF")}
           </span>
         </div>
         <div>

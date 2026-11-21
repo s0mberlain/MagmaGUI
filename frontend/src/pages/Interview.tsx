@@ -4,6 +4,7 @@ import {
   ApiError,
   api,
   type ComponentView,
+  type DetectionRequest,
   type Interview as IV,
   type InterviewAttachment,
   type InterviewCompare,
@@ -13,6 +14,7 @@ import {
   type L3,
   type Proposal,
   type RefItem,
+  type RequestStatus,
   type RiskRow,
   type Stride,
   type ThreatRef,
@@ -32,6 +34,7 @@ import {
 } from "../components/ui";
 import { Markdown, MarkdownField } from "../components/Markdown";
 import { RiskCoverage, useCaseHref, type RiskUseCase } from "../components/RiskCoverage";
+import { RequestCard, statusLabel } from "../components/RequestStatus";
 import { fmtDate, fmtSize, fmtTime, today } from "../lib/format";
 import { INTERVIEW_STATUS_LABEL, registerCustomThreats, riskLevel, STATE_LABEL, STRIDE, STRIDE_HINT, STRIDE_LABEL, threatLabel } from "../lib/stride";
 import { getLang, t } from "../i18n";
@@ -85,7 +88,8 @@ function formOf(iv: IV): Form {
     ),
     requests: v.requests.map((r) => ({
       key: r.key,
-      text: r.text,
+      title: r.title,
+      description: r.description,
       threat: { component: r.component, category: r.category },
     })),
   };
@@ -133,6 +137,11 @@ const sameRef = (a: ThreatRef, b: ThreatRef) => a.component === b.component && a
 
 function dependents(f: Form, match: (r: ThreatRef) => boolean): number {
   return f.requests.filter((r) => match(r.threat)).length + f.added.filter((a) => a.threats.length && a.threats.every(match)).length;
+}
+
+/** Titles of the requests on matching threats that are in progress or closed (PROJ-1). */
+function lockedRequests(f: Form, match: (r: ThreatRef) => boolean, status: Record<string, RequestStatus>): string[] {
+  return f.requests.filter((r) => match(r.threat) && (status[r.key] ?? "open") !== "open").map((r) => r.title);
 }
 
 function score(x: FormThreat): number | null {
@@ -227,6 +236,17 @@ export default function Interview() {
       return null;
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** A status was changed (PROJ-1): take over the statuses only; an unsaved draft stays as it is. */
+  async function refreshStatuses() {
+    if (!iv) return;
+    try {
+      const fresh = await api.interview(iv.id);
+      setIv((x) => (x ? { ...x, view: { ...x.view, requests: fresh.view.requests, risks: fresh.view.risks } } : x));
+    } catch (e) {
+      setError((e as Error).message);
     }
   }
 
@@ -446,9 +466,24 @@ export default function Interview() {
             />
           )}
           {step === 2 && (
-            <StepComponents form={form} update={update} readOnly={!canEdit} dupNames={dupNames} />
+            <StepComponents
+              form={form}
+              update={update}
+              readOnly={!canEdit}
+              dupNames={dupNames}
+              requestStatus={Object.fromEntries(iv.view.requests.map((r) => [r.key, r.status]))}
+            />
           )}
-          {step === 3 && <StepProposals iv={iv} readOnly={!canEdit} saveWith={saveWith} busy={busy} />}
+          {step === 3 && (
+            <StepProposals
+              iv={iv}
+              readOnly={!canEdit}
+              canSetStatus={editor}
+              saveWith={saveWith}
+              busy={busy}
+              onStatusChanged={() => void refreshStatuses()}
+            />
+          )}
           {canEdit && (
             <div className="row-actions">
               <button type="button" className="btn btn-danger" onClick={() => void removeDraft()}>
@@ -469,7 +504,13 @@ export default function Interview() {
           )}
         </>
       ) : (
-        <CompletedView iv={iv} editor={editor} onChange={(x) => setIv(x)} onAttachments={setAttachments} />
+        <CompletedView
+          iv={iv}
+          editor={editor}
+          onChange={(x) => setIv(x)}
+          onAttachments={setAttachments}
+          onStatusChanged={() => void refreshStatuses()}
+        />
       )}
     </>
   );
@@ -731,11 +772,14 @@ function StepComponents({
   update,
   readOnly,
   dupNames,
+  requestStatus,
 }: {
   form: Form;
   update: (fn: (f: Form) => Form) => void;
   readOnly: boolean;
   dupNames: Set<string>;
+  /** request key -> status: a request that is no longer open keeps its threat (PROJ-1) */
+  requestStatus: Record<string, RequestStatus>;
 }) {
   const refs = useLoad<RefItem[]>(() => api.refs("log_source"));
   const techniques = useLoad(() => api.attackTechniques());
@@ -748,9 +792,32 @@ function StepComponents({
   const setComp = (key: string, patch: Partial<FormComponent>) =>
     update((f) => ({ ...f, components: f.components.map((c) => (c.key === key ? { ...c, ...patch } : c)) }));
 
+  /** Names the requests in progress or closed that hang on the threats and stops the removal. */
+  async function blockedByRequests(match: (r: ThreatRef) => boolean): Promise<boolean> {
+    const titles = lockedRequests(form, match, requestStatus);
+    if (!titles.length) return false;
+    await confirmDialog(
+      t("This cannot be removed: detection requests that are not open belong to it. Set them back to open or delete them first."),
+      {
+        title: t("Detection requests are tied to this threat"),
+        confirmLabel: t("OK"),
+        cancelLabel: t("Close"),
+        body: (
+          <ul className="plain-list">
+            {titles.map((x) => (
+              <li key={x}>{x}</li>
+            ))}
+          </ul>
+        ),
+      },
+    );
+    return true;
+  }
+
   async function setThreat(c: FormComponent, cat: Stride, patch: Partial<FormThreat>) {
     const cur = threatOf(c, cat);
     if (patch.state && patch.state !== "applies" && cur.state === "applies") {
+      if (await blockedByRequests((r) => r.component === c.key && r.category === cat)) return;
       const n = dependents(form, (r) => r.component === c.key && r.category === cat);
       if (
         n &&
@@ -766,6 +833,7 @@ function StepComponents({
 
   async function removeCustom(c: FormComponent, x: CustomThreatForm) {
     const cat = `custom:${x.key}`;
+    if (await blockedByRequests((r) => r.component === c.key && r.category === cat)) return;
     const n = dependents(form, (r) => r.component === c.key && r.category === cat);
     const ok = await confirmDialog(
       n
@@ -777,6 +845,7 @@ function StepComponents({
   }
 
   async function removeComp(c: FormComponent) {
+    if (await blockedByRequests((r) => r.component === c.key)) return;
     const n = dependents(form, (r) => r.component === c.key);
     const ok = await confirmDialog(
       n
@@ -1216,6 +1285,63 @@ function TechniquePicker({
   );
 }
 
+/** Edit title, description and threat of a detection request in a draft (PROJ-1). */
+function RequestEditDialog({
+  r,
+  threatOptions,
+  toRef,
+  onClose,
+  onSave,
+}: {
+  r: DetectionRequest;
+  threatOptions: { value: string; label: string }[];
+  toRef: (value: string) => ThreatRef;
+  onClose: () => void;
+  onSave: (patch: { title: string; description: string; threat: ThreatRef }) => void;
+}) {
+  const [title, setTitle] = useState(r.title);
+  const [description, setDescription] = useState(r.description);
+  const [threat, setThreat] = useState(`${r.component}:${r.category}`);
+  return (
+    <Modal title={t("Edit detection request")} open onClose={onClose}>
+      <form
+        className="stack"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (title.trim()) onSave({ title: title.trim(), description: description.trim(), threat: toRef(threat) });
+        }}
+      >
+        <label className="field">
+          {t("Title")}
+          <input className="input" value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} />
+        </label>
+        <label className="field">
+          {t("Threat")}
+          <select className="input" value={threat} onChange={(e) => setThreat(e.target.value)}>
+            {threatOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          {t("Description (what should be detected and why)")}
+          <textarea className="textarea" rows={5} value={description} maxLength={10000} onChange={(e) => setDescription(e.target.value)} />
+        </label>
+        <div className="row-actions">
+          <button type="button" className="btn" onClick={onClose}>
+            {t("Cancel")}
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={!title.trim()}>
+            {t("Save")}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 /* ------------------------------------------------------------------ step 3 */
 
 const proposalKey = (p: Proposal) => (p.level === "L3" ? `l3-${p.l3_id}` : `l2-${p.l2_id}`);
@@ -1285,13 +1411,18 @@ function ProposalCard({ p, children }: { p: Proposal; children?: ReactNode }) {
 function StepProposals({
   iv,
   readOnly,
+  canSetStatus,
   saveWith,
   busy,
+  onStatusChanged,
 }: {
   iv: IV;
   readOnly: boolean;
+  /** the status can be changed also when the draft itself is read-only */
+  canSetStatus: boolean;
   saveWith: (fn: (f: Form) => Form) => Promise<IV | null>;
   busy: boolean;
+  onStatusChanged: () => void;
 }) {
   const v = iv.view;
   const [removing, setRemoving] = useState<Proposal | null>(null);
@@ -1299,7 +1430,8 @@ function StepProposals({
   const [mode, setMode] = useState<"risk" | "usecase">("risk");
   const [showBelow, setShowBelow] = useState(false);
   const [showMismatch, setShowMismatch] = useState(true);
-  const [request, setRequest] = useState<{ text: string; threat: string }>({ text: "", threat: "" });
+  const [request, setRequest] = useState<{ title: string; description: string; threat: string }>({ title: "", description: "", threat: "" });
+  const [editingRequest, setEditingRequest] = useState<DetectionRequest | null>(null);
   const threatOptions = v.components.flatMap((c) =>
     c.threats
       .filter((x) => x.state === "applies")
@@ -1591,48 +1723,68 @@ function StepProposals({
           {t("Detection needs from the interview that no use case covers yet.")}
         </p>
         {v.requests.length > 0 && (
-          <ul className="plain-list">
+          <div className="req-list">
             {v.requests.map((r) => (
-              <li key={r.key || r.text}>
-                {r.text}{" "}
-                <span className="small muted">
-                  · {r.component_name} / {threatLabel(r.category)}
-                </span>{" "}
-                {!readOnly && (
-                  <button
-                    type="button"
-                    className="link-btn small"
-                    disabled={busy}
-                    onClick={() =>
-                      void saveWith((f) => ({ ...f, requests: f.requests.filter((x) => !(x.key === r.key && x.text === r.text)) }))
-                    }
-                  >
-                    {t("Remove")}
-                  </button>
-                )}
-              </li>
+              <RequestCard
+                key={r.key}
+                systemId={iv.system_id}
+                r={r}
+                where={`${r.component_name} / ${threatLabel(r.category)}`}
+                canSetStatus={canSetStatus}
+                onChanged={onStatusChanged}
+                actions={
+                  !readOnly && (
+                    <>
+                      <button type="button" className="btn btn-sm" disabled={busy} onClick={() => setEditingRequest(r)}>
+                        {t("Edit")}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        disabled={busy}
+                        onClick={async () => {
+                          if (
+                            r.status !== "open" &&
+                            !(await confirmDialog(t("Delete the detection request {title}? Its status is {status}.", { title: r.title, status: statusLabel(r.status) }), {
+                              danger: true,
+                              confirmLabel: t("Delete"),
+                            }))
+                          )
+                            return;
+                          void saveWith((f) => ({ ...f, requests: f.requests.filter((x) => x.key !== r.key) }));
+                        }}
+                      >
+                        {t("Remove")}
+                      </button>
+                    </>
+                  )
+                }
+              />
             ))}
-          </ul>
+          </div>
         )}
         {!readOnly && (
           <form
-            className="inline-form"
+            className="req-form"
             onSubmit={(e) => {
               e.preventDefault();
-              if (!request.text.trim() || !request.threat) return;
+              if (!request.title.trim() || !request.threat) return;
               void saveWith((f) => ({
                 ...f,
-                requests: [...f.requests, { key: newKey(), text: request.text.trim(), threat: ref(request.threat) }],
-              })).then((ok) => ok && setRequest({ text: "", threat: "" }));
+                requests: [
+                  ...f.requests,
+                  { key: newKey(), title: request.title.trim(), description: request.description.trim(), threat: ref(request.threat) },
+                ],
+              })).then((ok) => ok && setRequest({ title: "", description: "", threat: "" }));
             }}
           >
             <label className="field grow-2">
-              {t("Detection request")}
+              {t("Title")}
               <input
                 className="input"
-                value={request.text}
-                maxLength={10000}
-                onChange={(e) => setRequest((r) => ({ ...r, text: e.target.value }))}
+                value={request.title}
+                maxLength={200}
+                onChange={(e) => setRequest((r) => ({ ...r, title: e.target.value }))}
               />
             </label>
             <label className="field">
@@ -1646,12 +1798,37 @@ function StepProposals({
                 ))}
               </select>
             </label>
-            <button type="submit" className="btn" disabled={busy || !request.text.trim() || !request.threat}>
+            <label className="field req-wide">
+              {t("Description (what should be detected and why)")}
+              <textarea
+                className="textarea"
+                rows={3}
+                value={request.description}
+                maxLength={10000}
+                onChange={(e) => setRequest((r) => ({ ...r, description: e.target.value }))}
+              />
+            </label>
+            <button type="submit" className="btn btn-primary" disabled={busy || !request.title.trim() || !request.threat}>
               {t("Add")}
             </button>
           </form>
         )}
       </section>
+
+      {editingRequest && (
+        <RequestEditDialog
+          r={editingRequest}
+          threatOptions={threatOptions}
+          toRef={ref}
+          onClose={() => setEditingRequest(null)}
+          onSave={(patch) =>
+            void saveWith((f) => ({
+              ...f,
+              requests: f.requests.map((x) => (x.key === editingRequest.key ? { ...x, ...patch } : x)),
+            })).then(() => setEditingRequest(null))
+          }
+        />
+      )}
 
       {removing && (
         <RemoveDialog
@@ -2006,11 +2183,13 @@ function CompletedView({
   editor,
   onChange,
   onAttachments,
+  onStatusChanged,
 }: {
   iv: IV;
   editor: boolean;
   onChange: (iv: IV) => void;
   onAttachments: (list: InterviewAttachment[]) => void;
+  onStatusChanged: () => void;
 }) {
   const v = iv.view;
   const cmp = useLoad<InterviewCompare | null>(
@@ -2124,16 +2303,18 @@ function CompletedView({
       <section className="card stack-sm">
         <h2 className="h-sm">{t("Detection requests")}</h2>
         {v.requests.length ? (
-          <ul className="plain-list">
+          <div className="req-list">
             {v.requests.map((r) => (
-              <li key={r.key || r.text}>
-                {r.text}{" "}
-                <span className="small muted">
-                  · {r.component_name} / {threatLabel(r.category)}
-                </span>
-              </li>
+              <RequestCard
+                key={r.key}
+                systemId={iv.system_id}
+                r={r}
+                where={`${r.component_name} / ${threatLabel(r.category)}`}
+                canSetStatus={editor}
+                onChanged={onStatusChanged}
+              />
             ))}
-          </ul>
+          </div>
         ) : (
           <p className="muted" style={{ margin: 0 }}>
             {t("No detection requests.")}

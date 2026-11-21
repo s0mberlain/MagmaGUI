@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, type SystemDetail as Detail } from "../api";
+import { api, REQUEST_STATUSES, type RequestStatus, type SystemDetail as Detail } from "../api";
 import { useAuth } from "../auth";
 import { confirmDialog, ErrorNote, useLoad } from "../components/ui";
 import { RiskCoverage, useCaseHref } from "../components/RiskCoverage";
+import { isTodo, RequestCard, statusLabel } from "../components/RequestStatus";
 import { fmtDate, fmtTime, num, pct } from "../lib/format";
 import { CLASSIFICATION_LABEL, INTERVIEW_STATUS_LABEL, registerCustomThreats, threatLabel } from "../lib/stride";
 import { StatePill, SystemDialog, systemInput } from "./Systems";
@@ -18,6 +19,8 @@ export default function SystemDetail() {
   const sys = useLoad<Detail>(() => api.system(sid), [sid]);
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // detection requests still to do are shown first; the others can be switched on (PROJ-1)
+  const [shown, setShown] = useState<Set<RequestStatus>>(new Set(["open", "in_progress"]));
   const s = sys.data;
 
   async function run(fn: () => Promise<unknown>) {
@@ -95,7 +98,8 @@ export default function SystemDetail() {
   const uncovered = s.gap_risks ?? [];
   // #59: the same gaps as the "Gap" filter of the risk overview (risks without use case) plus
   // the gaps of linked use cases and open detection requests
-  const gapCount = uncovered.length + s.gap_no_rules.length + blind.length + s.gap_requests.length;
+  const todoRequests = s.gap_requests.filter((g) => isTodo(g.status));
+  const gapCount = uncovered.length + s.gap_no_rules.length + blind.length + todoRequests.length;
 
   return (
     <>
@@ -256,7 +260,7 @@ export default function SystemDetail() {
                 r: uncovered.length,
                 a: s.gap_no_rules.length,
                 b: blind.length,
-                c: s.gap_requests.length,
+                c: todoRequests.length,
               })}
             </span>
           )}
@@ -306,17 +310,50 @@ export default function SystemDetail() {
         )}
         {s.gap_requests.length > 0 && (
           <div>
-            <h3 className="small strong">{t("Open detection requests")}</h3>
-            <ul className="plain-list">
-              {s.gap_requests.map((g, i) => (
-                <li key={i}>
-                  {g.text}{" "}
-                  <span className="muted small">
-                    · {g.component} / {threatLabel(g.category)}
-                  </span>
-                </li>
+            <div className="section-head">
+              <h3 className="small strong">{t("Detection requests")}</h3>
+              <Link className="small" to={`/usecases/requests?system=${sid}`}>
+                {t("Show all requests")}
+              </Link>
+            </div>
+            <div className="req-filter" role="group" aria-label={t("Show requests with status")}>
+              {REQUEST_STATUSES.map((st) => (
+                <label key={st}>
+                  <input
+                    type="checkbox"
+                    checked={shown.has(st)}
+                    onChange={() =>
+                      setShown((x) => {
+                        const next = new Set(x);
+                        if (!next.delete(st)) next.add(st);
+                        return next;
+                      })
+                    }
+                  />
+                  {statusLabel(st)} ({s.gap_requests.filter((g) => g.status === st).length})
+                </label>
               ))}
-            </ul>
+            </div>
+            {s.gap_requests.some((g) => shown.has(g.status)) ? (
+              <div className="req-list">
+                {s.gap_requests
+                  .filter((g) => shown.has(g.status))
+                  .map((g) => (
+                    <RequestCard
+                      key={g.key}
+                      systemId={sid}
+                      r={g}
+                      where={`${g.component} / ${threatLabel(g.category)}`}
+                      canSetStatus={editor && !s.archived}
+                      onChanged={() => void sys.reload()}
+                    />
+                  ))}
+              </div>
+            ) : (
+              <p className="muted small" style={{ margin: "8px 0 0" }}>
+                {t("No detection requests with the chosen status.")}
+              </p>
+            )}
           </div>
         )}
       </section>

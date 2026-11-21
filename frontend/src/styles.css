@@ -1016,3 +1016,23 @@ tr.req-detail td { background: var(--c-subtle); }
   .btn-sm, .unm-btn, .filter-chip, .link-btn { min-height: 44px; }
   .unm-btn { min-width: 44px; }
 }
+/* UI/UX pass (2026-11-18) */
+/* Phone: the brand bar keeps its own height on short pages instead of stretching with the wrapped flex line */
+@media (max-width: 800px) { .shell { align-content: flex-start; } }
+/* Wide tables: a soft shadow at the edge shows there are more columns to scroll to */
+.table-card {
+  background:
+    linear-gradient(to right, var(--c-surface) 30%, rgba(255, 255, 255, 0)) left center / 40px 100% no-repeat local,
+    linear-gradient(to left, var(--c-surface) 30%, rgba(255, 255, 255, 0)) right center / 40px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgba(22, 24, 29, 0.14), rgba(22, 24, 29, 0)) left center / 12px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgba(22, 24, 29, 0.14), rgba(22, 24, 29, 0)) right center / 12px 100% no-repeat scroll,
+    var(--c-surface);
+}
+/* Dates in tables stay on one line ("22 Jun 2026", not "22 Jun / 2026") */
+.table td.date { white-space: nowrap; }
+/* Rule name: wraps over several lines instead of being cut off */
+textarea.title-input { display: block; resize: none; line-height: 1.25; min-height: 0; overflow: hidden; }
+/* Delete sits apart from the save actions so it is not hit by mistake */
+.row-actions .rule-delete { margin-right: 12px; }
+.metric-trio { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.metric-trio .sep { color: var(--c-border-strong); margin: 0 4px; }

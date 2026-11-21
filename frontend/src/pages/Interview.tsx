@@ -370,7 +370,7 @@ export default function Interview() {
   return (
     <>
       <nav className="crumbs" aria-label={t("Breadcrumb")}>
-        <Link to="/systems">{t("Systems")}</Link> / <Link to={`/systems/${iv.system_id}`}>{iv.system_name}</Link> /{" "}
+        <Link to="/systems">{t("Threat modelling")}</Link> / <Link to={`/systems/${iv.system_id}`}>{iv.system_name}</Link> /{" "}
         <span>{t("Interview {date}", { date: fmtDate(iv.interview_date) })}</span>
       </nav>
       <header className="page-header">

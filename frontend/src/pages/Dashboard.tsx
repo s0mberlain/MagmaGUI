@@ -214,8 +214,7 @@ export default function Dashboard() {
         </details>
       </section>
 
-      <div className="split">
-        <section className="card split-main" aria-labelledby="l1h">
+      <section className="card" aria-labelledby="l1h">
           <div className="section-head">
             <h2 id="l1h">{t("Detection per L1 use case")}</h2>
             <MetricLegend />
@@ -268,9 +267,9 @@ export default function Dashboard() {
               "L2 column: use cases with scored rules / all. Only operational and maintenance rules with all three metrics count.",
             )}
           </p>
-        </section>
+      </section>
 
-        <div className="split-side stack-lg">
+      <div className="two-col even">
           <section className="card stack-sm" aria-labelledby="vh">
             <div className="section-head">
               <h2 id="vh">{t("Verification due")}</h2>
@@ -321,7 +320,6 @@ export default function Dashboard() {
               ))}
             </ul>
           </section>
-        </div>
       </div>
       <DriverCoverageCards data={drivers.data} error={drivers.error} />
     </>
